@@ -2,12 +2,19 @@ name: Actualizar datos
 
 # Los releases de BEA y BLS salen a las 8:30 (hora de Nueva York) = 12:30 UTC.
 # Corre de lunes a viernes a las 13:10 UTC y a las 21:10 UTC (por si algo se publica tarde),
-# y a mano desde la pestaña Actions -> "Actualizar datos" -> Run workflow.
+# a mano desde la pestaña Actions -> "Actualizar datos" -> Run workflow,
+# y cada vez que se modifica el script de datos.
 on:
   schedule:
     - cron: "10 13 * * 1-5"
     - cron: "10 21 * * 1-5"
   workflow_dispatch:
+  # también corre cuando cambia el script o el workflow, para que los cambios se vean en el momento
+  push:
+    branches: [main]
+    paths:
+      - "scripts/**"
+      - ".github/workflows/update.yml"
 
 permissions:
   contents: write
@@ -46,5 +53,6 @@ jobs:
             echo "Sin cambios en los datos."
           else
             git commit -m "Datos actualizados $(date -u +'%Y-%m-%d %H:%M UTC')"
+            git pull --rebase origin main
             git push
           fi
