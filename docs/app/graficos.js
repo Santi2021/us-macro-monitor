@@ -233,13 +233,22 @@ export function unirCursor(grupo, chart, ley, sp) {
     m.chart.setOption({ graphic: [{ id: "cursor", type: "line", silent: true, invisible: px == null || !isFinite(px), z: 50,
       shape: { x1: px || 0, y1: 8, x2: px || 0, y2: alto - 28 }, style: { stroke: css("--axis"), lineWidth: 1, lineDash: [3, 3] } }] }, { lazyUpdate: true });
   };
-  let raf = null;
+  // Sólo el gráfico que tiene el mouse encima transmite; así redibujar a los demás nunca rebota en un ciclo
+  let raf = null, activo = false, ultimo = null;
+  const zr = chart.getZr();
+  zr.on("mousemove", () => { activo = true; });
   chart.on("updateAxisPointer", e => {
+    if (!activo) return;
     const x = (e.axesInfo || []).find(a => a.axisDim === "x");
-    if (!x) return;
+    if (!x || x.value === ultimo) return;
+    ultimo = x.value;
     cancelAnimationFrame(raf);
     raf = requestAnimationFrame(() => miembros.forEach(m => marcar(m, x.value)));
   });
-  chart.getZr().on("globalout", () => { cancelAnimationFrame(raf); miembros.forEach(m => marcar(m, null)); });
+  zr.on("globalout", () => {
+    if (!activo) return;
+    activo = false; ultimo = null;
+    cancelAnimationFrame(raf); miembros.forEach(m => marcar(m, null));
+  });
 }
 export const limpiarGrupos = () => GRUPOS.clear();

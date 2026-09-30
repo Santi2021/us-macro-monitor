@@ -243,9 +243,15 @@ export function colocar(pop, ancla) {
   if (top + h > window.innerHeight - 8) top = Math.max(8, r.top - h - 6);
   pop.style.left = left + window.scrollX + "px"; pop.style.top = top + window.scrollY + "px";
   pop.querySelector("button")?.focus();
-  setTimeout(() => document.addEventListener("click", cerrarPops, { once: true }), 0);
+  // se cierra con un clic afuera; el oyente se quita siempre al cerrar, así no queda uno viejo que cierre el próximo menú
+  fueraDePop = e => { if (!pop.contains(e.target)) cerrarPops(); };
+  setTimeout(() => { if (pop.isConnected) document.addEventListener("click", fueraDePop); }, 0);
 }
-export function cerrarPops() { document.querySelectorAll(".pop").forEach(p => p.remove()); }
+let fueraDePop = null;
+export function cerrarPops() {
+  if (fueraDePop) { document.removeEventListener("click", fueraDePop); fueraDePop = null; }
+  document.querySelectorAll(".pop").forEach(p => p.remove());
+}
 
 const nombreArchivo = (sp, ext) => `us-macro-monitor-${(CAT[sp.id]?.slug || sp.id || "grafico")}-${new Date().toISOString().slice(0, 10)}.${ext}`;
 function csvVisible(sp) {
