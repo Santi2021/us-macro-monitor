@@ -365,6 +365,10 @@ export function vistaExplorador(main, rerender) {
 
 // ───────── Metodología ─────────
 const CHANGELOG = [
+  ["4.3", "2026-09-30", ["Datos diarios en tasas, spreads, dólar, expectativas de mercado y NFCI: con períodos de hasta 5 años los gráficos muestran el dato diario (o semanal, como la hipotecaria de Freddie Mac); con períodos más largos, el promedio mensual. Los indicadores muestran el último cierre.",
+    "Curva del Tesoro con el corte de hace 1 mes; tasa real a 10 años con la inflación esperada en eje derecho; tasa real de la Fed con el rango de estimaciones de la tasa neutral (0,5% a 1,3%) en lugar de un número fijo.",
+    "Nuevo: high yield por calidad (BB contra CCC), para ver dónde aparece primero el estrés de crédito.",
+    "Al ocultar una serie desde la leyenda el eje se reajusta, y las descargas (PNG y CSV de lo que se ve) muestran sólo las series visibles."]],
   ["4.2", "2026-09-30", ["Fiscal pasa a ser una sección propia, con ingresos y gastos federales, aranceles (tasa efectiva y recaudación) e intereses sobre la recaudación.",
     "Nuevos gráficos: brecha del producto (CBO) y uso de la capacidad, productividad y costo laboral unitario, encuestas manufactureras de la Fed, ventas de vehículos, patrimonio de los hogares, carga de la deuda de los hogares, núcleo de la inflación (mediana y media recortada), PPI, bienes core y precios de importación, quién crea el empleo, contrataciones y despidos, qué descuenta el mercado de la Fed, spreads de crédito, balance de la Fed, exportaciones e importaciones y cuenta corriente.",
     "Cambios: términos de intercambio con precios de exportación e importación; desempleo con U-6; morosidad con todos los préstamos al consumo; ventas minoristas pasan a Consumidor; PBI nominal contra tasa pasa a Fiscal.",

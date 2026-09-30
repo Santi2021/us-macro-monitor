@@ -2,7 +2,7 @@
 // De acá salen el gráfico, su tabla, su ficha de fuentes, el buscador, los enlaces y la metodología.
 import { T, P, nf, sg, fm, fq, fw, fd } from "./util.js";
 import { last, prev, yoy, ann, pct, diff, roll, join, joinQ, toQ, indice, deflactar, rangoNormal, pctl, escala, racha } from "./calc.js";
-import { ST, S, cut, fuente, meta } from "./datos.js";
+import { ST, S, SD, freqD, usaDiario, cut, fuente, meta } from "./datos.js";
 
 export const FRENTES = { actividad: "Actividad", consumidor: "Consumidor", precios: "Precios", empleo: "Empleo", tasas: "Tasas", externo: "Externo", fiscal: "Fiscal" };
 
@@ -442,7 +442,7 @@ def("expectativas", { slug: "expectativas-de-inflacion", nombre: "Expectativas d
   calc: "Inflación esperada a 1 año por los hogares (U. de Michigan), 5 años dentro de 5 años implícita en bonos (Fed de St. Louis) y breakeven a 10 años.",
   ks: ["infl_exp_1y", "infl_exp_5y5y", "breakeven10"],
   f: () => {
-    const m = S("infl_exp_1y"), f = S("infl_exp_5y5y"), b = S("breakeven10"); if (!m || !f) return null;
+    const m = S("infl_exp_1y"), f = SD("infl_exp_5y5y"), b = SD("breakeven10"); if (!m || !f) return null;
     const ss = [{ n: "Mercado, 5 años dentro de 5", d: cut(f), c: 0, w: 2.8, dec: 2 }, { n: "Hogares, 1 año", d: cut(m), c: 1, dec: 1 }];
     if (b) ss.push({ n: "Breakeven 10 años", d: cut(b), c: 2, w: 1.6, dec: 2 });
     return { titulo: `Expectativas: hogares ${nf(last(m)[1])}% a 1 año, mercado ${nf(last(f)[1], 2)}% a largo plazo`,
@@ -597,7 +597,7 @@ def("continuos", { slug: "pedidos-continuos", nombre: "Pedidos continuos de dese
 
 // ═════════════════════════ Tasas ═════════════════════════
 def("curvaTesoro", { slug: "curva-del-tesoro", nombre: "Curva del Tesoro", sin: ["curva", "yield curve", "rendimientos", "bonos"],
-  calc: "Rendimiento de los bonos del Tesoro por plazo (constant maturity), datos diarios, hoy y hace 6 y 12 meses.",
+  calc: "Rendimiento de los bonos del Tesoro por plazo (constant maturity), datos diarios, hoy y hace 1, 6 y 12 meses.",
   ks: ["ust10"],
   f: () => {
     const cv = ST.DATA.curva; if (!cv || Object.keys(cv).length < 6) return null;
@@ -607,73 +607,76 @@ def("curvaTesoro", { slug: "curva-del-tesoro", nombre: "Curva del Tesoro", sin: 
     const hoy = fechas[fechas.length - 1];
     const cerca = obj => fechas.filter(f => f <= obj).pop();
     const menos = (f, meses) => { const d = new Date(P(f)); d.setUTCMonth(d.getUTCMonth() - meses); return d.toISOString().slice(0, 10); };
-    const cortes = [[hoy, "Hoy", 0], [cerca(menos(hoy, 6)), "Hace 6 meses", 2], [cerca(menos(hoy, 12)), "Hace 12 meses", 3]].filter(c => c[0]);
+    const cortes = [[hoy, "Hoy", 0], [cerca(menos(hoy, 1)), "Hace 1 mes", 1], [cerca(menos(hoy, 6)), "Hace 6 meses", 2], [cerca(menos(hoy, 12)), "Hace 12 meses", 3]].filter(c => c[0]);
     const val = (p, f) => { const o = cv[p].filter(x => x[0] <= f).pop(); return o ? o[1] : null; };
     const series = cortes.map(([f, n, c], i) => ({ n: `${n} (${fd(P(f))}${i ? "-" + String(new Date(P(f)).getUTCFullYear()).slice(2) : ""})`, t: "line", c, w: i ? 1.8 : 3, punteada: i > 0, etiquetas: i === 0 ? "todas" : false, d: plazos.map(p => val(p, f)) }));
     const y2 = val("2A", hoy), y10 = val("10A", hoy), m3 = val("3M", hoy);
-    const c6 = cortes[1] ? (val("10A", hoy) - val("10A", cortes[1][0])) * 100 : null;
+    const c1 = cortes[1] ? (val("10A", hoy) - val("10A", cortes[1][0])) * 100 : null, c6 = cortes[2] ? (val("10A", hoy) - val("10A", cortes[2][0])) * 100 : null;
     return { tipo: "cat", titulo: `Curva del Tesoro: 3 meses ${nf(m3, 2)}%, 2 años ${nf(y2, 2)}%, 10 años ${nf(y10, 2)}%`,
-      sub: "Rendimiento por plazo, datos diarios. Compara la forma de la curva hoy con hace 6 y 12 meses." + (c6 != null ? ` El 10 años cambió ${sg(c6, 0)} pb en 6 meses.` : "") + " No depende del período elegido.",
+      sub: "Rendimiento por plazo, datos diarios. Compara la forma de la curva hoy con hace 1, 6 y 12 meses." + (c1 != null && c6 != null ? ` El 10 años cambió ${sg(c1, 0)} pb en un mes y ${sg(c6, 0)} pb en 6 meses.` : "") + " No depende del período elegido.",
       fuenteTxt: "Tesoro de EE.UU. vía FRED", unidad: "%", dec: 2, decEje: 1, signo: false, escala: true, cats: plazos, series };
   } });
+const txtFrec = k => { const f = freqD(k); return f === "D" ? "datos diarios" : f === "W" ? "datos semanales" : "promedios mensuales"; };
 function notaParcial() {
+  if (usaDiario()) return "";
   const cv = ST.DATA.curva && ST.DATA.curva["10A"]; if (!cv || !cv.length) return "";
   const f = cv[cv.length - 1][0], d = new Date(P(f));
   return d.getUTCDate() < 28 ? ` El último punto es el promedio del mes en curso hasta el ${d.getUTCDate()}-${fm(P(f)).split("-")[0]}.` : "";
 }
 def("curva", { slug: "fed-y-treasuries", nombre: "Fed y Treasuries", sin: ["fondos federales", "tasa de política", "treasuries", "bonos"],
-  calc: "Tasa efectiva de fondos federales y rendimientos de Treasuries a 2, 10 y 30 años, promedios mensuales.",
+  calc: "Tasa efectiva de fondos federales y rendimientos de Treasuries a 2, 10 y 30 años. Datos diarios con períodos de hasta 5 años; promedios mensuales con períodos más largos.",
   ks: ["fed_funds", "ust2", "ust10", "ust30"],
   f: () => {
     const ks = [["fed_funds", "Fondos federales"], ["ust2", "2 años"], ["ust10", "10 años"], ["ust30", "30 años"]];
-    const ss = ks.map(([k, n], i) => ({ n, d: cut(S(k)), c: i, dec: 2 })).filter(s => s.d && s.d.length); if (ss.length < 3) return null;
-    return { titulo: `Fed ${nf(last(ss[0].d)[1], 2)}%, 2 años ${nf(last(ss[1].d)[1], 2)}%, 10 años ${nf(last(ss[2].d)[1], 2)}%`,
-      sub: "Tasa de fondos federales y Treasuries por plazo, promedios mensuales." + notaParcial(), fuenteTxt: "Fed y Tesoro de EE.UU. vía FRED", dec: 2, series: ss };
+    const ss = ks.map(([k, n], i) => ({ n, d: cut(SD(k)), c: i, dec: 2 })).filter(s => s.d && s.d.length); if (ss.length < 3) return null;
+    return { freq: freqD("ust10"), titulo: `Fed ${nf(last(ss[0].d)[1], 2)}%, 2 años ${nf(last(ss[1].d)[1], 2)}%, 10 años ${nf(last(ss[2].d)[1], 2)}%`,
+      sub: `Tasa de fondos federales y Treasuries por plazo, ${txtFrec("ust10")}.` + notaParcial(), fuenteTxt: "Fed y Tesoro de EE.UU. vía FRED", dec: 2, series: ss };
   } });
 def("pendiente", { slug: "pendiente-de-la-curva", nombre: "Pendiente de la curva", sin: ["10-2", "10-3m", "inversión de la curva", "spread"],
-  calc: "Treasury 10 años menos 2 años, y 10 años menos letra de 3 meses, en puntos básicos (promedios mensuales).",
+  calc: "Treasury 10 años menos 2 años, y 10 años menos letra de 3 meses, en puntos básicos. Datos diarios con períodos de hasta 5 años; promedios mensuales con períodos más largos.",
   ks: ["ust10", "ust2", "spread_10y3m"],
   f: () => {
-    const a = S("ust10"), b = S("ust2"), c = S("spread_10y3m"); if (!a || !b) return null;
+    const a = SD("ust10"), b = SD("ust2"), c = SD("spread_10y3m"); if (!a || !b) return null;
     const s = join(a, b, (x, y) => (x - y) * 100), v = last(s)[1];
     const ss = [{ n: "10 años − 2 años", d: cut(s), c: 0 }];
     if (c) ss.push({ n: "10 años − 3 meses", d: escala(cut(c), 100), c: 1 });
     return { titulo: v >= 0 ? `Curva 10-2 positiva en ${nf(v, 0)} pb` : `Curva 10-2 invertida en ${nf(-v, 0)} pb`,
-      sub: "La inversión 10-3 meses precedió a las últimas recesiones; el riesgo suele aparecer cuando vuelve a positiva.", fuenteTxt: "Tesoro de EE.UU. vía FRED",
-      unidad: "pb", dec: 0, series: ss, refs: [{ y: 0 }] };
+      sub: `La inversión 10-3 meses precedió a las últimas recesiones; el riesgo suele aparecer cuando vuelve a positiva. En puntos básicos, ${txtFrec("ust10")}.`, fuenteTxt: "Tesoro de EE.UU. vía FRED",
+      freq: freqD("ust10"), unidad: "pb", dec: 0, series: ss, refs: [{ y: 0 }] };
   } });
 def("tasaReal", { slug: "tasa-real", nombre: "Tasa real a 10 años", sin: ["tips", "breakeven", "tasa real"],
   calc: "Rendimiento de los TIPS a 10 años (tasa real) e inflación esperada implícita (breakeven a 10 años).",
   ks: ["tips10", "breakeven10"],
   f: () => {
-    const r = S("tips10"), be = S("breakeven10"); if (!r || !be) return null;
+    const r = SD("tips10"), be = SD("breakeven10"); if (!r || !be) return null;
     const v = last(r)[1];
-    return { titulo: `Tasa real a 10 años en ${nf(v, 2)}%: percentil ${pctl(r, v)} desde 2003`,
-      sub: "El rendimiento nominal a 10 años se divide en tasa real (TIPS) e inflación esperada (breakeven).", fuenteTxt: "Tesoro de EE.UU. vía FRED", dec: 2,
-      series: [{ n: "Tasa real (TIPS)", d: cut(r), c: 0, w: 2.8 }, { n: "Inflación esperada (breakeven)", d: cut(be), c: 1 }], refs: [{ y: 0 }] };
+    return { freq: freqD("tips10"), titulo: `Tasa real a 10 años en ${nf(v, 2)}% e inflación esperada en ${nf(last(be)[1], 2)}%: la tasa real está en el percentil ${pctl(r, v)} desde 2003`,
+      sub: `El rendimiento nominal a 10 años se divide en tasa real (TIPS) e inflación esperada (breakeven), ${txtFrec("tips10")}. La inflación esperada va en el eje derecho: se mueve en un rango mucho más chico y en el mismo eje se vería plana.`,
+      fuenteTxt: "Tesoro de EE.UU. vía FRED", dec: 2,
+      series: [{ n: "Tasa real (TIPS)", d: cut(r), c: 0, w: 2.8 }, { n: "Inflación esperada (breakeven, eje derecho)", d: cut(be), c: 1, der: true }] };
   } });
 def("primaPlazo", { slug: "prima-por-plazo", nombre: "Prima por plazo a 10 años", sin: ["term premium", "kim wright"],
   calc: "Prima por plazo del bono a 10 años según el modelo Kim-Wright de la Fed.",
   ks: ["term_premium"],
   f: () => {
-    const t = S("term_premium"); if (!t) return null;
+    const t = SD("term_premium"); if (!t) return null;
     const v = last(t)[1];
     return { titulo: `La prima por plazo a 10 años está en ${nf(v, 2)}%: percentil ${pctl(t, v)} desde 2000`,
       sub: "Compensación extra por prestar a 10 años en vez de renovar a corto plazo. Sube con el riesgo fiscal y la incertidumbre de inflación.",
-      dec: 2, banda: rangoNormal(t), series: [{ n: "Prima por plazo 10 años", d: cut(t), c: 0 }], refs: [{ y: 0 }] };
+      freq: freqD("term_premium"), dec: 2, banda: rangoNormal(S("term_premium")), series: [{ n: "Prima por plazo 10 años", d: cut(t), c: 0 }], refs: [{ y: 0 }] };
   } });
 def("descuenta", { slug: "que-descuenta-el-mercado", nombre: "Qué descuenta el mercado de la Fed", sin: ["recortes", "subas", "expectativas de tasa", "2 años", "fed funds", "política esperada"],
-  calc: "Treasury a 2 años menos tasa efectiva de fondos federales, en puntos básicos, promedios mensuales.",
+  calc: "Treasury a 2 años menos tasa efectiva de fondos federales, en puntos básicos. Datos diarios con períodos de hasta 5 años; promedios mensuales con períodos más largos.",
   ks: ["ust2", "fed_funds"],
   f: () => {
-    const a = S("ust2"), f = S("fed_funds"); if (!a || !f) return null;
+    const a = SD("ust2"), f = SD("fed_funds"); if (!a || !f) return null;
     const s = join(a, f, (x, y) => (x - y) * 100);
     const v = last(s)[1];
     const n = Math.round(Math.abs(v) / 25);
     const titulo = Math.abs(v) < 12.5 ? `El mercado no descuenta cambios de tasa: el 2 años está ${sg(v, 0)} pb contra la Fed`
       : `El mercado descuenta ${v < 0 ? "recortes" : "subas"}: el 2 años está ${nf(Math.abs(v), 0)} pb ${v < 0 ? "debajo" : "encima"} de la Fed (unos ${n} movimientos de 0,25)`;
     return { titulo, sub: "Treasury a 2 años menos tasa de fondos federales. Negativo: el mercado espera recortes en los próximos dos años; positivo, subas. Es una aproximación: el 2 años incluye también una prima por plazo pequeña." + notaParcial(),
-      unidad: "pb", dec: 0, series: [{ n: "2 años − fondos federales", d: cut(s), c: 0, area: true }], refs: [{ y: 0 }] };
+      freq: freqD("ust2"), unidad: "pb", dec: 0, series: [{ n: "2 años − fondos federales", d: cut(s), c: 0, area: true }], refs: [{ y: 0 }] };
   } });
 def("politica", { slug: "tasa-real-de-la-fed", nombre: "Tasa real de la Fed", sin: ["política monetaria", "restrictiva", "neutral"],
   calc: "Tasa efectiva de fondos federales menos inflación core PCE interanual.",
@@ -681,18 +684,19 @@ def("politica", { slug: "tasa-real-de-la-fed", nombre: "Tasa real de la Fed", si
   f: () => {
     const f = S("fed_funds"), c = yoy(S("pce_core")); if (!f || !c) return null;
     const r = join(f, c, (a, b) => a - b), v = last(r)[1];
-    const lectura = v > 1 ? "restrictiva" : v >= 0.5 ? "cerca de neutral" : v >= 0 ? "levemente expansiva" : "expansiva";
+    const lectura = v > 1.3 ? "restrictiva" : v >= 0.5 ? "dentro del rango neutral" : v >= 0 ? "levemente expansiva" : "expansiva";
     return { titulo: `Tasa real de la Fed en ${nf(v)}%: política ${lectura}`,
-      sub: "Tasa de fondos federales menos inflación core PCE interanual. Se estima que el nivel neutral ronda 0,5% a 1%.",
-      series: [{ n: "Tasa real de la Fed", d: cut(r), c: 0, area: true }], refs: [{ y: 0 }, { y: 1, l: "Neutral aprox. (1%)" }] };
+      sub: "Tasa de fondos federales menos inflación core PCE interanual. La tasa neutral no se observa: se estima. La proyección de largo plazo de la propia Fed (tasa nominal cerca de 3% menos la meta de 2%) da cerca de 1%, y los modelos de la Fed de Nueva York la ubican entre 0,5% y 1,3%. Por eso se muestra un rango y no un número.",
+      banda: [0.5, 1.3], bandaTexto: "Rango de estimaciones de la tasa neutral real (0,5% a 1,3%)",
+      series: [{ n: "Tasa real de la Fed", d: cut(r), c: 0, area: true }], refs: [{ y: 0 }] };
   } });
 def("hipotecaria", { slug: "spread-hipotecario", nombre: "Tasa hipotecaria y spread", sin: ["hipoteca", "mortgage", "freddie mac", "vivienda"],
-  calc: "Tasa hipotecaria fija a 30 años (Freddie Mac) menos Treasury a 10 años, promedios mensuales.",
+  calc: "Tasa hipotecaria fija a 30 años de la encuesta semanal de Freddie Mac (se publica los jueves) menos Treasury a 10 años del mismo día. Con períodos de más de 5 años, promedios mensuales. Fuentes diarias como Mortgage News Daily suelen dar valores algo más altos: miden las tasas ofrecidas cada día, no el promedio de la encuesta semanal.",
   ks: ["mortgage30", "ust10"],
   f: () => {
-    const m = S("mortgage30"), t = S("ust10"); if (!m || !t) return null;
-    const sp = join(m, t, (a, b) => a - b), rn = rangoNormal(sp);
-    return { titulo: `Hipotecaria a 30 años en ${nf(last(m)[1], 2)}%, ${nf(last(sp)[1], 2)} pp sobre el Treasury a 10 años`,
+    const m = SD("mortgage30"), t = SD("ust10"); if (!m || !t) return null;
+    const sp = join(m, t, (a, b) => a - b), rn = rangoNormal(join(S("mortgage30"), S("ust10"), (a, b) => a - b));
+    return { freq: freqD("mortgage30"), titulo: `Hipotecaria a 30 años en ${nf(last(m)[1], 2)}% (Freddie Mac, semana al ${fw(last(m)[0])}), ${nf(last(sp)[1], 2)} pp sobre el Treasury a 10 años`,
       sub: rn ? `El spread normal 2000-19 va de ${nf(rn[0], 1)} a ${nf(rn[1], 1)} pp: por encima, el crédito hipotecario está caro respecto de los bonos.` : "Spread entre la tasa hipotecaria y el Treasury a 10 años.",
       unidad: "pp", dec: 2, banda: rn, series: [{ n: "Spread hipotecaria − Treasury 10 años", d: cut(sp), c: 1 }] };
   } });
@@ -700,38 +704,52 @@ def("nfci", { slug: "condiciones-financieras", nombre: "Condiciones financieras 
   calc: "Índice nacional de condiciones financieras de la Fed de Chicago y su subíndice de crédito, promedio mensual. Cero es el promedio histórico; positivo, más restrictivo; negativo, más laxo.",
   ks: ["nfci", "nfci_credit"],
   f: () => {
-    const n = S("nfci"), c = S("nfci_credit"); if (!n) return null;
+    const n = SD("nfci"), c = SD("nfci_credit"); if (!n) return null;
     const v = last(n)[1];
     const ss = [{ n: "NFCI", d: cut(n), c: 0, w: 2.6, dec: 2 }];
     if (c) ss.push({ n: "Subíndice de crédito", d: cut(c), c: 1, dec: 2 });
     return { titulo: `Condiciones financieras ${v < 0 ? "más laxas" : "más restrictivas"} que el promedio: NFCI en ${nf(v, 2)}`,
       sub: "Resume más de 100 indicadores de riesgo, crédito y apalancamiento. Por encima de cero, el sistema financiero frena a la economía; por debajo, la empuja." + notaParcial(),
-      unidad: "", dec: 2, series: ss, refs: [{ y: 0, l: "Promedio histórico (0)" }] };
+      freq: freqD("nfci"), unidad: "", dec: 2, series: ss, refs: [{ y: 0, l: "Promedio histórico (0)" }] };
   } });
 def("spreads", { slug: "spreads-de-credito", nombre: "Spreads de crédito corporativo", sin: ["spreads", "high yield", "baa", "crédito corporativo", "riesgo corporativo"],
   calc: "Rendimiento de los bonos corporativos Baa de Moody's menos el Treasury a 10 años, y spread ajustado por opciones del índice high yield de ICE BofA (FRED publica sólo sus últimos 3 años). Promedios mensuales.",
   ks: ["baa_spread", "hy_oas"],
   f: () => {
-    const b = S("baa_spread"), h = S("hy_oas"); if (!b && !h) return null;
+    const b = SD("baa_spread"), h = SD("hy_oas"); if (!b && !h) return null;
     const ss = [];
     if (b) ss.push({ n: "Baa − Treasury 10 años", d: cut(b), c: 0, w: 2.6 });
     if (h) ss.push({ n: "High yield (ICE BofA)", d: cut(h), c: 1 });
     return { titulo: b ? `El spread corporativo Baa está en ${nf(last(b)[1], 2)} pp: percentil ${pctl(b, last(b)[1])} desde 2000` : `Spread high yield en ${nf(last(h)[1], 2)} pp`,
       sub: "Lo que paga de más una empresa respecto del Tesoro. Spreads bajos: el mercado presta sin pedir compensación por riesgo. Cuando se abren rápido, suele anticipar un freno de la economía." + notaParcial(),
-      unidad: "pp", dec: 2, banda: b ? rangoNormal(b) : null, bandaTexto: "Rango normal Baa 2000-19", series: ss };
+      freq: freqD("baa_spread"), unidad: "pp", dec: 2, banda: b ? rangoNormal(S("baa_spread")) : null, bandaTexto: "Rango normal Baa 2000-19", series: ss };
+  } });
+def("hyCalidad", { slug: "high-yield-por-calidad", nombre: "High yield por calidad: BB contra CCC", sin: ["ccc", "bb", "junk", "basura", "high yield", "descompresión", "estrés de crédito"],
+  calc: "Spreads ajustados por opciones de los índices ICE BofA de high yield BB (el tramo de mejor calidad) y CCC y menor (el peor crédito que todavía se financia en el mercado). FRED publica sólo sus últimos 3 años.",
+  ks: ["hy_bb", "hy_ccc", "hy_oas"],
+  f: () => {
+    const bb = SD("hy_bb"), ccc = SD("hy_ccc"), h = SD("hy_oas"); if (!bb || !ccc) return null;
+    const r = join(ccc, bb, (a, b) => a / b); if (!r) return null;
+    const v = last(r)[1], m = r.reduce((x, p) => x + p[1], 0) / r.length;
+    const ss = [{ n: "CCC y menor", d: cut(ccc), c: 1, w: 2.6 }];
+    if (h) ss.push({ n: "High yield total", d: cut(h), c: 2 });
+    ss.push({ n: "BB", d: cut(bb), c: 0 });
+    return { freq: freqD("hy_ccc"), titulo: `El crédito CCC paga ${nf(last(ccc)[1], 2)} pp sobre el Tesoro y el BB ${nf(last(bb)[1], 2)} pp: el CCC rinde ${nf(v, 1)} veces el spread del BB (promedio de 3 años: ${nf(m, 1)} veces)`,
+      sub: "El índice high yield total hoy tiene más peso de BB, así que tarda en reflejar el estrés. El primer movimiento aparece en el CCC: si su spread sube mientras el BB no se mueve, el mercado empieza a castigar al peor crédito. Sólo 3 años de historia en FRED.",
+      unidad: "pp", dec: 2, series: ss };
   } });
 def("balanceFed", { slug: "balance-de-la-fed", nombre: "Balance de la Fed y reservas bancarias", sin: ["qt", "qe", "balance", "reservas", "liquidez", "h.4.1"],
   calc: "Activos totales de la Reserva Federal y reservas de los bancos depositadas en la Fed (Fed, H.4.1), promedio mensual de datos semanales, en billones de US$.",
   ks: ["fed_assets", "reserves", "gdp_nom"],
   f: () => {
-    const a = escala(S("fed_assets"), 1e-6), r = escala(S("reserves"), 1e-6); if (!a) return null;
+    const a = escala(SD("fed_assets"), 1e-6), r = escala(SD("reserves"), 1e-6); if (!a) return null;
     const pico = Math.max(...a.map(p => p[1])), g = S("gdp_nom");
     const pbi = g ? ` Equivale a ${nf(last(a)[1] * 1000 / last(g)[1] * 100, 0)}% del PBI.` : "";
     const ss = [{ n: "Activos totales", d: cut(a), c: 0, area: true, w: 2.6 }];
     if (r) ss.push({ n: "Reservas bancarias", d: cut(r), c: 2 });
     return { titulo: `La Fed tiene activos por US$ ${nf(last(a)[1], 2)} billones, ${nf((1 - last(a)[1] / pico) * 100, 0)}% menos que en su pico`,
       sub: "Billones de US$. Cuando la Fed achica su balance retira liquidez del sistema; las reservas bancarias muestran cuánto margen queda antes de que se tense el mercado de dinero." + pbi,
-      unidad: "billones", dec: 2, series: ss };
+      freq: freqD("fed_assets"), unidad: "billones", dec: 2, series: ss };
   } });
 
 // ═════════════════════════ Externo ═════════════════════════ ═════════════════════════
@@ -784,10 +802,11 @@ def("dolar", { slug: "dolar", nombre: "Dólar multilateral", sin: ["dxy", "tipo 
   calc: "Índice del dólar contra las monedas de los 26 principales socios comerciales, ponderadas por comercio (Fed, índice broad nominal), promedio mensual.",
   ks: ["dollar"],
   f: () => {
-    const d = S("dollar"); if (!d) return null;
-    const y = yoy(d), v = last(d)[1];
+    const d = SD("dollar"); if (!d) return null;
+    const y = yoy(S("dollar")), v = last(d)[1];
     return { titulo: `El dólar multilateral ${last(y)[1] >= 0 ? "sube" : "cae"} ${nf(Math.abs(last(y)[1]))}% interanual: percentil ${pctl(d, v)} desde 2006`,
-      sub: "Dólar contra las monedas de los 26 principales socios comerciales de EE.UU., ponderadas por comercio (índice broad de la Fed), promedio mensual. A diferencia del DXY, que pesa casi 60% el euro, incluye China, México y Canadá." + notaParcial(), unidad: "", dec: 1, series: [{ n: "Dólar multilateral", d: cut(d), c: 0 }] };
+      sub: `Dólar contra las monedas de los 26 principales socios comerciales de EE.UU., ponderadas por comercio (índice broad de la Fed), ${txtFrec("dollar")}. A diferencia del DXY, que pesa casi 60% el euro, incluye China, México y Canadá.` + notaParcial(),
+      freq: freqD("dollar"), unidad: "", dec: 1, series: [{ n: "Dólar multilateral", d: cut(d), c: 0 }] };
   } });
 def("terminos", { slug: "terminos-de-intercambio", nombre: "Términos de intercambio", sin: ["términos de intercambio", "precios de exportación", "precios de importación"],
   calc: "Índice de precios de exportación sobre índice de precios de importación (BLS), base 2000 = 100. Sube cuando lo que EE.UU. vende al mundo se encarece respecto de lo que compra.",
@@ -888,7 +907,7 @@ export const BLOQUES = {
   tasas: [["¿Qué forma tiene la curva?", [["curvaTesoro", "ancha"], ["curva"], ["pendiente"]]],
     ["¿Qué hace y qué se espera de la Fed?", [["politica"], ["descuenta"], ["balanceFed", "ancha"]]],
     ["¿Qué hay detrás de la tasa larga?", [["tasaReal"], ["primaPlazo"]]],
-    ["¿Cómo están el crédito y las condiciones financieras?", [["spreads"], ["nfci"], ["hipotecaria", "ancha"]]]],
+    ["¿Cómo están el crédito y las condiciones financieras?", [["spreads"], ["hyCalidad"], ["nfci"], ["hipotecaria"]]]],
   externo: [["¿Cuánto le compra y le vende al mundo?", [["balanza", "ancha"], ["expoImpo"], ["cuentaCorriente"]]],
     ["Precios, moneda e inversión", [["dolar"], ["terminos"], ["capexImport", "ancha"]]]],
   fiscal: [["¿Cuánto gasta, cuánto recauda y cuánto pide prestado?", [["deficit", "ancha"], ["ingresosGastos"], ["aranceles"]]],
@@ -914,6 +933,7 @@ export function armar(id, o = {}) {
 }
 
 // ═════════════════════════ Indicadores (tiles, cabeceras y tablero) ═════════════════════════
+const valorEnD = (a, t) => { let r = null; for (let i = a.length - 1; i >= 0; i--) if (a[i][0] <= t) { r = a[i][1]; break; } return r; };
 const ult_diario = plazo => { const c = ST.DATA.curva && ST.DATA.curva[plazo]; return c && c.length ? [P(c[c.length - 1][0]), c[c.length - 1][1]] : null; };
 export const IND = [
   { id: "pbi", f: "actividad", n: "PBI real", nota: "t/t anualizado", u: "%", d: 1, q: true, ks: ["gdp_growth"], g: "contribuciones", s: () => S("gdp_growth") },
@@ -934,7 +954,7 @@ export const IND = [
   { id: "pce", f: "precios", n: "PCE general", nota: "interanual", u: "%", d: 1, ks: ["pce_p"], g: "pce", s: () => yoy(S("pce_p")) },
   { id: "cpicore", f: "precios", n: "CPI core", nota: "interanual", u: "%", d: 1, ks: ["cpi_core"], g: "cpiPce", s: () => yoy(S("cpi_core")) },
   { id: "ppi", f: "precios", n: "PPI demanda final", nota: "interanual", u: "%", d: 1, ks: ["ppi_fd"], g: "ppi", s: () => yoy(S("ppi_fd")) },
-  { id: "exp5", f: "precios", n: "Inflación esperada 5y5y", nota: "mercado, largo plazo", u: "%", d: 2, ks: ["infl_exp_5y5y"], g: "expectativas", s: () => S("infl_exp_5y5y") },
+  { id: "exp5", ultD: "infl_exp_5y5y", f: "precios", n: "Inflación esperada 5y5y", nota: "mercado, largo plazo", u: "%", d: 2, ks: ["infl_exp_5y5y"], g: "expectativas", s: () => S("infl_exp_5y5y") },
   { id: "exp1", f: "precios", n: "Inflación esperada 1 año", nota: "hogares, U. de Michigan", u: "%", d: 1, ks: ["infl_exp_1y"], g: "expectativas", s: () => S("infl_exp_1y") },
   { id: "nominas", f: "empleo", n: "Nóminas", nota: "miles por mes, prom. 3m", u: "mil", d: 0, ks: ["payrolls"], g: "nominas", s: () => roll(diff(S("payrolls")), 3) },
   { id: "desempleo", f: "empleo", n: "Desempleo", nota: "% de la fuerza laboral", u: "%", d: 1, ks: ["unemployment"], g: "desempleo", s: () => S("unemployment") },
@@ -944,16 +964,16 @@ export const IND = [
   { id: "salario", f: "empleo", n: "Salario horario", nota: "interanual", u: "%", d: 1, ks: ["ahe"], g: "salarioReal", s: () => yoy(S("ahe")) },
   { id: "eci", f: "empleo", n: "ECI salarios", nota: "interanual", u: "%", d: 1, q: true, ks: ["eci"], g: "eci", s: () => yoy(S("eci"), 4) },
   { id: "pedidos", f: "empleo", n: "Pedidos de desempleo", nota: "miles, promedio 4 semanas", u: "mil", d: 0, w: true, ks: ["claims"], g: "pedidos", s: () => roll(escala(S("claims"), 1 / 1000), 4) },
-  { id: "fed", f: "tasas", n: "Fondos federales", nota: "promedio mensual", u: "%", d: 2, ks: ["fed_funds"], g: "curva", s: () => S("fed_funds") },
+  { id: "fed", f: "tasas", n: "Fondos federales", nota: "tasa efectiva, último dato", ultD: "fed_funds", u: "%", d: 2, ks: ["fed_funds"], g: "curva", s: () => S("fed_funds") },
   { id: "ust2", f: "tasas", n: "Treasury 2 años", nota: "último cierre", u: "%", d: 2, ks: ["ust2"], g: "curvaTesoro", diario: "2A", s: () => S("ust2") },
   { id: "ust10", f: "tasas", n: "Treasury 10 años", nota: "último cierre", u: "%", d: 2, ks: ["ust10"], g: "curvaTesoro", diario: "10A", s: () => S("ust10") },
-  { id: "tips", f: "tasas", n: "Tasa real 10 años", nota: "TIPS, promedio mensual", u: "%", d: 2, ks: ["tips10"], g: "tasaReal", s: () => S("tips10") },
+  { id: "tips", f: "tasas", n: "Tasa real 10 años", nota: "TIPS, último cierre", ultD: "tips10", u: "%", d: 2, ks: ["tips10"], g: "tasaReal", s: () => S("tips10") },
   { id: "curva", f: "tasas", n: "Curva 10-2", nota: "puntos básicos, último cierre", u: "pb", d: 0, ks: ["ust10"], g: "pendiente", diario: ["10A", "2A"], s: () => join(S("ust10"), S("ust2"), (a, b) => (a - b) * 100) },
-  { id: "prima", f: "tasas", n: "Prima por plazo 10 años", nota: "Kim-Wright", u: "%", d: 2, ks: ["term_premium"], g: "primaPlazo", s: () => S("term_premium") },
-  { id: "nfci", f: "tasas", n: "Condiciones financieras", nota: "NFCI, 0 = promedio", u: "", d: 2, ks: ["nfci"], g: "nfci", s: () => S("nfci") },
-  { id: "descuenta", f: "tasas", n: "2 años − Fed", nota: "pb; negativo = descuenta recortes", u: "pb", d: 0, ks: ["ust2", "fed_funds"], g: "descuenta", s: () => join(S("ust2"), S("fed_funds"), (a, b) => (a - b) * 100) },
-  { id: "baa", f: "tasas", n: "Spread corporativo Baa", nota: "pp sobre el Treasury 10 años", u: "pp", d: 2, ks: ["baa_spread"], g: "spreads", s: () => S("baa_spread") },
-  { id: "hipo", f: "tasas", n: "Hipotecaria 30 años", nota: "Freddie Mac", u: "%", d: 2, ks: ["mortgage30"], g: "hipotecaria", s: () => S("mortgage30") },
+  { id: "prima", ultD: "term_premium", f: "tasas", n: "Prima por plazo 10 años", nota: "Kim-Wright", u: "%", d: 2, ks: ["term_premium"], g: "primaPlazo", s: () => S("term_premium") },
+  { id: "nfci", f: "tasas", n: "Condiciones financieras", nota: "NFCI semanal, 0 = promedio", ultD: "nfci", u: "", d: 2, ks: ["nfci"], g: "nfci", s: () => S("nfci") },
+  { id: "descuenta", f: "tasas", n: "2 años − Fed", nota: "pb, último cierre; negativo = descuenta recortes", ultD: () => { const a = ST.D.ust2, b = ST.D.fed_funds; return a && b ? [a[a.length - 1][0], (a[a.length - 1][1] - (valorEnD(b, a[a.length - 1][0]) ?? b[b.length - 1][1])) * 100] : null; }, u: "pb", d: 0, ks: ["ust2", "fed_funds"], g: "descuenta", s: () => join(S("ust2"), S("fed_funds"), (a, b) => (a - b) * 100) },
+  { id: "baa", f: "tasas", n: "Spread corporativo Baa", nota: "pp sobre el Treasury 10 años, último cierre", ultD: "baa_spread", u: "pp", d: 2, ks: ["baa_spread"], g: "spreads", s: () => S("baa_spread") },
+  { id: "hipo", f: "tasas", n: "Hipotecaria 30 años", nota: "Freddie Mac, semanal", ultD: "mortgage30", u: "%", d: 2, ks: ["mortgage30"], g: "hipotecaria", s: () => S("mortgage30") },
   { id: "balanza", f: "externo", n: "Balanza comercial", nota: "US$ mil M por mes, prom. 3m", u: "mil M", d: 1, ks: ["trade_balance"], g: "balanza", s: () => roll(escala(S("trade_balance"), 1 / 1000), 3) },
   { id: "dolar", f: "externo", n: "Dólar multilateral", nota: "interanual", u: "%", d: 1, ks: ["dollar"], g: "dolar", s: () => yoy(S("dollar")) },
   { id: "cc", f: "externo", n: "Cuenta corriente", nota: "% del PBI", u: "%", d: 1, q: true, ks: ["current_account"], g: "cuentaCorriente", s: () => join(S("current_account"), S("gdp_nom"), (a, b) => a * 4 / 1000 / b * 100) },
@@ -988,6 +1008,11 @@ export function valorInd(ind) {
       a[a.length - 1] = [a[a.length - 1][0], v];
       fechaTxt = fw(xs[0][0]);
     }
+  }
+  if (ind.ultD && ST.T1 === Infinity && ST.D && !fechaTxt) {
+    // último dato diario o semanal en lugar del promedio del mes
+    const u = typeof ind.ultD === "function" ? ind.ultD() : (ST.D[ind.ultD] && ST.D[ind.ultD][ST.D[ind.ultD].length - 1]);
+    if (u) { a[a.length - 1] = [a[a.length - 1][0], u[1]]; fechaTxt = fw(u[0]); }
   }
   const [t, v] = last(a), p = prev(a), per = ind.q ? 1 : ind.w ? 4 : 3;
   const p3 = prev(a, per), p12 = prev(a, ind.q ? 4 : ind.w ? 52 : 12);

@@ -123,6 +123,8 @@ FRED = {
     "nfci_credit":     ("NFCICREDIT", "NFCI: subíndice de crédito", "índice", "M", "Fed de Chicago"),
     "baa_spread":      ("BAA10Y", "Spread corporativo Baa − Treasury 10 años", "%", "M", "Moody's"),
     "hy_oas":          ("BAMLH0A0HYM2", "Spread high yield (ICE BofA, sólo últimos 3 años en FRED)", "%", "M", "ICE BofA"),
+    "hy_bb":           ("BAMLH0A1HYBB", "Spread high yield BB (ICE BofA, sólo últimos 3 años en FRED)", "%", "M", "ICE BofA"),
+    "hy_ccc":          ("BAMLH0A3HYC", "Spread high yield CCC y menor (ICE BofA, sólo últimos 3 años en FRED)", "%", "M", "ICE BofA"),
     "fed_assets":      ("WALCL", "Activos totales de la Fed", "US$ millones", "M", "Fed"),
     "reserves":        ("WRESBAL", "Reservas de los bancos en la Fed", "US$ millones", "M", "Fed"),
     # Externo
@@ -148,7 +150,13 @@ SIN_PROMEDIO = {"deficit"}
 # Series de mercado: cambian todos los días, no cuentan como "novedad" de un release
 ALTA_FRECUENCIA = {"fed_funds", "ust2", "ust10", "ust30", "tips10", "breakeven10", "term_premium",
                    "mortgage30", "dollar", "infl_exp_5y5y", "spread_10y3m", "gdpnow", "nfci", "nfci_credit",
-                   "baa_spread", "hy_oas", "fed_assets", "reserves"}
+                   "baa_spread", "hy_oas", "hy_bb", "hy_ccc", "fed_assets", "reserves"}
+# Versión diaria (o semanal, tal como la publica la fuente) de las series de mercado, en docs/diarios.json.
+# La web la usa cuando el período elegido es corto; para períodos largos usa el promedio mensual.
+DIARIAS = ["fed_funds", "ust2", "ust10", "ust30", "tips10", "breakeven10", "spread_10y3m", "term_premium", "infl_exp_5y5y",
+           "baa_spread", "hy_oas", "hy_bb", "hy_ccc", "dollar", "mortgage30", "nfci", "nfci_credit", "fed_assets", "reserves"]
+DESDE_DIARIO = "2000-01-01"
+DIARIOS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "docs", "diarios.json")
 # Series que traen proyecciones a futuro (el PBI potencial de la CBO llega a 10 años): se cortan en hoy
 HASTA_HOY = {"gdp_pot"}
 # Series cuya primera publicación se guarda para mostrar revisiones
@@ -557,6 +565,38 @@ def alerta(corridas):
 
 
 # -----------------------------------------------------------------------------
+def diarios(fred_key):
+    """Baja las series de mercado sin promediar y escribe docs/diarios.json.
+
+    Formato compacto: {k: {"t0": "AAAA-MM-DD", "d": [[días desde t0, valor], ...]}}. Si una serie falla, viene vacía o
+    pierde más de 10% de su historia, se conserva la versión anterior de esa serie."""
+    try:
+        with open(DIARIOS, encoding="utf-8") as f:
+            previo = json.load(f).get("series", {})
+    except (FileNotFoundError, json.JSONDecodeError):
+        previo = {}
+    out, fallas = {}, []
+    for k in DIARIAS:
+        sid = FRED[k][0]
+        try:
+            s = fred(fred_key, sid, "D", promedio=False, desde=DESDE_DIARIO)
+            if s.empty or s.index[-1].date() > HOY + dt.timedelta(days=7):
+                raise ValueError("vacía o con fechas futuras")
+            t0 = s.index[0]
+            nueva = {"t0": t0.strftime("%Y-%m-%d"), "d": [[int((d - t0).days), round(float(v), 4)] for d, v in s.items()]}
+            if k in previo and len(nueva["d"]) < 0.9 * len(previo[k]["d"]):
+                raise ValueError(f"la historia se acortó de {len(previo[k]['d'])} a {len(nueva['d'])}")
+            out[k] = nueva
+        except Exception as e:
+            fallas.append(k)
+            print(f"  [aviso] diaria {k} ({sid}): {e}")
+            if k in previo:
+                out[k] = previo[k]
+    with open(DIARIOS, "w", encoding="utf-8") as f:
+        json.dump({"generado": AHORA, "series": out}, f, separators=(",", ":"))
+    print(f"Diarias: {len(out)} series, {os.path.getsize(DIARIOS) / 1024:,.0f} KB" + (f" · con respaldo: {', '.join(fallas)}" if fallas else ""))
+
+
 def main():
     anterior = {}
     try:
@@ -582,6 +622,10 @@ def main():
         sys.exit(f"Fallaron {len(caidas)} de {esperadas} series: problema general (key o red). No se actualiza.")
 
     data, respaldo, extremos = combinar(data, base, fallas)
+    try:
+        diarios(key(["FRED_API_KEY"], "FRED", obligatoria=True))
+    except Exception as e:
+        print(f"  [aviso] no se pudieron escribir las series diarias: {e}")
     completa = data
     data = {k: dict(v, d=[p for p in v["d"] if p[0] >= CORTE_WEB]) for k, v in completa.items()}
     if not curva or len(curva) < len(CURVA):

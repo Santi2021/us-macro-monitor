@@ -4,7 +4,7 @@ import { el, esc, nf, sg, fm, fq, fw, fd, fPor, P, css, unidadTxt, ICONOS, toast
 import { last, prev, pctl } from "./calc.js";
 import { ST, S, meta, fuente, enlaceSerie, FREC_TXT, proximoRelease, incorporado, guardarPrefs, orgDe } from "./datos.js";
 import { CAT, armar } from "./catalogo.js";
-import { opciones, leyenda, recorteShock, unirCursor, colorSerie } from "./graficos.js";
+import { opciones, leyenda, recorteShock, unirCursor, colorSerie, spVisible } from "./graficos.js";
 import { enlaceGrafico } from "./rutas.js";
 
 const VIVOS = new Set();
@@ -140,14 +140,14 @@ export function tarjeta(id, opts = {}) {
   const dibujarGrafico = () => {
     if (chart) { chart.dispose(); VIVOS.delete(chart); chart = null; }
     cuerpo.innerHTML = "";
-    ley = leyenda(sp, () => chart);
-    cuerpo.appendChild(ley.box);
     const box = el("div", { class: "chart", role: "img", "aria-label": sp.titulo });
+    ley = leyenda(sp, () => chart, () => { if (chart) chart.setOption(opciones(spVisible(sp), box.clientWidth, !!opts.grande), { notMerge: true }); });
+    cuerpo.appendChild(ley.box);
     cuerpo.appendChild(box);
     const init = () => {
       if (!box.isConnected) return;
       chart = echarts.init(box, null, { renderer: "canvas" });
-      chart.setOption(opciones(sp, box.clientWidth, !!opts.grande));
+      chart.setOption(opciones(spVisible(sp), box.clientWidth, !!opts.grande));
       VIVOS.add(chart);
       if (opts.grupo) unirCursor(opts.grupo, chart, ley, sp);
       art._chart = chart;
@@ -219,11 +219,11 @@ function menuDescargas(boton, getSp, getChart) {
   const sp = getSp();
   const pop = el("div", { class: "pop", role: "menu" });
   const items = [
-    ["PNG para X (1200 × 675)", () => exportarPNG(sp, 1200, 675, "x")],
-    ["PNG para informe (1200 × 900)", () => exportarPNG(sp, 1200, 900, "informe")],
-    ["Copiar imagen", () => copiarImagen(sp)],
+    ["PNG para X (1200 × 675)", () => exportarPNG(spVisible(sp), 1200, 675, "x")],
+    ["PNG para informe (1200 × 900)", () => exportarPNG(spVisible(sp), 1200, 900, "informe")],
+    ["Copiar imagen", () => copiarImagen(spVisible(sp))],
     null,
-    ["CSV de lo que se ve", () => csvVisible(sp)],
+    ["CSV de lo que se ve", () => csvVisible(spVisible(sp))],
     ["CSV de las series originales", () => csvOriginal(sp)],
     null,
     ["Copiar cita", async () => toast(await copiar(cita(sp)) ? "Cita copiada" : "No se pudo copiar")],

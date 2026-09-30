@@ -2,7 +2,7 @@
 import { T, P, DIA_MS, hoyUTC, fm, fq, fw, fd, nf, sg, unidadTxt, leer, guardar, horaBA } from "./util.js";
 import { last, prev, diff, pct, yoy, escala } from "./calc.js";
 
-export const VERSION = "4.2";
+export const VERSION = "4.3";
 export const ST = {
   DATA: null,
   rango: { modo: "2022", desde: null, hasta: null },
@@ -49,6 +49,28 @@ export function S(k) {
   return b.length ? b : null;
 }
 export const limpiarCache = () => cache.clear();
+
+// ───────── Series diarias (mercado) ─────────
+// Con períodos de hasta 5 años y medio los gráficos de mercado usan el dato diario; con períodos más largos, el promedio mensual.
+export async function cargarDiarios() {
+  try {
+    const r = await fetch("diarios.json", { cache: "no-cache" });
+    if (!r.ok) return;
+    const j = await r.json(), out = {};
+    for (const [k, v] of Object.entries(j.series || {})) { const t0 = P(v.t0); out[k] = v.d.map(([n, x]) => [t0 + n * DIA_MS, x]); }
+    ST.D = out;
+  } catch (e) { ST.D = null; }
+}
+export const usaDiario = () => !!ST.D && ((ST.T1 === Infinity ? Date.now() : ST.T1) - ST.T0) <= 5.5 * 365 * DIA_MS;
+// Serie de mercado: diaria si corresponde, mensual si no. Devuelve [serie, frecuencia]
+export function SD(k) {
+  if (usaDiario() && ST.D[k] && ST.D[k].length) {
+    const a = ST.D[k], b = ST.T1 === Infinity ? a : a.filter(p => p[0] <= ST.T1);
+    if (b.length) return b;
+  }
+  return S(k);
+}
+export const freqD = k => usaDiario() && ST.D && ST.D[k] ? (["mortgage30", "nfci", "nfci_credit", "fed_assets", "reserves"].includes(k) ? "W" : "D") : "M";
 export const cut = (a, desde = ST.T0) => a ? a.filter(p => p[0] >= desde) : null;
 export const meta = k => ST.DATA.series[k];
 

@@ -1,6 +1,6 @@
 // Arranque: cabecera, navegación, período, ajustes, vigía y ruteo.
 import { el, esc, $, $$, P, fm, fLargo, ICONOS, horaBA, fd, guardar, leer, toast } from "./util.js";
-import { ST, VERSION, calcularRango, guardarPrefs, releasesDiarios, vigia, limpiarCache, necesitaHistoria, cargarHistoria } from "./datos.js";
+import { ST, VERSION, calcularRango, guardarPrefs, releasesDiarios, vigia, limpiarCache, necesitaHistoria, cargarHistoria, cargarDiarios } from "./datos.js";
 import { FRENTES, CAT, porSlug } from "./catalogo.js";
 import { SECCIONES, leerRuta, construir, navegar, aplicarPeriodoDeRuta } from "./rutas.js";
 import { limpiarGraficos, abrirGrafico, abrirPanel, cerrarModal, hayModal, colocar, cerrarPops, redimensionar } from "./tarjeta.js";
@@ -214,9 +214,9 @@ matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => ST.D
 if (typeof echarts === "undefined") {
   $("#main").innerHTML = `<section class="estado"><h2>No cargó la librería de gráficos</h2><p>Recargá la página. Si sigue, el archivo vendor/echarts-5.5.1.min.js no se está publicando.</p></section>`;
 } else {
-  fetch("data.json", { cache: "no-cache" })
-    .then(r => r.ok ? r.json() : Promise.reject(new Error("HTTP " + r.status)))
-    .then(iniciar)
+  // los datos diarios se piden en paralelo; si fallan, los gráficos usan el promedio mensual
+  Promise.all([fetch("data.json", { cache: "no-cache" }).then(r => r.ok ? r.json() : Promise.reject(new Error("HTTP " + r.status))), cargarDiarios()])
+    .then(([d]) => iniciar(d))
     .catch(e => {
       console.error(e); window.__monitor.errores.push(String(e));
       $("#meta").textContent = "Sin datos todavía";

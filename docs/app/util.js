@@ -15,7 +15,7 @@ export const fq = t => { const d = new Date(t); return "Q" + (Math.floor(d.getUT
 export const fw = t => { const d = new Date(t); return `${String(d.getUTCDate()).padStart(2, "0")}-${MES[d.getUTCMonth()]}-${String(d.getUTCFullYear()).slice(2)}`; };
 export const fd = t => { const d = new Date(t); return `${DIA[d.getUTCDay()]} ${String(d.getUTCDate()).padStart(2, "0")}-${MES[d.getUTCMonth()]}`; };
 export const fLargo = t => { const d = new Date(t); return `${d.getUTCDate()} de ${MES_LARGO[d.getUTCMonth()]} de ${d.getUTCFullYear()}`; };
-export const fPor = f => f === "Q" ? fq : f === "W" ? fw : fm;
+export const fPor = f => f === "Q" ? fq : f === "W" || f === "D" ? fw : fm;
 export const hoyUTC = () => { const h = new Date(); return Date.UTC(h.getFullYear(), h.getMonth(), h.getDate()); };
 export const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 export const unidadTxt = u => u === "%" ? "%" : u ? " " + u : "";

@@ -19,7 +19,7 @@ function pasoLindo(r) { const e = Math.pow(10, Math.floor(Math.log10(r))); const
 
 // Recorta el eje cuando el shock de 2020-21 (u otro declarado por el gráfico) aplastaría la escala
 export function recorteShock(sp) {
-  if (sp.tipo || sp.yMin != null || sp.yMax != null || sp.sinRecorte || sp._rc) return;
+  if (sp.tipo || sp.yMin != null || sp.yMax != null || sp.sinRecorte || sp._rc || sp.series.some(s => s.der)) return;
   sp._rc = true;
   const [c0, c1] = sp.shock || COVID, [s0, s1] = sp.shock || COVID_SHOCK;
   const pts = sp.series.filter(s => !s.oculta).flatMap(s => s.d);
@@ -36,6 +36,27 @@ export function recorteShock(sp) {
     sp.sub += sp.shock ? " Eje recortado para que el efecto de la pandemia no aplaste la escala." : " Eje recortado en la pandemia para no aplastar la escala.";
   }
 }
+// Versión del gráfico con sólo las series que el usuario deja visibles en la leyenda: el eje se recalcula para ellas
+// (las referencias y bandas lejanas se dejan de lado) y es la que se descarga como imagen o CSV.
+export function spVisible(sp) {
+  const ocultas = sp._ocultas;
+  if (!ocultas || !ocultas.size) return sp;
+  const series = sp.series.map((s, i) => Object.assign({}, s, { c: s.c ?? (sp.tipo === "cat" && s.t === "line" ? "ink" : i % 4) })).filter(s => !ocultas.has(s.n));
+  if (!series.length) return sp;
+  if (series.every(s => s.der)) series.forEach(s => { s.der = false; });
+  const out = Object.assign({}, sp, { series, yMin: null, yMax: null, _ocultas: null });
+  if (!sp.tipo) {
+    const vals = series.filter(s => !s.der).flatMap(s => s.d.map(p => p[1])).filter(v => v != null);
+    if (vals.length) {
+      const mn = Math.min(...vals), mx = Math.max(...vals), r = (mx - mn) || Math.abs(mx) || 1;
+      const dentro = y => y >= mn - 0.25 * r && y <= mx + 0.25 * r;
+      out.refs = (sp.refs || []).filter(x => dentro(x.y));
+      if (sp.banda && !(sp.banda[1] >= mn - 0.25 * r && sp.banda[0] <= mx + 0.25 * r)) out.banda = null;
+      if (sp.cero && mn > 0.25 * r) out.cero = false;
+    }
+  }
+  return out;
+}
 const tooltipBase = () => ({ confine: true, backgroundColor: css("--surface"), borderColor: css("--line"), textStyle: { color: css("--ink"), fontSize: 13 * FS(), fontFamily: css("--font") } });
 
 function opcionesLinea(sp, ancho, grande) {
@@ -44,10 +65,12 @@ function opcionesLinea(sp, ancho, grande) {
   const fx = fPor(sp.freq);
   const vis = sp.series.filter(s => s.d.length);
   const x0 = Math.min(...vis.map(s => s.d[0][0])), x1 = Math.max(...vis.map(s => s.d[s.d.length - 1][0]));
+  // eje derecho sólo si conviven series de las dos escalas
+  const conDer = vis.some(s => s.der) && vis.some(s => !s.der);
   const series = [];
   sp.series.forEach((s, i) => {
     const c = colorSerie(sp, s, i);
-    const base = { name: s.n, data: s.d, z: 3, itemStyle: { color: c } };
+    const base = { name: s.n, data: s.d, z: 3, itemStyle: { color: c }, yAxisIndex: conDer && s.der ? 1 : 0 };
     if (s.t === "bar") { series.push(Object.assign(base, { type: "bar", stack: s.stack, barMaxWidth: 22, itemStyle: { color: c, borderRadius: [2, 2, 0, 0] } })); return; }
     series.push(Object.assign(base, {
       type: "line", stack: s.stack, showSymbol: false, symbol: "circle", symbolSize: 6,
@@ -56,7 +79,7 @@ function opcionesLinea(sp, ancho, grande) {
     }));
     if (s.fin !== false && !s.fina && s.d.length) {
       const [t, v] = s.d[s.d.length - 1];
-      series.push({ type: "scatter", name: s.n, data: [[t, s.finValor ?? v]], symbolSize: grande ? 10 : 8, z: 6, silent: true, tooltip: { show: false },
+      series.push({ type: "scatter", name: s.n, data: [[t, s.finValor ?? v]], yAxisIndex: conDer && s.der ? 1 : 0, symbolSize: grande ? 10 : 8, z: 6, silent: true, tooltip: { show: false },
         itemStyle: { color: c, borderColor: css("--surface"), borderWidth: 2 } });
     }
   });
@@ -107,13 +130,17 @@ function opcionesLinea(sp, ancho, grande) {
       axisLabel: { color: muted, fontSize: fs, hideOverlap: true, formatter: v => { const d = new Date(v); return d.getUTCMonth() === 0 ? String(d.getUTCFullYear()) : MES[d.getUTCMonth()]; } },
       splitLine: { show: false },
     },
-    yAxis: {
+    yAxis: [{
       type: sp.log ? "log" : "value", scale: !sp.cero,
       axisLabel: { color: muted, fontSize: fs, showMinLabel: sp.yMin == null || sp.yMin === 0, showMaxLabel: sp.yMax == null || sp.yMax === 100,
         formatter: v => nf(v, sp.decEje ?? (Math.abs(v) >= 100 ? 0 : dec > 0 ? 1 : 0)) + (u === "%" ? "%" : "") },
       splitLine: { lineStyle: { color: grid } },
       min: sp.yMin, max: sp.yMax,
-    },
+    }].concat(conDer ? [{
+      type: "value", scale: true, position: "right", splitLine: { show: false },
+      axisLabel: { color: colorSerie(sp, vis.find(s => s.der), sp.series.indexOf(vis.find(s => s.der))), fontSize: fs,
+        formatter: v => nf(v, sp.decEje ?? (dec > 0 ? 1 : 0)) + (u === "%" ? "%" : "") },
+    }] : []),
     series,
   };
 }
@@ -174,7 +201,7 @@ export function opciones(sp, ancho, grande) {
 }
 
 // Leyenda HTML: cada serie con su valor (el último, o el de la fecha bajo el cursor). Clic muestra u oculta.
-export function leyenda(sp, getChart) {
+export function leyenda(sp, getChart, redibujar) {
   const box = el("div", { class: "leyenda" });
   const api = { box, actualizar: () => {} };
   if (sp.tipo === "heat") return api;
@@ -190,8 +217,14 @@ export function leyenda(sp, getChart) {
     b.innerHTML = `<i class="sw ${clase}" style="color:${colorSerie(sp, s, i)}"></i><span>${esc(s.n)}${conValor ? " <b></b>" : ""}</span>`;
     b.addEventListener("click", () => {
       const ch = getChart(); if (!ch) return;
-      ch.dispatchAction({ type: "legendToggleSelect", name: s.n });
-      b.setAttribute("aria-pressed", b.getAttribute("aria-pressed") === "true" ? "false" : "true");
+      const oculta = b.getAttribute("aria-pressed") === "true";
+      if (redibujar) {
+        sp._ocultas = sp._ocultas || new Set();
+        if (oculta && sp.series.filter(x => !sp._ocultas.has(x.n)).length <= 1) return;   // siempre queda al menos una
+        oculta ? sp._ocultas.add(s.n) : sp._ocultas.delete(s.n);
+        redibujar();
+      } else ch.dispatchAction({ type: "legendToggleSelect", name: s.n });
+      b.setAttribute("aria-pressed", oculta ? "false" : "true");
     });
     box.appendChild(b);
     if (conValor) valores.push([b.querySelector("b"), s]);
