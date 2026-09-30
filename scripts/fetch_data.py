@@ -460,8 +460,9 @@ def detectar(data, anterior, respaldo):
             vistos[k] = {"obs": obs, "val": val, "det": AHORA}
             revisados.append(k)
         elif k not in ALTA_FRECUENCIA:
-            vd = viejas.get(k, {}).get("d") or []
-            if vd and vd[:-1] != v["d"][:len(vd) - 1]:
+            # revisión = algún dato ya publicado cambió de valor (se compara fecha por fecha: sumar historia no cuenta)
+            viejo = dict(tuple(p) for p in (viejas.get(k, {}).get("d") or [])[:-1])
+            if any(f in viejo and abs(viejo[f] - x) > 1e-9 for f, x in v["d"]):
                 revisados.append(k)
     return vistos, nuevos, revisados
 
