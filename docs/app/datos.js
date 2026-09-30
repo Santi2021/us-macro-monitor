@@ -18,12 +18,23 @@ export function calcularRango() {
   ST.T1 = Infinity;
   if (r.modo === "2022") ST.T0 = T(2022);
   else if (r.modo === "2000") ST.T0 = T(2000);
+  else if (r.modo === "todo") ST.T0 = T(1947);
   else if (r.modo === "manual" && r.desde) {
     const [y0, m0] = r.desde.split("-").map(Number), [y1, m1] = r.hasta.split("-").map(Number);
     ST.T0 = T(y0, m0);
     ST.T1 = T(y1, m1) >= T(y, m) ? Infinity : Date.UTC(y1, m1, 0);
   } else if (r.modo === "manual") ST.T0 = T(2022);
   else ST.T0 = T(y - Number(r.modo), m);
+}
+// La historia completa (desde 1947) vive en un archivo aparte que se carga sólo cuando el período lo pide
+export const necesitaHistoria = () => ST.T0 < Date.UTC(1999, 5, 1) && !ST.historia;
+export async function cargarHistoria() {
+  const r = await fetch("historia.json", { cache: "no-cache" });
+  if (!r.ok) throw new Error("HTTP " + r.status);
+  const h = await r.json();
+  for (const [k, d] of Object.entries(h.series || {})) if (ST.DATA.series[k] && d.length > ST.DATA.series[k].d.length) ST.DATA.series[k].d = d;
+  ST.historia = true;
+  cache.clear();
 }
 export const periodoLargo = () => ST.T0 <= (ST.ULT === Infinity ? Date.now() : ST.ULT) - 9.5 * 365 * DIA_MS;
 
@@ -71,6 +82,9 @@ export const RELEASES_ES = {
   "GDPNow": "GDPNow",
   "Sahm Rule Recession Indicator": "Regla de Sahm",
   "Debt to Gross Domestic Product Ratios": "Deuda pública / PBI",
+  "Employment Cost Index": "Índice de costo laboral (ECI)",
+  "G.19 Consumer Credit": "Crédito al consumo",
+  "Charge-Off and Delinquency Rates on Loans and Leases at Commercial Banks": "Morosidad bancaria",
 };
 // Organismo, hora de Nueva York e importancia (3 alta, 2 media, 1 baja)
 const RELEASE_INFO = [
@@ -80,7 +94,8 @@ const RELEASE_INFO = [
   [/Weekly Claims/, "Dpto. de Trabajo", "8:30", 2], [/Surveys of Consumers/, "U. de Michigan", "10:00", 2],
   [/G\.17/, "Fed", "9:15", 2], [/Residential Construction/, "Census", "8:30", 2], [/\(M3\)/, "Census", "10:00", 2],
   [/International Trade/, "BEA y Census", "8:30", 2], [/Producer Price/, "BLS", "8:30", 2], [/Monthly Treasury/, "Tesoro", "14:00", 1],
-  [/Sahm/, "Fed de St. Louis", "", 1],
+  [/Sahm/, "Fed de St. Louis", "", 1], [/Employment Cost/, "BLS", "8:30", 2], [/Consumer Credit/, "Fed", "15:00", 1],
+  [/Charge-Off/, "Fed", "", 1],
 ];
 const FUERA_DE_AGENDA = /H\.10|Primary Mortgage|Arbitrage-Free|H\.15|Interest Rate Spreads|GDPNow|Recession|Business Cycle|Treasury Inflation|Selected Interest|Financial Conditions/;
 export const nombreRelease = n => RELEASES_ES[n] || n;
@@ -198,6 +213,9 @@ export function resultadoRelease(nombre) {
     else if (/Producer Price/.test(nombre)) addSerie("PPI bienes de capital m/m", "ppi_capital", pct(S("ppi_capital")), 1, "%", true);
     else if (/Monthly Treasury/.test(nombre)) addSerie("Resultado del mes", "deficit", escala(S("deficit"), 1 / 1000), 0, "mil M");
     else if (/Sahm/.test(nombre)) addSerie("Sahm", "sahm", S("sahm"), 2, "pp");
+    else if (/Employment Cost/.test(nombre)) addSerie("ECI a/a", "eci", yoy(S("eci"), 4), 1);
+    else if (/Consumer Credit/.test(nombre)) addSerie("Crédito a/a", "consumer_credit", yoy(S("consumer_credit")), 1);
+    else if (/Charge-Off/.test(nombre)) addSerie("Morosidad tarjetas", "delinq_cards", S("delinq_cards"), 2);
   } catch (e) { console.warn(e); }
   return r;
 }

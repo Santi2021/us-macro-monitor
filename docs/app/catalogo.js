@@ -197,6 +197,26 @@ def("ahorro", { slug: "tasa-de-ahorro", nombre: "Tasa de ahorro", sin: ["saving 
     const pos = rn ? (v < rn[0] ? "debajo de" : v > rn[1] ? "encima de" : "dentro de") : "respecto de";
     return { titulo: `Tasa de ahorro en ${nf(v)}%: ${pos} su rango normal`, sub: "% del ingreso disponible.", banda: rn, series: [{ n: "Tasa de ahorro", d: cut(s), c: 2 }] };
   } });
+def("credito", { slug: "credito-al-consumo", nombre: "Crédito al consumo", sin: ["consumer credit", "tarjetas", "préstamos", "g.19"], ops: [VISTA_M, REAL("cpi")],
+  calc: "Crédito al consumo total en circulación (Fed, G.19): tarjetas, préstamos para autos y estudiantiles, sin hipotecas. En vista real se deflacta por el CPI general.",
+  ks: ["consumer_credit", "cpi"],
+  f: o => {
+    const a = real(S("consumer_credit"), o, "cpi"); if (!a) return null;
+    const v = vista(a, o.vista);
+    return { titulo: `El crédito al consumo ${last(v)[1] >= 0 ? "crece" : "cae"} ${nf(Math.abs(last(v)[1]), decV(o))}% ${VT[o.vista]}${o.real === "r" ? " en términos reales" : ""}`,
+      sub: "Stock de crédito al consumo sin hipotecas. Si crece más que el ingreso, parte del consumo se financia con deuda.", dec: decV(o),
+      series: seriesVista([["Crédito al consumo", a, 3]], o), refs: [{ y: 0 }] };
+  } });
+def("morosidad", { slug: "morosidad-de-tarjetas", nombre: "Morosidad de tarjetas de crédito", sin: ["delinquency", "mora", "tarjetas", "default"],
+  calc: "Tasa de morosidad de los préstamos de tarjetas de crédito de los bancos comerciales, desestacionalizada (Fed), % de los préstamos.",
+  ks: ["delinq_cards"],
+  f: () => {
+    const m = S("delinq_cards"); if (!m) return null;
+    const v = last(m)[1], rn = rangoNormal(m);
+    return { freq: "Q", titulo: `La morosidad de tarjetas está en ${nf(v, 2)}%: ${rn ? (v > rn[1] ? "por encima de" : v < rn[0] ? "por debajo de" : "dentro de") : "respecto de"} su rango normal`,
+      sub: "Préstamos de tarjetas con más de 30 días de atraso, % del total. Es la primera señal de que el consumidor se estira más de lo que puede pagar.",
+      dec: 2, banda: rn, series: [{ n: "Morosidad de tarjetas", d: cut(m), c: 1 }] };
+  } });
 def("consumoTipo", { slug: "consumo-por-tipo", nombre: "Consumo real por tipo de gasto", sin: ["durables", "servicios", "bienes"],
   calc: "Consumo real de servicios, no durables y durables (BEA), índice diciembre 2019 = 100.",
   ks: ["pce_serv", "pce_ndur", "pce_dur"],
@@ -322,6 +342,16 @@ def("cpiPce", { slug: "cpi-vs-pce", nombre: "CPI core vs PCE core", sin: ["cpi",
       sub: "El CPI pondera más la vivienda; la Fed apunta al PCE. El CPI mensual es el dato que mira el mercado el día del release.", dec: decV(o),
       series: seriesVista([["PCE core", b, 0, { w: 2.8 }], ["CPI core", a, 1]], o), refs: [metaRef(o)] };
   } });
+def("vivienda", { slug: "cpi-vivienda", nombre: "CPI vivienda vs CPI core", sin: ["shelter", "alquileres", "vivienda", "oer"], ops: [VISTA_M],
+  calc: "Componente de vivienda del CPI (alquileres y alquiler equivalente de los propietarios, BLS) contra el CPI core.",
+  ks: ["cpi_shelter", "cpi_core"],
+  f: o => {
+    const v = S("cpi_shelter"), c = S("cpi_core"); if (!v || !c) return null;
+    const vv = vista(v, o.vista), vc = vista(c, o.vista);
+    return { titulo: `Vivienda ${nf(last(vv)[1], decV(o))}% vs CPI core ${nf(last(vc)[1], decV(o))}% ${VT[o.vista]}`,
+      sub: "La vivienda pesa cerca del 40% del CPI core y se mueve con un año de rezago respecto de los alquileres de mercado.", dec: decV(o),
+      series: seriesVista([["CPI vivienda", v, 1, { w: 2.8 }], ["CPI core", c, 0]], o), refs: [metaRef(o)] };
+  } });
 def("expectativas", { slug: "expectativas-de-inflacion", nombre: "Expectativas de inflación", sin: ["breakeven", "5y5y", "michigan", "anclaje"],
   calc: "Inflación esperada a 1 año por los hogares (U. de Michigan), 5 años dentro de 5 años implícita en bonos (Fed de St. Louis) y breakeven a 10 años.",
   ks: ["infl_exp_1y", "infl_exp_5y5y", "breakeven10"],
@@ -410,6 +440,16 @@ def("salarioReal", { slug: "salario-real", nombre: "Salario horario y salario re
     return { titulo: `Los salarios suben ${nf(last(vw)[1], decV(o))}% ${VT[o.vista]}: ${sg(last(vw)[1] - last(join(vw, vc, (a, b) => b))[1], decV(o))} pp contra el CPI`,
       sub: "Salario horario promedio del sector privado contra la inflación que enfrenta el trabajador (CPI general).", dec: decV(o),
       series: seriesVista([["Salario horario", w, 0, { w: 2.8 }], ["CPI general", c, 1]], o), refs: [{ y: 0 }] };
+  } });
+def("eci", { slug: "costo-laboral-eci", nombre: "Índice de costo laboral (ECI) vs salario horario", sin: ["eci", "salarios", "costo laboral"], ops: [VISTA_Q],
+  calc: "Índice de costo laboral, salarios del sector privado (BLS, trimestral), contra el salario horario promedio llevado a trimestre. El ECI mantiene fija la composición del empleo.",
+  ks: ["eci", "ahe"],
+  f: o => {
+    const e = S("eci"), w = toQ(S("ahe")); if (!e || !w) return null;
+    const ve = vista(e, o.vista, "Q"), vw = join(vista(w, o.vista, "Q"), ve, a => a);
+    return { freq: "Q", titulo: `Los salarios medidos por el ECI suben ${nf(last(ve)[1])}% ${VT[o.vista]}`,
+      sub: "El ECI no cambia cuando cambia la composición del empleo (por ejemplo, si se pierden puestos de bajo salario): es la medida de salarios que mira la Fed.",
+      series: [{ n: "ECI salarios", d: cut(ve), c: 0, w: 2.8 }, { n: "Salario horario promedio", d: cut(vw), c: 1 }], refs: [{ y: 3.5, l: "Compatible con 2% de inflación (≈3,5%)" }] };
   } });
 def("epop", { slug: "empleo-25-54", nombre: "Empleo 25-54 y participación", sin: ["epop", "participación", "prime age"],
   calc: "Proporción de la población de 25 a 54 años con empleo y tasa de participación de toda la población (BLS).",
@@ -533,6 +573,18 @@ def("hipotecaria", { slug: "spread-hipotecario", nombre: "Tasa hipotecaria y spr
       sub: rn ? `El spread normal 2000-19 va de ${nf(rn[0], 1)} a ${nf(rn[1], 1)} pp: por encima, el crédito hipotecario está caro respecto de los bonos.` : "Spread entre la tasa hipotecaria y el Treasury a 10 años.",
       unidad: "pp", dec: 2, banda: rn, series: [{ n: "Spread hipotecaria − Treasury 10 años", d: cut(sp), c: 1 }] };
   } });
+def("nfci", { slug: "condiciones-financieras", nombre: "Condiciones financieras (NFCI)", sin: ["nfci", "condiciones financieras", "spreads", "crédito", "chicago fed"],
+  calc: "Índice nacional de condiciones financieras de la Fed de Chicago y su subíndice de crédito, promedio mensual. Cero es el promedio histórico; positivo, más restrictivo; negativo, más laxo.",
+  ks: ["nfci", "nfci_credit"],
+  f: () => {
+    const n = S("nfci"), c = S("nfci_credit"); if (!n) return null;
+    const v = last(n)[1];
+    const ss = [{ n: "NFCI", d: cut(n), c: 0, w: 2.6, dec: 2 }];
+    if (c) ss.push({ n: "Subíndice de crédito", d: cut(c), c: 1, dec: 2 });
+    return { titulo: `Condiciones financieras ${v < 0 ? "más laxas" : "más restrictivas"} que el promedio: NFCI en ${nf(v, 2)}`,
+      sub: "Resume más de 100 indicadores de riesgo, crédito y apalancamiento. Por encima de cero, el sistema financiero frena a la economía; por debajo, la empuja." + notaParcial(),
+      unidad: "", dec: 2, series: ss, refs: [{ y: 0, l: "Promedio histórico (0)" }] };
+  } });
 def("nominalTasa", { slug: "pbi-nominal-vs-tasa", nombre: "PBI nominal vs tasa a 10 años", sin: ["r vs g", "sostenibilidad de la deuda"],
   calc: "Variación interanual del PBI nominal (BEA) contra el Treasury a 10 años promedio del trimestre.",
   ks: ["gdp_nom", "ust10"],
@@ -632,17 +684,18 @@ export const BLOQUES = {
   actividad: [["¿Cuánto crece y qué lo empuja?", [["contribuciones", "ancha"], ["gdpnow"], ["demandaPrivada"]]],
     ["¿Qué dicen los datos mensuales?", [["industria"], ["ventas"], ["ordenes"], ["viviendas"]]],
     ["¿Dónde está el ciclo de inversión y ganancias?", [["capex"], ["ganancias"], ["pbiGdi", "ancha"]]]],
-  consumidor: [["¿Cuánto aguanta el consumo?", [["colchon", "ancha"], ["ingresoConsumo"], ["ahorro"]]],
+  consumidor: [["¿Cuánto aguanta el consumo?", [["colchon", "ancha"], ["ingresoConsumo"], ["ahorro"], ["credito"], ["morosidad"]]],
     ["¿Qué consume y de dónde sale el ingreso?", [["consumoTipo"], ["motores"], ["sentimiento", "ancha"]]]],
   precios: [["¿Dónde está la inflación y hacia dónde va?", [["pce"], ["momentum"]]],
     ["¿Es amplia o concentrada?", [["heat", "ancha alta"], ["difusion"], ["serviciosBienes"]]],
-    ["Componentes y otras medidas", [["componentes"], ["energia"], ["cpiPce"], ["expectativas"]]]],
+    ["Componentes y otras medidas", [["cpiPce"], ["vivienda"], ["componentes"], ["energia"], ["expectativas", "ancha"]]]],
   empleo: [["¿Cuánto empleo se crea?", [["nominas", "ancha"], ["desempleo"], ["sahm"]]],
-    ["¿Qué tan ajustado está el mercado?", [["tension"], ["renuncias"], ["salarioReal"], ["epop"]]],
+    ["¿Qué tan ajustado está el mercado?", [["tension"], ["renuncias"], ["salarioReal"], ["eci"], ["epop", "ancha"]]],
     ["Señales de alta frecuencia", [["pedidos"], ["continuos"]]]],
   tasas: [["¿Qué forma tiene la curva?", [["curvaTesoro", "ancha"], ["curva"], ["pendiente"]]],
     ["¿Qué hay detrás de la tasa larga?", [["tasaReal"], ["primaPlazo"]]],
-    ["¿Qué tan restrictiva es la política?", [["politica"], ["hipotecaria"], ["nominalTasa", "ancha"]]]],
+    ["¿Qué tan restrictiva es la política?", [["politica"], ["hipotecaria"], ["nominalTasa", "ancha"]]],
+    ["¿Cómo están las condiciones financieras?", [["nfci", "ancha"]]]],
   externo: [["Sector externo", [["balanza", "ancha"], ["capexImport"], ["dolar"], ["terminos", "ancha"]]],
     ["Cuentas fiscales", [["deficit"], ["intereses"], ["deuda", "ancha"]]]],
 };
@@ -678,6 +731,7 @@ export const IND = [
   { id: "consumo", f: "consumidor", n: "Consumo real", nota: "interanual", u: "%", d: 1, ks: ["pce_real"], g: "consumoTipo", s: () => yoy(S("pce_real")) },
   { id: "ingreso", f: "consumidor", n: "Ingreso disponible real", nota: "interanual", u: "%", d: 1, ks: ["dpi_real"], g: "ingresoConsumo", s: () => yoy(S("dpi_real")) },
   { id: "ahorro", f: "consumidor", n: "Tasa de ahorro", nota: "% del ingreso disponible", u: "%", d: 1, ks: ["saving_rate"], g: "ahorro", s: () => S("saving_rate") },
+  { id: "morosidad", f: "consumidor", n: "Morosidad de tarjetas", nota: "% de los préstamos", u: "%", d: 2, q: true, ks: ["delinq_cards"], g: "morosidad", s: () => S("delinq_cards") },
   { id: "confianza", f: "consumidor", n: "Confianza del consumidor", nota: "índice U. de Michigan", u: "", d: 1, ks: ["sentiment"], g: "sentimiento", s: () => S("sentiment") },
   { id: "core", f: "precios", n: "Core PCE", nota: "interanual", u: "%", d: 1, ks: ["pce_core"], g: "pce", s: () => yoy(S("pce_core")) },
   { id: "core3", f: "precios", n: "Core PCE, 3 meses", nota: "anualizado", u: "%", d: 1, ks: ["pce_core"], g: "momentum", s: () => ann(S("pce_core"), 3) },
@@ -690,6 +744,7 @@ export const IND = [
   { id: "sahm", f: "empleo", n: "Regla de Sahm", nota: "umbral de recesión 0,5", u: "pp", d: 2, ks: ["sahm"], g: "sahm", s: () => S("sahm") },
   { id: "tension", f: "empleo", n: "Vacantes por desocupado", nota: "JOLTS / desocupados", u: "", d: 2, ks: ["openings", "unemployed"], g: "tension", s: () => join(S("openings"), S("unemployed"), (a, b) => a / b) },
   { id: "salario", f: "empleo", n: "Salario horario", nota: "interanual", u: "%", d: 1, ks: ["ahe"], g: "salarioReal", s: () => yoy(S("ahe")) },
+  { id: "eci", f: "empleo", n: "ECI salarios", nota: "interanual", u: "%", d: 1, q: true, ks: ["eci"], g: "eci", s: () => yoy(S("eci"), 4) },
   { id: "pedidos", f: "empleo", n: "Pedidos de desempleo", nota: "miles, promedio 4 semanas", u: "mil", d: 0, w: true, ks: ["claims"], g: "pedidos", s: () => roll(escala(S("claims"), 1 / 1000), 4) },
   { id: "fed", f: "tasas", n: "Fondos federales", nota: "promedio mensual", u: "%", d: 2, ks: ["fed_funds"], g: "curva", s: () => S("fed_funds") },
   { id: "ust2", f: "tasas", n: "Treasury 2 años", nota: "último cierre", u: "%", d: 2, ks: ["ust2"], g: "curvaTesoro", diario: "2A", s: () => S("ust2") },
@@ -697,6 +752,7 @@ export const IND = [
   { id: "tips", f: "tasas", n: "Tasa real 10 años", nota: "TIPS, promedio mensual", u: "%", d: 2, ks: ["tips10"], g: "tasaReal", s: () => S("tips10") },
   { id: "curva", f: "tasas", n: "Curva 10-2", nota: "puntos básicos, último cierre", u: "pb", d: 0, ks: ["ust10"], g: "pendiente", diario: ["10A", "2A"], s: () => join(S("ust10"), S("ust2"), (a, b) => (a - b) * 100) },
   { id: "prima", f: "tasas", n: "Prima por plazo 10 años", nota: "Kim-Wright", u: "%", d: 2, ks: ["term_premium"], g: "primaPlazo", s: () => S("term_premium") },
+  { id: "nfci", f: "tasas", n: "Condiciones financieras", nota: "NFCI, 0 = promedio", u: "", d: 2, ks: ["nfci"], g: "nfci", s: () => S("nfci") },
   { id: "hipo", f: "tasas", n: "Hipotecaria 30 años", nota: "Freddie Mac", u: "%", d: 2, ks: ["mortgage30"], g: "hipotecaria", s: () => S("mortgage30") },
   { id: "balanza", f: "externo", n: "Balanza comercial", nota: "US$ mil M por mes, prom. 3m", u: "mil M", d: 1, ks: ["trade_balance"], g: "balanza", s: () => roll(escala(S("trade_balance"), 1 / 1000), 3) },
   { id: "dolar", f: "externo", n: "Dólar amplio", nota: "interanual", u: "%", d: 1, ks: ["dollar"], g: "dolar", s: () => yoy(S("dollar")) },
@@ -708,10 +764,10 @@ export const INDX = Object.fromEntries(IND.map(i => [i.id, i]));
 export const RESUMEN_TILES = ["pbi", "gdpnow", "core", "cpicore", "desempleo", "nominas", "sahm", "ahorro", "fed", "ust10", "tips", "curva"];
 export const CABECERA_TILES = {
   actividad: ["pbi", "gdpnow", "demanda", "indpro", "retail", "ordenes"],
-  consumidor: ["consumo", "ingreso", "ahorro", "confianza"],
+  consumidor: ["consumo", "ingreso", "ahorro", "morosidad", "confianza"],
   precios: ["core", "core3", "cpicore", "exp5", "exp1"],
   empleo: ["nominas", "desempleo", "sahm", "tension", "salario", "pedidos"],
-  tasas: ["fed", "ust2", "ust10", "tips", "curva", "prima"],
+  tasas: ["fed", "ust2", "ust10", "tips", "curva", "nfci"],
   externo: ["balanza", "dolar", "deficit", "intereses", "deuda"],
 };
 export function valorInd(ind) {

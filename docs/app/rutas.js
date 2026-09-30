@@ -32,7 +32,7 @@ export function aplicarPeriodoDeRuta(q) {
   const p = q.periodo;
   if (!p) return false;
   if (/^\d{4}-\d{2}_\d{4}-\d{2}$/.test(p)) { const [d, h] = p.split("_"); ST.rango = { modo: "manual", desde: d, hasta: h }; return true; }
-  if (["2022", "5", "10", "2000"].includes(p)) { ST.rango = { modo: p, desde: null, hasta: null }; return true; }
+  if (["2022", "5", "10", "2000", "todo"].includes(p)) { ST.rango = { modo: p, desde: null, hasta: null }; return true; }
   return false;
 }
 export function construir(sec, sub, extra = {}) {

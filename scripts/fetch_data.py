@@ -16,10 +16,13 @@ Además escribe, para el workflow:
 import os, sys, json, time, math, datetime as dt
 import requests, pandas as pd
 
-DESDE = 2000
+DESDE = 1947              # historia completa: cada serie desde su inicio (la mayoría 1947-1960)
+CORTE_WEB = "1998-01-01"  # data.json lleva desde acá; historia.json lleva todo y se carga sólo para períodos largos
+DESDE_BEA = 1999
 HOY = dt.date.today()
 AHORA = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%MZ")
 SALIDA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "docs", "data.json")
+HISTORIA = os.path.join(os.path.dirname(SALIDA), "historia.json")
 PAUSA_FRED = 0.55          # FRED admite ~120 consultas por minuto
 MAX_CORRIDAS = 30
 
@@ -70,6 +73,8 @@ FRED = {
     "comp":            ("W209RC1", "Remuneración a asalariados", "US$ miles de M", "M", "BEA"),
     "transfers":       ("PCTR", "Transferencias del gobierno", "US$ miles de M", "M", "BEA"),
     "sentiment":       ("UMCSENT", "Confianza del consumidor", "índice", "M", "U. de Michigan"),
+    "consumer_credit": ("TOTALSL", "Crédito al consumo", "US$ miles de M", "M", "Fed"),
+    "delinq_cards":    ("DRCCLACBS", "Morosidad de tarjetas de crédito (bancos)", "%", "Q", "Fed"),
     # Precios
     "pce_p":           ("PCEPI", "PCE general", "índice", "M", "BEA"),
     "pce_core":        ("PCEPILFE", "PCE core", "índice", "M", "BEA"),
@@ -86,6 +91,7 @@ FRED = {
     "cont_claims":     ("CCSA", "Pedidos continuos de desempleo", "personas", "W", "Dpto. de Trabajo"),
     "sahm":            ("SAHMREALTIME", "Indicador de Sahm en tiempo real", "pp", "M", "Fed de St. Louis"),
     "unemployed":      ("UNEMPLOY", "Desocupados", "miles", "M", "BLS"),
+    "eci":             ("ECIWAG", "Índice de costo laboral: salarios, sector privado", "índice", "Q", "BLS"),
     # Tasas y mercados (promedio mensual)
     "fed_funds":       ("DFF", "Tasa de fondos federales", "%", "M", "Fed"),
     "ust2":            ("DGS2", "Treasury 2 años", "%", "M", "Tesoro"),
@@ -97,6 +103,8 @@ FRED = {
     "spread_10y3m":    ("T10Y3M", "Treasury 10 años menos letra 3 meses", "%", "M", "Fed de St. Louis"),
     "mortgage30":      ("MORTGAGE30US", "Tasa hipotecaria 30 años", "%", "M", "Freddie Mac"),
     "dollar":          ("DTWEXBGS", "Dólar amplio", "índice", "M", "Fed"),
+    "nfci":            ("NFCI", "Índice de condiciones financieras (NFCI)", "índice", "M", "Fed de Chicago"),
+    "nfci_credit":     ("NFCICREDIT", "NFCI: subíndice de crédito", "índice", "M", "Fed de Chicago"),
     # Externo
     "trade_balance":   ("BOPGSTB", "Balanza comercial de bienes y servicios", "US$ millones", "M", "BEA y Census"),
     "imp_capital":     ("A650RC1Q027SBEA", "Importaciones de bienes de capital (sin autos)", "US$ miles de M", "Q", "BEA"),
@@ -112,7 +120,7 @@ FRED = {
 SIN_PROMEDIO = {"deficit"}
 # Series de mercado: cambian todos los días, no cuentan como "novedad" de un release
 ALTA_FRECUENCIA = {"fed_funds", "ust2", "ust10", "ust30", "tips10", "breakeven10", "term_premium",
-                   "mortgage30", "dollar", "infl_exp_5y5y", "spread_10y3m", "gdpnow"}
+                   "mortgage30", "dollar", "infl_exp_5y5y", "spread_10y3m", "gdpnow", "nfci", "nfci_credit"}
 # Series cuya primera publicación se guarda para mostrar revisiones
 CLAVES_REVISION = {"payrolls", "gdp_growth", "retail", "pce_core", "pce_p", "cpi_core", "cpi", "openings",
                    "indpro", "housing_starts", "core_orders", "dpi_real", "pce_real", "trade_balance", "ahe"}
@@ -131,6 +139,7 @@ BLS = {
     "quits":        ("JTS000000000000000QUR", "JTSQUR", "Tasa de renuncias (JOLTS)", "%"),
     "cpi":          ("CUSR0000SA0", "CPIAUCSL", "CPI general", "índice"),
     "cpi_core":     ("CUSR0000SA0L1E", "CPILFESL", "CPI core", "índice"),
+    "cpi_shelter":  ("CUSR0000SAH1", "CUSR0000SAH1", "CPI vivienda", "índice"),
 }
 
 # BEA: rubros del PCE core, tabla NIPA 2.8.4 (mensual)
@@ -176,7 +185,7 @@ def get(url, **params):
 
 
 def fred(key_, sid, freq, promedio=True, desde=None):
-    p = dict(series_id=sid, api_key=key_, file_type="json", observation_start=desde or f"{DESDE - 1}-01-01")
+    p = dict(series_id=sid, api_key=key_, file_type="json", observation_start=desde or f"{DESDE}-01-01")
     if freq == "M" and promedio:
         p.update(frequency="m", aggregation_method="avg")
     obs = get("https://api.stlouisfed.org/fred/series/observations", **p)["observations"]
@@ -195,7 +204,7 @@ def fred_release(key_, sid):
 
 def bls(key_, ids):
     out = {i: {} for i in ids}
-    ventanas = [(a, min(a + 19, HOY.year)) for a in range(DESDE - 1, HOY.year + 1, 20)]
+    ventanas = [(a, min(a + 19, HOY.year)) for a in range(DESDE, HOY.year + 1, 20)]
     for a0, a1 in ventanas:
         body = {"seriesid": ids, "startyear": str(a0), "endyear": str(a1), "registrationkey": key_}
         r = requests.post("https://api.bls.gov/publicAPI/v2/timeseries/data/", json=body, timeout=90)
@@ -217,7 +226,7 @@ def bls(key_, ids):
 
 
 def bea_t20804(key_):
-    anios = ",".join(str(a) for a in range(DESDE - 1, HOY.year + 1))
+    anios = ",".join(str(a) for a in range(DESDE_BEA, HOY.year + 1))
     j = get("https://apps.bea.gov/api/data", UserID=key_, method="GetData", datasetname="NIPA",
             TableName="T20804", Frequency="M", Year=anios, ResultFormat="JSON")
     res = j["BEAAPI"]["Results"]
@@ -516,6 +525,15 @@ def main():
     except (FileNotFoundError, json.JSONDecodeError):
         pass
 
+    # la historia completa de la corrida anterior es la base para validar y para el respaldo
+    try:
+        with open(HISTORIA, encoding="utf-8") as f:
+            hist = json.load(f).get("series", {})
+    except (FileNotFoundError, json.JSONDecodeError):
+        hist = {}
+    base = dict(anterior)
+    base["series"] = {k: dict(v, d=hist.get(k) or v["d"]) for k, v in anterior.get("series", {}).items()}
+
     data, releases, curva, calendario, fallas = bajar(anterior)
 
     esperadas = len(FRED) + len(BLS)
@@ -523,7 +541,9 @@ def main():
     if len(caidas) > esperadas / 2:
         sys.exit(f"Fallaron {len(caidas)} de {esperadas} series: problema general (key o red). No se actualiza.")
 
-    data, respaldo, extremos = combinar(data, anterior, fallas)
+    data, respaldo, extremos = combinar(data, base, fallas)
+    completa = data
+    data = {k: dict(v, d=[p for p in v["d"] if p[0] >= CORTE_WEB]) for k, v in completa.items()}
     if not curva or len(curva) < len(CURVA):
         curva = anterior.get("curva", curva)
     vistos, nuevos, revisados = detectar(data, anterior, respaldo)
@@ -556,7 +576,7 @@ def main():
 
     sin_cambios = (anterior.get("series") == json.loads(json.dumps(data)) and anterior.get("calendario") == calendario
                    and anterior.get("curva") == curva and anterior.get("respaldo", {}) == respaldo
-                   and anterior.get("fallas", {}) == fallas and "vistos" in anterior)
+                   and anterior.get("fallas", {}) == fallas and "vistos" in anterior and os.path.exists(HISTORIA))
     if sin_cambios:
         print("Sin datos nuevos.")
         return
@@ -567,8 +587,11 @@ def main():
                "vistos": vistos, "primeras": primeras, "gdpnow_hist": gdpnow_hist, "novedades": novedades, "corridas": corridas, "avisos": avisos}
     with open(SALIDA, "w", encoding="utf-8") as f:
         json.dump(paquete, f, ensure_ascii=False, separators=(",", ":"))
+    with open(HISTORIA, "w", encoding="utf-8") as f:
+        json.dump({"generado": AHORA, "series": {k: v["d"] for k, v in completa.items()}}, f, ensure_ascii=False, separators=(",", ":"))
 
     n_cat = sum(1 for k in data if k.startswith("cat:"))
+    print(f"Historia completa: {os.path.getsize(HISTORIA) / 1024:,.0f} KB")
     print(f"\nListo: {len(data)} series ({n_cat} rubros del core) · {len(calendario)} fechas de calendario · "
           f"{len(nuevos)} datos nuevos · {len(revisados)} revisados · {os.path.getsize(SALIDA) / 1024:,.0f} KB")
     print("Fallas:", fallas or "ninguna")

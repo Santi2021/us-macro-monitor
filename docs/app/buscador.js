@@ -17,7 +17,7 @@ function indice() {
     ["Tema oscuro", () => acciones.tema("oscuro"), "apariencia"], ["Tema claro", () => acciones.tema("claro"), "apariencia"], ["Tema automático", () => acciones.tema("auto"), "apariencia"],
     ["Letra grande", () => acciones.letra("grande"), "legibilidad"], ["Letra normal", () => acciones.letra("normal"), "legibilidad"],
     ["Período: desde 2022", () => acciones.periodo("2022"), "período"], ["Período: 5 años", () => acciones.periodo("5"), "período"],
-    ["Período: 10 años", () => acciones.periodo("10"), "período"], ["Período: desde 2000", () => acciones.periodo("2000"), "período"],
+    ["Período: 10 años", () => acciones.periodo("10"), "período"], ["Período: desde 2000", () => acciones.periodo("2000"), "período"], ["Período: toda la historia", () => acciones.periodo("todo"), "período desde 1947"],
     ["Bajar el tablero en CSV", () => { navegar("tablero"); setTimeout(() => document.querySelector(".filtros .btn")?.click(), 400); }, "tablero"],
     ["Estado de los datos", () => navegar("metodologia", "series"), "metodología"], ["Glosario", () => navegar("metodologia", "glosario"), "metodología"],
     ["Atajos de teclado", () => ayuda(), "ayuda"],

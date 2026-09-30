@@ -1,6 +1,6 @@
 // Arranque: cabecera, navegación, período, ajustes, vigía y ruteo.
 import { el, esc, $, $$, P, fm, fLargo, ICONOS, horaBA, fd, guardar, leer, toast } from "./util.js";
-import { ST, VERSION, calcularRango, guardarPrefs, releasesDiarios, vigia, limpiarCache } from "./datos.js";
+import { ST, VERSION, calcularRango, guardarPrefs, releasesDiarios, vigia, limpiarCache, necesitaHistoria, cargarHistoria } from "./datos.js";
 import { FRENTES, CAT, porSlug } from "./catalogo.js";
 import { SECCIONES, leerRuta, construir, navegar, aplicarPeriodoDeRuta } from "./rutas.js";
 import { limpiarGraficos, abrirGrafico, abrirPanel, cerrarModal, hayModal, colocar, cerrarPops, redimensionar } from "./tarjeta.js";
@@ -13,7 +13,7 @@ window.__monitor = { listo: false, errores: [], rutas: SECCIONES.filter(s => s[0
 window.addEventListener("error", e => window.__monitor.errores.push(String(e.message)));
 window.addEventListener("unhandledrejection", e => window.__monitor.errores.push(String(e.reason)));
 
-let SEC = "portada";
+let SEC = "portada", reabrir = null;
 
 // ───────── Apariencia ─────────
 function aplicarApariencia() {
@@ -38,11 +38,11 @@ function cabecera() {
     <div class="herr">
       <button type="button" class="buscar-btn" id="b-buscar" aria-label="Buscar (Ctrl+K)">${ICONOS.buscar}<span>Buscar</span><kbd>Ctrl K</kbd></button>
       <div class="periodo"><div class="seg" role="group" aria-label="Período" id="rango">
-        <button type="button" data-r="2022">Desde 2022</button><button type="button" data-r="5">5 años</button><button type="button" data-r="10">10 años</button><button type="button" data-r="2000">Desde 2000</button><button type="button" data-r="manual" aria-expanded="false">Elegir fechas</button></div></div>
+        <button type="button" data-r="2022">Desde 2022</button><button type="button" data-r="5">5 años</button><button type="button" data-r="10">10 años</button><button type="button" data-r="2000">Desde 2000</button><button type="button" data-r="todo" title="Cada serie desde su inicio (desde 1947)">Todo</button><button type="button" data-r="manual" aria-expanded="false">Elegir fechas</button></div></div>
       <button type="button" class="icono-btn" id="b-ajustes" aria-label="Ajustes" aria-haspopup="menu">${ICONOS.ajustes}</button>
       <form class="manual" id="manual" hidden>
-        <label>Desde <input type="month" id="m-desde" min="2000-01" required></label>
-        <label>Hasta <input type="month" id="m-hasta" min="2000-01" required></label>
+        <label>Desde <input type="month" id="m-desde" min="1947-01" required></label>
+        <label>Hasta <input type="month" id="m-hasta" min="1947-01" required></label>
         <button type="submit">Aplicar</button></form>
     </div>`;
   $("#b-buscar").addEventListener("click", abrirBuscador);
@@ -129,8 +129,19 @@ function navegacion() {
 }
 
 // ───────── Render ─────────
+let cargandoHistoria = false;
 function render() {
   cerrarPops();
+  calcularRango();
+  if (necesitaHistoria()) {
+    if (!cargandoHistoria) {
+      cargandoHistoria = true;
+      $("#main").innerHTML = `<p class="vacio-txt" style="margin-top:32px">Cargando la historia completa (desde 1947)…</p>`;
+      cargarHistoria().then(() => { cargandoHistoria = false; render(); if (reabrir) { const f = reabrir; reabrir = null; f(); } })
+        .catch(e => { cargandoHistoria = false; ST.historia = true; toast("No se pudo cargar la historia completa; se muestra desde 1998"); window.__monitor.errores.push("historia: " + e); render(); });
+    }
+    return;
+  }
   limpiarGraficos(); limpiarGrupos(); limpiarCache();
   calcularRango(); marcarRango(); actualizarMeta(); navegacion();
   estadoPrueba.graficos = 0; estadoPrueba.vacios = 0;
@@ -165,7 +176,7 @@ function alCambiarRuta() {
     const c = porSlug(r.sub);
     if (c) {
       const o = {}; for (const op of c.ops || []) if (r.q[op.id]) o[op.id] = r.q[op.id];
-      abrirGrafico(c.id, { o });
+      if (cargandoHistoria) reabrir = () => abrirGrafico(c.id, { o }); else abrirGrafico(c.id, { o });
     }
   }
 }
