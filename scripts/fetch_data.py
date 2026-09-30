@@ -1,19 +1,27 @@
-"""US Macro Monitor: baja FRED, BEA y BLS y escribe docs/data.json.
+"""US Macro Monitor: baja FRED, BEA y BLS, valida y escribe docs/data.json.
 
 Lo corre GitHub Actions de lunes a viernes (.github/workflows/update.yml).
 Keys como secretos del repo: FRED_API_KEY (obligatoria), BEA_API_KEY, BLS_API_KEY.
 Correrlo local: FRED_API_KEY=... BEA_API_KEY=... python scripts/fetch_data.py
 
-Además de las series, arma:
-  - calendario: próximos releases de las series del monitor (fuente: calendario de FRED)
-  - novedades:  qué serie sumó un dato nuevo y cuándo se detectó (comparando con el archivo anterior)
+Pasos de cada corrida:
+  1. bajar      FRED (series y curva diaria), BLS, BEA y el calendario oficial de FRED
+  2. validar    cada serie contra su versión anterior (reglas en `validar`)
+  3. combinar   lo que falló o no pasó la validación se reemplaza por la última versión buena (respaldo)
+  4. escribir   data.json con el registro de la corrida, lo detectado como nuevo y las primeras publicaciones
+
+Además escribe, para el workflow:
+  - $ALERTA_ARCHIVO (si está definida): resumen en markdown cuando hay que avisar (dos corridas seguidas con problemas)
 """
-import os, sys, json, time, datetime as dt
+import os, sys, json, time, math, datetime as dt
 import requests, pandas as pd
 
 DESDE = 2000
 HOY = dt.date.today()
+AHORA = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%MZ")
 SALIDA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "docs", "data.json")
+PAUSA_FRED = 0.55          # FRED admite ~120 consultas por minuto
+MAX_CORRIDAS = 30
 
 
 def key(nombres, etiqueta, obligatoria=False):
@@ -26,13 +34,9 @@ def key(nombres, etiqueta, obligatoria=False):
     return ""
 
 
-FRED_KEY = key(["FRED_API_KEY"], "FRED", obligatoria=True)
-BEA_KEY = key(["BEA_API_KEY"], "BEA")
-BLS_KEY = key(["BLS_API_KEY"], "BLS")
-
 # -----------------------------------------------------------------------------
 # Catálogo FRED: clave -> (id, nombre, unidad, frecuencia, organismo que produce el dato)
-#   Frecuencia M: diarias y semanales se promedian a mensual; la deuda y el déficit mensual se usan tal cual.
+#   Frecuencia M: diarias y semanales se promedian a mensual. W: semanal tal cual.
 # -----------------------------------------------------------------------------
 FRED = {
     # Actividad
@@ -53,6 +57,7 @@ FRED = {
     "retail":          ("RSAFS", "Ventas minoristas", "US$ millones", "M", "Census"),
     "core_orders":     ("NEWORDER", "Órdenes de bienes de capital sin defensa ni aviones", "US$ millones", "M", "Census"),
     "housing_starts":  ("HOUST", "Inicios de viviendas", "miles, tasa anual", "M", "Census"),
+    "permits":         ("PERMIT", "Permisos de construcción", "miles, tasa anual", "M", "Census"),
     "gdpnow":          ("GDPNOW", "GDPNow: estimación en tiempo real del PBI del trimestre", "%", "Q", "Fed de Atlanta"),
     # Consumidor
     "dpi_real":        ("DSPIC96", "Ingreso disponible real", "US$ miles de M de 2017", "M", "BEA"),
@@ -73,11 +78,12 @@ FRED = {
     "pce_goods":       ("DGDSRG3M086SBEA", "PCE bienes", "índice", "M", "BEA"),
     "pce_services":    ("DSERRG3M086SBEA", "PCE servicios", "índice", "M", "BEA"),
     "pce_supercore":   ("IA001260M", "PCE servicios sin energía ni vivienda", "índice", "M", "BEA"),
+    "ppi_capital":     ("WPSFD41312", "PPI bienes de capital", "índice", "M", "BLS"),
     "infl_exp_1y":     ("MICH", "Inflación esperada a 1 año (encuesta)", "%", "M", "U. de Michigan"),
     "infl_exp_5y5y":   ("T5YIFR", "Inflación esperada 5 años dentro de 5 (mercado)", "%", "M", "Fed de St. Louis"),
     # Empleo (sólo FRED)
-    "claims":          ("ICSA", "Pedidos iniciales de desempleo", "personas", "M", "Dpto. de Trabajo"),
-    "cont_claims":     ("CCSA", "Pedidos continuos de desempleo", "personas", "M", "Dpto. de Trabajo"),
+    "claims":          ("ICSA", "Pedidos iniciales de desempleo", "personas", "W", "Dpto. de Trabajo"),
+    "cont_claims":     ("CCSA", "Pedidos continuos de desempleo", "personas", "W", "Dpto. de Trabajo"),
     "sahm":            ("SAHMREALTIME", "Indicador de Sahm en tiempo real", "pp", "M", "Fed de St. Louis"),
     "unemployed":      ("UNEMPLOY", "Desocupados", "miles", "M", "BLS"),
     # Tasas y mercados (promedio mensual)
@@ -97,15 +103,20 @@ FRED = {
     # Fiscal
     "deficit":         ("MTSDS133FMS", "Resultado fiscal federal mensual", "US$ millones", "M", "Tesoro"),
     "interest_fed":    ("A091RC1Q027SBEA", "Intereses pagados por el gobierno federal", "US$ miles de M", "Q", "BEA"),
-    "debt_gdp":        ("GFDEGDQ188S", "Deuda pública federal / PBI", "%", "Q", "Tesoro y Fed de St. Louis"),
+    "debt_gdp":        ("GFDEGDQ188S", "Deuda pública federal total / PBI", "%", "Q", "Tesoro y Fed de St. Louis"),
+    "debt_public":     ("FYGFGDQ188S", "Deuda federal en manos del público / PBI", "%", "Q", "Tesoro y Fed de St. Louis"),
+    # Ciclo
+    "usrec":           ("USREC", "Recesión según el NBER (1 = sí)", "0/1", "M", "NBER"),
 }
-# Series cuyo promedio mensual no tiene sentido (flujos o niveles puntuales ya mensuales)
+# Series cuyo promedio mensual no tiene sentido (flujos ya mensuales)
 SIN_PROMEDIO = {"deficit"}
-# Series de mercado o semanales: cambian todos los días, no cuentan como "novedad" de un release
+# Series de mercado: cambian todos los días, no cuentan como "novedad" de un release
 ALTA_FRECUENCIA = {"fed_funds", "ust2", "ust10", "ust30", "tips10", "breakeven10", "term_premium",
-                   "mortgage30", "dollar", "infl_exp_5y5y", "claims", "cont_claims", "spread_10y3m", "gdpnow"}
+                   "mortgage30", "dollar", "infl_exp_5y5y", "spread_10y3m", "gdpnow"}
+# Series cuya primera publicación se guarda para mostrar revisiones
+CLAVES_REVISION = {"payrolls", "gdp_growth", "retail", "pce_core", "pce_p", "cpi_core", "cpi", "openings",
+                   "indpro", "housing_starts", "core_orders", "dpi_real", "pce_real", "trade_balance", "ahe"}
 
-# Curva del Tesoro completa, diaria (últimos 13 meses), para comparar la forma de la curva en el tiempo
 CURVA = [("1M", "DGS1MO"), ("3M", "DGS3MO"), ("6M", "DGS6MO"), ("1A", "DGS1"), ("2A", "DGS2"), ("3A", "DGS3"),
          ("5A", "DGS5"), ("7A", "DGS7"), ("10A", "DGS10"), ("20A", "DGS20"), ("30A", "DGS30")]
 
@@ -141,44 +152,52 @@ BEA_CAT = {
 
 
 # -----------------------------------------------------------------------------
+# 1. Bajar
+# -----------------------------------------------------------------------------
 def get(url, **params):
-    for intento in range(3):
+    """GET con reintentos. Respeta el ritmo de FRED y la pausa que pide BEA al bloquear."""
+    for intento in range(4):
         try:
+            if "stlouisfed.org" in url:
+                time.sleep(PAUSA_FRED)
             r = requests.get(url, params=params, timeout=60)
             if r.status_code == 429:
-                time.sleep(5 * (intento + 1)); continue
+                espera = int(r.headers.get("Retry-After", 0) or 0) or 20 * (intento + 1)
+                print(f"  [espera] {url.split('/')[2]} pidió pausa de {espera}s")
+                time.sleep(min(espera, 90)); continue
+            if r.status_code >= 500:
+                raise requests.HTTPError(f"{r.status_code}")
             r.raise_for_status()
             return r.json()
-        except requests.RequestException:
-            if intento == 2:
+        except (requests.RequestException, ValueError):
+            if intento == 3:
                 raise
-            time.sleep(3)
+            time.sleep(4 * (intento + 1))
 
 
-def fred(sid, freq, promedio=True):
-    p = dict(series_id=sid, api_key=FRED_KEY, file_type="json", observation_start=f"{DESDE - 1}-01-01")
+def fred(key_, sid, freq, promedio=True, desde=None):
+    p = dict(series_id=sid, api_key=key_, file_type="json", observation_start=desde or f"{DESDE - 1}-01-01")
     if freq == "M" and promedio:
         p.update(frequency="m", aggregation_method="avg")
     obs = get("https://api.stlouisfed.org/fred/series/observations", **p)["observations"]
     return pd.Series({pd.Timestamp(o["date"]): float(o["value"])
-                      for o in obs if o["value"] not in (".", "")}).sort_index()
+                      for o in obs if o["value"] not in (".", "")}, dtype=float).sort_index()
 
 
-def fred_release(sid):
+def fred_release(key_, sid):
     """Release (id, nombre) de FRED al que pertenece una serie, para armar el calendario."""
     try:
-        j = get("https://api.stlouisfed.org/fred/series/release", series_id=sid, api_key=FRED_KEY, file_type="json")
-        r = j.get("releases", [])
+        r = get("https://api.stlouisfed.org/fred/series/release", series_id=sid, api_key=key_, file_type="json").get("releases", [])
         return (r[0]["id"], r[0]["name"]) if r else None
     except Exception:
         return None
 
 
-def bls(ids):
+def bls(key_, ids):
     out = {i: {} for i in ids}
     ventanas = [(a, min(a + 19, HOY.year)) for a in range(DESDE - 1, HOY.year + 1, 20)]
     for a0, a1 in ventanas:
-        body = {"seriesid": ids, "startyear": str(a0), "endyear": str(a1), "registrationkey": BLS_KEY}
+        body = {"seriesid": ids, "startyear": str(a0), "endyear": str(a1), "registrationkey": key_}
         r = requests.post("https://api.bls.gov/publicAPI/v2/timeseries/data/", json=body, timeout=90)
         r.raise_for_status()
         j = r.json()
@@ -194,12 +213,12 @@ def bls(ids):
                     continue
                 out[s["seriesID"]][pd.Timestamp(f"{o['year']}-{o['period'][1:]}-01")] = v
         time.sleep(0.5)
-    return {i: pd.Series(d).sort_index() for i, d in out.items() if d}
+    return {i: pd.Series(d, dtype=float).sort_index() for i, d in out.items() if d}
 
 
-def bea_t20804():
+def bea_t20804(key_):
     anios = ",".join(str(a) for a in range(DESDE - 1, HOY.year + 1))
-    j = get("https://apps.bea.gov/api/data", UserID=BEA_KEY, method="GetData", datasetname="NIPA",
+    j = get("https://apps.bea.gov/api/data", UserID=key_, method="GetData", datasetname="NIPA",
             TableName="T20804", Frequency="M", Year=anios, ResultFormat="JSON")
     res = j["BEAAPI"]["Results"]
     res = res[0] if isinstance(res, list) else res
@@ -217,10 +236,11 @@ def bea_t20804():
     out = {}
     for lab, eng in BEA_CAT.items():
         col = cols.get(eng.lower()) or next((cols[c] for c in cols if c.startswith(eng.lower())), None)
-        if col is None:
-            print(f"  [aviso] rubro no encontrado en T20804: {eng}")
-            continue
-        out[lab] = ancho[col].dropna()
+        if col is not None:
+            out[lab] = ancho[col].dropna()
+    if len(out) < len(BEA_CAT):
+        faltan = sorted(set(BEA_CAT) - set(out))
+        raise RuntimeError(f"rubros no encontrados en T20804: {faltan}")
     return out
 
 
@@ -230,117 +250,330 @@ def empaquetar(s, nombre, unidad, freq, fuente, codigo, org, grupo=None, release
             "rel": release, "d": [[d.strftime("%Y-%m-%d"), round(float(v), 4)] for d, v in s.items()]}
 
 
-# -----------------------------------------------------------------------------
-data, faltan, releases = {}, [], {}
+def bajar(anterior):
+    """Devuelve (data, releases, curva, calendario, fallas). Nunca corta por una falla individual."""
+    fred_key = key(["FRED_API_KEY"], "FRED", obligatoria=True)
+    bea_key = key(["BEA_API_KEY"], "BEA")
+    bls_key = key(["BLS_API_KEY"], "BLS")
+    data, releases, fallas = {}, {}, {}
+    rel_previo = {k: v.get("rel") for k, v in anterior.get("series", {}).items()}
 
-print("FRED…")
-for k, (sid, nombre, unidad, freq, org) in FRED.items():
-    try:
-        rel = fred_release(sid)
-        data[k] = empaquetar(fred(sid, freq, k not in SIN_PROMEDIO), nombre, unidad, freq, "FRED", sid, org,
-                             release=rel[0] if rel else None)
+    print("FRED…")
+    for k, (sid, nombre, unidad, freq, org) in FRED.items():
+        try:
+            rel = fred_release(fred_key, sid)
+            s = fred(fred_key, sid, freq, k not in SIN_PROMEDIO)
+            rid = rel[0] if rel else rel_previo.get(k)
+            data[k] = empaquetar(s, nombre, unidad, freq, "FRED", sid, org, release=rid)
+            if rel:
+                releases[rel[0]] = rel[1]
+        except Exception as e:
+            fallas[k] = f"no se pudo bajar ({str(e)[:80]})"; print(f"  [aviso] {k} ({sid}): {e}")
+
+    print("BLS…")
+    series_bls = {}
+    if bls_key:
+        try:
+            series_bls = bls(bls_key, [v[0] for v in BLS.values()])
+        except Exception as e:
+            print(f"  [aviso] BLS: {e} → uso FRED")
+    for k, (bid, fid, nombre, unidad) in BLS.items():
+        rel = fred_release(fred_key, fid)
         if rel:
             releases[rel[0]] = rel[1]
-    except Exception as e:
-        faltan.append(k); print(f"  [aviso] {k} ({sid}): {e}")
+        rid = rel[0] if rel else rel_previo.get(k)
+        try:
+            if bid in series_bls:
+                data[k] = empaquetar(series_bls[bid], nombre, unidad, "M", "BLS", bid, "BLS", release=rid)
+            else:
+                data[k] = empaquetar(fred(fred_key, fid, "M"), nombre, unidad, "M", "FRED", fid, "BLS", release=rid)
+        except Exception as e:
+            fallas[k] = f"no se pudo bajar ({str(e)[:80]})"; print(f"  [aviso] {k}: {e}")
 
-print("BLS…")
-series_bls = {}
-if BLS_KEY:
-    try:
-        series_bls = bls([v[0] for v in BLS.values()])
-    except Exception as e:
-        print(f"  [aviso] BLS: {e} → uso FRED")
-for k, (bid, fid, nombre, unidad) in BLS.items():
-    rel = fred_release(fid)
-    if rel:
-        releases[rel[0]] = rel[1]
-    try:
-        if bid in series_bls:
-            data[k] = empaquetar(series_bls[bid], nombre, unidad, "M", "BLS", bid, "BLS", release=rel[0] if rel else None)
-        else:
-            data[k] = empaquetar(fred(fid, "M"), nombre, unidad, "M", "FRED", fid, "BLS", release=rel[0] if rel else None)
-    except Exception as e:
-        faltan.append(k); print(f"  [aviso] {k}: {e}")
-
-print("BEA…")
-if BEA_KEY:
+    print("BEA…")
     rel_pio = data.get("pce_core", {}).get("rel")
-    try:
-        for lab, s in bea_t20804().items():
-            data["cat:" + lab] = empaquetar(s, lab, "índice", "M", "BEA", "T20804", "BEA", "pce_rubros", rel_pio)
-    except Exception as e:
-        print(f"  [aviso] BEA T20804: {e}")
+    if bea_key:
+        try:
+            for lab, s in bea_t20804(bea_key).items():
+                data["cat:" + lab] = empaquetar(s, lab, "índice", "M", "BEA", "T20804", "BEA", "pce_rubros", rel_pio)
+        except Exception as e:
+            fallas["bea_rubros"] = f"no se pudo bajar la tabla 2.8.4 de BEA ({str(e)[:80]})"; print(f"  [aviso] BEA T20804: {e}")
+    else:
+        fallas["bea_rubros"] = "falta la key de BEA"
 
-print("Curva del Tesoro…")
-curva = {}
-for plazo, sid in CURVA:
-    try:
-        obs = get("https://api.stlouisfed.org/fred/series/observations", series_id=sid, api_key=FRED_KEY,
-                  file_type="json", observation_start=(HOY - dt.timedelta(days=400)).isoformat())["observations"]
-        curva[plazo] = [[o["date"], float(o["value"])] for o in obs if o["value"] not in (".", "")]
-    except Exception as e:
-        print(f"  [aviso] curva {plazo} ({sid}): {e}")
+    print("Curva del Tesoro…")
+    curva = {}
+    for plazo, sid in CURVA:
+        try:
+            obs = get("https://api.stlouisfed.org/fred/series/observations", series_id=sid, api_key=fred_key,
+                      file_type="json", observation_start=(HOY - dt.timedelta(days=400)).isoformat())["observations"]
+            curva[plazo] = [[o["date"], float(o["value"])] for o in obs if o["value"] not in (".", "")]
+        except Exception as e:
+            print(f"  [aviso] curva {plazo} ({sid}): {e}")
+    if len(curva) < len(CURVA):
+        fallas["curva"] = f"faltan plazos de la curva: {sorted(set(p for p, _ in CURVA) - set(curva))}"
 
-print("Calendario…")
-# Fechas de publicación de cada release (pasadas recientes y próximas), consultadas release por release
-calendario = []
-for rid, nombre in sorted(releases.items()):
-    try:
-        j = get("https://api.stlouisfed.org/fred/release/dates", release_id=rid, api_key=FRED_KEY, file_type="json",
-                realtime_start=(HOY - dt.timedelta(days=45)).isoformat(),
-                realtime_end=(HOY + dt.timedelta(days=90)).isoformat(),
-                include_release_dates_with_no_data="true", limit=200, sort_order="asc")
-    except Exception as e:
-        print(f"  [aviso] calendario {rid} {nombre}: {e}")
-        continue
-    series = sorted(k for k, v in data.items() if v.get("rel") == rid and not k.startswith("cat:"))
-    for f in sorted({r["date"] for r in j.get("release_dates", [])}):
-        calendario.append({"fecha": f, "rid": rid, "nombre": nombre, "series": series})
-    time.sleep(0.15)
-calendario.sort(key=lambda c: (c["fecha"], c["nombre"]))
+    print("Calendario…")
+    calendario, fallidos = [], []
+    nombres = dict(releases)
+    for r in anterior.get("calendario", []):
+        nombres.setdefault(r["rid"], r["nombre"])
+    for rid, nombre in sorted(nombres.items()):
+        try:
+            j = get("https://api.stlouisfed.org/fred/release/dates", release_id=rid, api_key=fred_key, file_type="json",
+                    realtime_start=(HOY - dt.timedelta(days=60)).isoformat(),
+                    realtime_end=(HOY + dt.timedelta(days=100)).isoformat(),
+                    include_release_dates_with_no_data="true", limit=200, sort_order="asc")
+            fechas = sorted({r["date"] for r in j.get("release_dates", [])})
+        except Exception as e:
+            print(f"  [aviso] calendario {rid} {nombre}: {e}")
+            fallidos.append(nombre)
+            fechas = sorted({c["fecha"] for c in anterior.get("calendario", []) if c["rid"] == rid})
+        series = sorted(k for k, v in data.items() if v.get("rel") == rid and not k.startswith("cat:"))
+        if not series:
+            continue
+        for f in fechas:
+            calendario.append({"fecha": f, "rid": rid, "nombre": nombre, "series": series})
+    calendario.sort(key=lambda c: (c["fecha"], c["nombre"]))
+    if fallidos:
+        fallas["calendario"] = f"se usó el calendario anterior para: {', '.join(fallidos)}"
+    return data, releases, curva, calendario, fallas
+
 
 # -----------------------------------------------------------------------------
-if len(faltan) > (len(FRED) + len(BLS)) / 4:
-    sys.exit(f"Demasiadas series fallaron ({len(faltan)}): {faltan}. No se actualiza.")
+# 2. Validar
+# -----------------------------------------------------------------------------
+def validar(k, nueva, vieja):
+    """Devuelve None si la serie nueva es aceptable, o el motivo del rechazo.
 
-anterior = {}
-try:
-    with open(SALIDA, encoding="utf-8") as f:
-        anterior = json.load(f)
-except (FileNotFoundError, json.JSONDecodeError):
-    pass
+    Reglas (se comparan contra la última versión buena, así que las revisiones normales pasan):
+      - vacía o con todos los valores iguales a cero
+      - fechas en el futuro
+      - la historia se acorta más de 10% o el inicio se corre más de un año
+      - el último valor salta más de 8 desvíos de los cambios históricos Y queda fuera del rango
+        histórico ampliado en la mitad de su amplitud (las dos condiciones a la vez). Si pasa en tres o más
+        series a la vez se acepta: es un shock real, no un error (ver `combinar`)
+    """
+    d = nueva["d"]
+    if not d:
+        return "vino vacía"
+    vals = [v for _, v in d]
+    if all(v == 0 for v in vals):
+        return "todos los valores son cero"
+    limite = (HOY + dt.timedelta(days=7)).isoformat()
+    if nueva["f"] in ("M", "Q") and d[-1][0] > HOY.isoformat() and k != "gdpnow":
+        return f"trae una fecha futura ({d[-1][0]})"
+    if nueva["f"] == "W" and d[-1][0] > limite:
+        return f"trae una fecha futura ({d[-1][0]})"
+    if vieja and vieja.get("d"):
+        vd = vieja["d"]
+        if len(d) < 0.9 * len(vd):
+            return f"la historia se acortó de {len(vd)} a {len(d)} datos"
+        if d[0][0] > vd[0][0] and (pd.Timestamp(d[0][0]) - pd.Timestamp(vd[0][0])).days > 370:
+            return f"el inicio se corrió de {vd[0][0]} a {d[0][0]}"
+    if len(vals) > 24 and k not in ("usrec",):
+        cambios = [b - a for a, b in zip(vals[:-2], vals[1:-1])]
+        media = sum(cambios) / len(cambios)
+        desvio = math.sqrt(sum((c - media) ** 2 for c in cambios) / len(cambios)) or 1e-9
+        salto = abs(vals[-1] - vals[-2] - media) / desvio
+        lo, hi = min(vals[:-1]), max(vals[:-1])
+        amplitud = (hi - lo) or abs(hi) or 1
+        fuera = vals[-1] < lo - 0.5 * amplitud or vals[-1] > hi + 0.5 * amplitud
+        if salto > 8 and fuera:
+            return f"último valor fuera de rango ({vals[-1]:,.2f}; salto de {salto:.0f} desvíos)"
+    return None
 
-# Novedades: series con una observación nueva (o revisada) respecto del archivo anterior
-ahora = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%MZ")
-novedades = list(anterior.get("novedades", []))
-viejas = anterior.get("series", {})
-for k, v in data.items():
-    if not v["d"] or k in ALTA_FRECUENCIA:
-        continue
-    ult = v["d"][-1]
-    prev = viejas.get(k, {}).get("d")
-    if not prev:
-        continue  # primera vez que aparece: no es una novedad del dato
-    if prev[-1][0] != ult[0]:
-        novedades.append({"k": k, "obs": ult[0], "det": ahora, "tipo": "nuevo"})
-    elif prev[:-1] != v["d"][:len(prev) - 1]:
-        # cambió la historia (revisión); si sólo cambia el último punto es el promedio del mes en curso
-        novedades.append({"k": k, "obs": ult[0], "det": ahora, "tipo": "revisión"})
-novedades = novedades[-150:]
 
-if (anterior.get("series") == json.loads(json.dumps(data)) and anterior.get("calendario") == calendario
-        and anterior.get("curva") == curva and anterior.get("faltan") == faltan):
-    print("Sin datos nuevos.")
-    sys.exit(0)
+# -----------------------------------------------------------------------------
+# 3. Combinar
+# -----------------------------------------------------------------------------
+def combinar(data, anterior, fallas):
+    """Reemplaza lo que falló o no pasó la validación por la última versión buena. Devuelve (data, respaldo, extremos).
 
-paquete = {"generado": ahora, "faltan": faltan, "series": data, "calendario": calendario, "novedades": novedades, "curva": curva,
-           "releases": {str(k): v for k, v in releases.items()}}
-with open(SALIDA, "w", encoding="utf-8") as f:
-    json.dump(paquete, f, ensure_ascii=False, separators=(",", ":"))
+    Un valor extremo aislado se rechaza (lo típico es un error de la fuente o un cambio de unidad). Si tres o más
+    series traen valores extremos en la misma corrida, se aceptan todos: es un shock real, como abril de 2020.
+    """
+    viejas = anterior.get("series", {})
+    motivos = {k: validar(k, data[k], viejas.get(k)) for k in data}
+    extremos = [k for k, m in motivos.items() if m and "fuera de rango" in m]
+    if len(extremos) >= 3:
+        print(f"  [shock] {len(extremos)} series con valores extremos a la vez: se aceptan ({', '.join(extremos)})")
+        for k in extremos:
+            motivos[k] = None
+    else:
+        extremos = []
+    respaldo = {}
+    for k, motivo in motivos.items():
+        if not motivo:
+            continue
+        print(f"  [rechazo] {k}: {motivo}")
+        if viejas.get(k):
+            data[k] = viejas[k]; respaldo[k] = f"rechazada: {motivo}; se muestra la versión anterior"
+        else:
+            del data[k]; respaldo[k] = f"rechazada: {motivo}; sin versión anterior"
+    esperadas = set(FRED) | set(BLS) | {k for k in viejas if k.startswith("cat:")}
+    for k in sorted(esperadas - set(data)):
+        if viejas.get(k):
+            data[k] = viejas[k]
+            respaldo.setdefault(k, (fallas.get(k) or fallas.get("bea_rubros") or "no se pudo bajar") + "; se muestra la versión anterior")
+    return data, respaldo, extremos
 
-n_cat = sum(1 for k in data if k.startswith("cat:"))
-tam = os.path.getsize(SALIDA) / 1024
-print(f"\nListo: {len(data)} series ({n_cat} rubros del core) · {len(calendario)} releases en calendario · "
-      f"{sum(1 for n in novedades if n['det'] == ahora)} novedades · {tam:,.0f} KB")
-print("Faltan:", faltan or "ninguna")
+
+# -----------------------------------------------------------------------------
+# 4. Registro: lo detectado como nuevo, primeras publicaciones, corridas y avisos
+# -----------------------------------------------------------------------------
+def detectar(data, anterior, respaldo):
+    """vistos[k] = {obs, val, det}: última observación y cuándo se detectó por primera vez (o cambió su valor).
+
+    Es lo que usa la web para decir que un release está "Publicado": no la hora, sino que el dato entró.
+    """
+    vistos = dict(anterior.get("vistos", {}))
+    nuevos, revisados = [], []
+    viejas = anterior.get("series", {})
+    for k, v in data.items():
+        if not v["d"] or k in respaldo:
+            continue
+        obs, val = v["d"][-1]
+        prev = vistos.get(k)
+        if prev is None:
+            # primera vez que corre con este registro: se toma lo que había en el archivo anterior como línea de base
+            vd = viejas.get(k, {}).get("d")
+            base = vd[-1] if vd else [obs, val]
+            vistos[k] = {"obs": obs, "val": val, "det": anterior.get("generado", AHORA) if base == [obs, val] else AHORA}
+            if base != [obs, val] and k not in ALTA_FRECUENCIA:
+                nuevos.append(k)
+            continue
+        if obs != prev["obs"]:
+            vistos[k] = {"obs": obs, "val": val, "det": AHORA}
+            if k not in ALTA_FRECUENCIA:
+                nuevos.append(k)
+        elif abs(val - prev["val"]) > 1e-9 and k not in ALTA_FRECUENCIA:
+            vistos[k] = {"obs": obs, "val": val, "det": AHORA}
+            revisados.append(k)
+        elif k not in ALTA_FRECUENCIA:
+            vd = viejas.get(k, {}).get("d") or []
+            if vd and vd[:-1] != v["d"][:len(vd) - 1]:
+                revisados.append(k)
+    return vistos, nuevos, revisados
+
+
+def primeras_publicaciones(data, anterior, respaldo):
+    """primeras[k][obs] = [valor de obs-2, obs-1, obs] tal como estaban cuando obs apareció por primera vez.
+
+    Con eso se calcula la primera publicación de un cambio mensual (nóminas) y su revisión posterior.
+    """
+    prim = {k: dict(v) for k, v in anterior.get("primeras", {}).items()}
+    for k in CLAVES_REVISION:
+        v = data.get(k)
+        if not v or len(v["d"]) < 3 or k in respaldo:
+            continue
+        reg = prim.setdefault(k, {})
+        obs = v["d"][-1][0]
+        if obs not in reg:
+            reg[obs] = [x[1] for x in v["d"][-3:]]
+        for o in sorted(reg)[:-8]:
+            del reg[o]
+    return prim
+
+
+def avisos_nuevos(anterior, revisados, respaldo):
+    avisos = [a for a in anterior.get("avisos", [])
+              if (dt.datetime.now(dt.timezone.utc) - dt.datetime.strptime(a["det"], "%Y-%m-%dT%H:%MZ").replace(tzinfo=dt.timezone.utc)).days < 7]
+    por_org = {}
+    for k in revisados:
+        if k.startswith("cat:"):
+            continue
+        por_org.setdefault(FRED.get(k, (None, None, None, None, "BLS"))[4], []).append(k)
+    for org, ks in por_org.items():
+        if len(ks) >= 5:
+            avisos.append({"det": AHORA, "tipo": "revision",
+                           "texto": f"{org} revisó la historia de {len(ks)} series en esta actualización; los gráficos ya la incorporan."})
+    if len(respaldo) >= 5:
+        avisos.append({"det": AHORA, "tipo": "respaldo",
+                       "texto": f"{len(respaldo)} series se muestran con su versión anterior porque la fuente no respondió o envió datos inválidos."})
+    return avisos[-10:]
+
+
+def alerta(corridas):
+    """Texto para el issue si las dos últimas corridas tuvieron problemas; vacío si no."""
+    if len(corridas) < 2:
+        return ""
+    a, b = corridas[-2], corridas[-1]
+    if (a["respaldo"] or a["fallas"]) and (b["respaldo"] or b["fallas"]):
+        filas = [f"- **{k}**: {m}" for k, m in {**b["fallas"], **b["respaldo"]}.items()]
+        return ("Las dos últimas actualizaciones tuvieron problemas. La web sigue mostrando la última versión buena "
+                "de cada serie afectada.\n\n" + "\n".join(filas) +
+                f"\n\nÚltima corrida: {b['ts']}. Este aviso se cierra solo cuando una actualización sale limpia.")
+    return ""
+
+
+# -----------------------------------------------------------------------------
+def main():
+    anterior = {}
+    try:
+        with open(SALIDA, encoding="utf-8") as f:
+            anterior = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        pass
+
+    data, releases, curva, calendario, fallas = bajar(anterior)
+
+    esperadas = len(FRED) + len(BLS)
+    caidas = [k for k in fallas if k in FRED or k in BLS]
+    if len(caidas) > esperadas / 2:
+        sys.exit(f"Fallaron {len(caidas)} de {esperadas} series: problema general (key o red). No se actualiza.")
+
+    data, respaldo, extremos = combinar(data, anterior, fallas)
+    if not curva or len(curva) < len(CURVA):
+        curva = anterior.get("curva", curva)
+    vistos, nuevos, revisados = detectar(data, anterior, respaldo)
+    primeras = primeras_publicaciones(data, anterior, respaldo)
+
+    # Novedades (compatibilidad con la web v3)
+    novedades = list(anterior.get("novedades", []))
+    novedades += [{"k": k, "obs": data[k]["d"][-1][0], "det": AHORA, "tipo": "nuevo"} for k in nuevos]
+    novedades += [{"k": k, "obs": data[k]["d"][-1][0], "det": AHORA, "tipo": "revisión"} for k in revisados]
+    novedades = novedades[-200:]
+
+    # Evolución de GDPNow dentro de cada trimestre: se guarda cada estimación nueva (FRED sólo guarda la última)
+    gdpnow_hist = list(anterior.get("gdpnow_hist", []))
+    if data.get("gdpnow", {}).get("d") and "gdpnow" not in respaldo:
+        trim, val = data["gdpnow"]["d"][-1]
+        if not gdpnow_hist or gdpnow_hist[-1][1:] != [trim, val]:
+            gdpnow_hist.append([AHORA[:10], trim, val])
+    gdpnow_hist = gdpnow_hist[-400:]
+
+    corrida = {"ts": AHORA, "nuevos": nuevos, "revisados": revisados, "fallas": fallas, "respaldo": respaldo}
+    corridas = (anterior.get("corridas", []) + [corrida])[-MAX_CORRIDAS:]
+    avisos = avisos_nuevos(anterior, revisados, respaldo)
+    if extremos:
+        avisos.append({"det": AHORA, "tipo": "shock", "texto": f"Movimientos extremos en {len(extremos)} series a la vez; se verificaron y se muestran."})
+
+    texto_alerta = alerta(corridas)
+    if os.environ.get("ALERTA_ARCHIVO"):
+        with open(os.environ["ALERTA_ARCHIVO"], "w", encoding="utf-8") as f:
+            f.write(texto_alerta)
+
+    sin_cambios = (anterior.get("series") == json.loads(json.dumps(data)) and anterior.get("calendario") == calendario
+                   and anterior.get("curva") == curva and anterior.get("respaldo", {}) == respaldo
+                   and anterior.get("fallas", {}) == fallas and "vistos" in anterior)
+    if sin_cambios:
+        print("Sin datos nuevos.")
+        return
+
+    paquete = {"version": 4, "generado": AHORA, "faltan": sorted(set(fallas) | set(respaldo)), "fallas": fallas,
+               "respaldo": respaldo, "series": data, "calendario": calendario, "curva": curva,
+               "releases": {str(k): v for k, v in releases.items()} or anterior.get("releases", {}),
+               "vistos": vistos, "primeras": primeras, "gdpnow_hist": gdpnow_hist, "novedades": novedades, "corridas": corridas, "avisos": avisos}
+    with open(SALIDA, "w", encoding="utf-8") as f:
+        json.dump(paquete, f, ensure_ascii=False, separators=(",", ":"))
+
+    n_cat = sum(1 for k in data if k.startswith("cat:"))
+    print(f"\nListo: {len(data)} series ({n_cat} rubros del core) · {len(calendario)} fechas de calendario · "
+          f"{len(nuevos)} datos nuevos · {len(revisados)} revisados · {os.path.getsize(SALIDA) / 1024:,.0f} KB")
+    print("Fallas:", fallas or "ninguna")
+    print("Respaldo:", respaldo or "ninguno")
+
+
+if __name__ == "__main__":
+    main()

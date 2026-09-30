@@ -1,23 +1,27 @@
 name: Actualizar datos
 
-# Los releases de BEA y BLS salen a las 8:30 (hora de Nueva York) = 12:30 UTC.
-# Corre de lunes a viernes a las 13:10 UTC y a las 21:10 UTC (por si algo se publica tarde),
-# a mano desde la pestaña Actions -> "Actualizar datos" -> Run workflow,
-# y cada vez que se modifica el script de datos.
+# Los releases de BEA y BLS salen a las 8:30 de Nueva York; JOLTS, Michigan y órdenes a las 10:00.
+# Corridas (de lunes a viernes, hora UTC): 13:10 (datos de las 8:30), 15:10 (datos de las 10:00 y 14:00 del día
+# anterior) y 21:10 (cierre de mercado y lo que haya salido tarde). También a mano desde Actions → Run workflow,
+# y cada vez que cambia el motor de datos o la web.
 on:
   schedule:
     - cron: "10 13 * * 1-5"
+    - cron: "10 15 * * 1-5"
     - cron: "10 21 * * 1-5"
   workflow_dispatch:
-  # también corre cuando cambia el script o el workflow, para que los cambios se vean en el momento
   push:
     branches: [main]
     paths:
       - "scripts/**"
+      - "docs/app/**"
+      - "docs/index.html"
       - ".github/workflows/update.yml"
 
 permissions:
   contents: write
+  issues: write
+  actions: write
 
 concurrency:
   group: actualizar-datos
@@ -25,8 +29,8 @@ concurrency:
 
 jobs:
   actualizar:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
 
@@ -37,14 +41,24 @@ jobs:
       - name: Instalar dependencias
         run: pip install requests pandas
 
-      - name: Bajar FRED, BEA y BLS
+      # 1 a 4: bajar, validar, combinar con la versión anterior y escribir docs/data.json
+      - name: Bajar, validar y combinar
         env:
           FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
           BEA_API_KEY: ${{ secrets.BEA_API_KEY }}
           BLS_API_KEY: ${{ secrets.BLS_API_KEY }}
+          ALERTA_ARCHIVO: ${{ runner.temp }}/alerta.md
         run: python scripts/fetch_data.py
 
-      - name: Guardar si hay datos nuevos
+      # La web se prueba con los datos nuevos antes de publicarlos: si algo se rompe, queda la versión anterior
+      - name: Probar la web con los datos nuevos
+        run: |
+          cd scripts && npm install --no-save --no-audit --no-fund --silent puppeteer-core@23 && cd ..
+          python -m http.server 8123 -d docs > /dev/null 2>&1 &
+          sleep 2
+          CHROME=/usr/bin/google-chrome node scripts/smoke.mjs http://localhost:8123/
+
+      - name: Publicar si hay datos nuevos
         run: |
           git config user.name "us-macro-monitor-bot"
           git config user.email "actions@users.noreply.github.com"
@@ -56,3 +70,43 @@ jobs:
             git pull --rebase origin main
             git push
           fi
+
+      # GitHub apaga los procesos programados de un repo público tras 60 días sin actividad; esto lo evita
+      - name: Mantener activo el proceso programado
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X PUT "repos/${{ github.repository }}/actions/workflows/update.yml/enable" || true
+
+      # Aviso por mail: abre (o actualiza) un issue asignado al dueño cuando hay problemas y lo cierra al normalizarse
+      - name: Avisar si hay problemas
+        if: always()
+        uses: actions/github-script@v7
+        env:
+          ALERTA_ARCHIVO: ${{ runner.temp }}/alerta.md
+          ESTADO: ${{ job.status }}
+        with:
+          script: |
+            const fs = require('fs');
+            const url = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            let texto = '';
+            try { texto = fs.readFileSync(process.env.ALERTA_ARCHIVO, 'utf8').trim(); } catch (e) {}
+            if (process.env.ESTADO !== 'success') {
+              texto = `La actualización automática falló y no se publicó nada nuevo: la web sigue mostrando los últimos datos buenos.\n\nDetalle de la corrida: ${url}` + (texto ? `\n\n${texto}` : '');
+            }
+            const etiqueta = 'monitor-alerta';
+            const { data: abiertos } = await github.rest.issues.listForRepo({ ...context.repo, state: 'open', labels: etiqueta });
+            if (texto) {
+              const cuerpo = `@${context.repo.owner}\n\n${texto}`;
+              if (abiertos.length) {
+                await github.rest.issues.createComment({ ...context.repo, issue_number: abiertos[0].number, body: cuerpo });
+              } else {
+                await github.rest.issues.create({ ...context.repo, title: 'US Macro Monitor: problemas en la actualización de datos',
+                  body: cuerpo, labels: [etiqueta], assignees: [context.repo.owner] });
+              }
+            } else {
+              for (const i of abiertos) {
+                await github.rest.issues.createComment({ ...context.repo, issue_number: i.number, body: `Resuelto: la actualización volvió a salir limpia (${url}).` });
+                await github.rest.issues.update({ ...context.repo, issue_number: i.number, state: 'closed' });
+              }
+            }
