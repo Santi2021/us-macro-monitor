@@ -91,7 +91,7 @@ export const RELEASES_ES = {
   "U.S. Import and Export Price Indexes": "Precios de importación y exportación",
   "U.S. International Transactions": "Balanza de pagos",
   "Z.1 Financial Accounts of the United States": "Cuentas financieras (Z.1)",
-  "Household Debt Service and Financial Obligations Ratios": "Carga de la deuda de los hogares",
+  "Household Debt Service Ratios": "Carga de la deuda de los hogares",
   "Supplemental Estimates, Motor Vehicles": "Ventas de vehículos",
 };
 // Organismo, hora de Nueva York e importancia (3 alta, 2 media, 1 baja)
@@ -107,7 +107,7 @@ const RELEASE_INFO = [
   [/Empire State/, "Fed de Nueva York", "8:30", 2], [/Import and Export Price|Import Price/, "BLS", "8:30", 1], [/International Transactions/, "BEA", "8:30", 1],
   [/Z\.1|Financial Accounts/, "Fed", "12:00", 1], [/Debt Service/, "Fed", "", 1], [/Motor Vehicle/, "BEA", "", 1],
 ];
-const FUERA_DE_AGENDA = /H\.4\.1|ICE BofA|Median Consumer|Trimmed Mean|Budget|Economic Outlook|Potential|Moody|Factors Affecting|H\.10|Primary Mortgage|Arbitrage-Free|H\.15|Interest Rate Spreads|GDPNow|Recession|Business Cycle|Treasury Inflation|Selected Interest|Financial Conditions/;
+const FUERA_DE_AGENDA = /H\.4\.1|ICE BofA|Median Consumer|Median CPI|Trimmed Mean|Budget|Economic Outlook|Potential|Moody|Factors Affecting|H\.10|Primary Mortgage|Arbitrage-Free|H\.15|Interest Rate Spreads|GDPNow|Recession|Business Cycle|Treasury Inflation|Selected Interest|Financial Conditions/;
 export const nombreRelease = n => RELEASES_ES[n] || n;
 export function infoRelease(n) { const r = RELEASE_INFO.find(([re]) => re.test(n)); return r ? { org: r[1], hora: r[2], imp: r[3] } : { org: "", hora: "", imp: 1 }; }
 
