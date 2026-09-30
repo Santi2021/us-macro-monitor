@@ -73,7 +73,7 @@ FRED = {
     "comp":            ("W209RC1", "Remuneración a asalariados", "US$ miles de M", "M", "BEA"),
     "transfers":       ("PCTR", "Transferencias del gobierno", "US$ miles de M", "M", "BEA"),
     "sentiment":       ("UMCSENT", "Confianza del consumidor", "índice", "M", "U. de Michigan"),
-    "consumer_credit": ("TOTALSL", "Crédito al consumo", "US$ miles de M", "M", "Fed"),
+    "consumer_credit": ("TOTALSL", "Crédito al consumo", "US$ millones", "M", "Fed"),
     "delinq_cards":    ("DRCCLACBS", "Morosidad de tarjetas de crédito (bancos)", "%", "Q", "Fed"),
     # Precios
     "pce_p":           ("PCEPI", "PCE general", "índice", "M", "BEA"),
