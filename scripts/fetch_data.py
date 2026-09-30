@@ -330,11 +330,11 @@ for k, v in data.items():
 novedades = novedades[-150:]
 
 if (anterior.get("series") == json.loads(json.dumps(data)) and anterior.get("calendario") == calendario
-        and anterior.get("curva") == curva):
+        and anterior.get("curva") == curva and anterior.get("faltan") == faltan):
     print("Sin datos nuevos.")
     sys.exit(0)
 
-paquete = {"generado": ahora, "series": data, "calendario": calendario, "novedades": novedades, "curva": curva,
+paquete = {"generado": ahora, "faltan": faltan, "series": data, "calendario": calendario, "novedades": novedades, "curva": curva,
            "releases": {str(k): v for k, v in releases.items()}}
 with open(SALIDA, "w", encoding="utf-8") as f:
     json.dump(paquete, f, ensure_ascii=False, separators=(",", ":"))
