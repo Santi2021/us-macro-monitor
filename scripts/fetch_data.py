@@ -118,7 +118,7 @@ FRED = {
     "term_premium":    ("THREEFYTP10", "Prima por plazo 10 años (Kim-Wright)", "%", "M", "Fed"),
     "spread_10y3m":    ("T10Y3M", "Treasury 10 años menos letra 3 meses", "%", "M", "Fed de St. Louis"),
     "mortgage30":      ("MORTGAGE30US", "Tasa hipotecaria 30 años", "%", "M", "Freddie Mac"),
-    "dollar":          ("DTWEXBGS", "Dólar amplio", "índice", "M", "Fed"),
+    "dollar":          ("DTWEXBGS", "Dólar multilateral", "índice", "M", "Fed"),
     "nfci":            ("NFCI", "Índice de condiciones financieras (NFCI)", "índice", "M", "Fed de Chicago"),
     "nfci_credit":     ("NFCICREDIT", "NFCI: subíndice de crédito", "índice", "M", "Fed de Chicago"),
     "baa_spread":      ("BAA10Y", "Spread corporativo Baa − Treasury 10 años", "%", "M", "Moody's"),

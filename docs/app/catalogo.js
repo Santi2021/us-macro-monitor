@@ -780,14 +780,14 @@ def("capexImport", { slug: "importaciones-de-capital", nombre: "Importaciones de
       sub: "Si crecen juntas, parte del boom de inversión se abastece afuera y resta en la balanza comercial.", fuenteTxt: "BEA vía FRED",
       series: [{ n: "Inversión tecnológica", d: cut(cq), c: 0 }, { n: "Importaciones de bienes de capital", d: cut(iq), c: 1 }], refs: [{ y: 0 }] };
   } });
-def("dolar", { slug: "dolar", nombre: "Dólar amplio", sin: ["dxy", "tipo de cambio", "usd"],
-  calc: "Índice del dólar ponderado por comercio (Fed, broad), promedio mensual.",
+def("dolar", { slug: "dolar", nombre: "Dólar multilateral", sin: ["dxy", "tipo de cambio", "usd", "dólar amplio", "broad dollar", "multilateral"],
+  calc: "Índice del dólar contra las monedas de los 26 principales socios comerciales, ponderadas por comercio (Fed, índice broad nominal), promedio mensual.",
   ks: ["dollar"],
   f: () => {
     const d = S("dollar"); if (!d) return null;
     const y = yoy(d), v = last(d)[1];
-    return { titulo: `El dólar amplio ${last(y)[1] >= 0 ? "sube" : "cae"} ${nf(Math.abs(last(y)[1]))}% interanual: percentil ${pctl(d, v)} desde 2006`,
-      sub: "Índice del dólar ponderado por comercio (Fed), promedio mensual." + notaParcial(), unidad: "", dec: 1, series: [{ n: "Dólar amplio", d: cut(d), c: 0 }] };
+    return { titulo: `El dólar multilateral ${last(y)[1] >= 0 ? "sube" : "cae"} ${nf(Math.abs(last(y)[1]))}% interanual: percentil ${pctl(d, v)} desde 2006`,
+      sub: "Dólar contra las monedas de los 26 principales socios comerciales de EE.UU., ponderadas por comercio (índice broad de la Fed), promedio mensual. A diferencia del DXY, que pesa casi 60% el euro, incluye China, México y Canadá." + notaParcial(), unidad: "", dec: 1, series: [{ n: "Dólar multilateral", d: cut(d), c: 0 }] };
   } });
 def("terminos", { slug: "terminos-de-intercambio", nombre: "Términos de intercambio", sin: ["términos de intercambio", "precios de exportación", "precios de importación"],
   calc: "Índice de precios de exportación sobre índice de precios de importación (BLS), base 2000 = 100. Sube cuando lo que EE.UU. vende al mundo se encarece respecto de lo que compra.",
@@ -955,7 +955,7 @@ export const IND = [
   { id: "baa", f: "tasas", n: "Spread corporativo Baa", nota: "pp sobre el Treasury 10 años", u: "pp", d: 2, ks: ["baa_spread"], g: "spreads", s: () => S("baa_spread") },
   { id: "hipo", f: "tasas", n: "Hipotecaria 30 años", nota: "Freddie Mac", u: "%", d: 2, ks: ["mortgage30"], g: "hipotecaria", s: () => S("mortgage30") },
   { id: "balanza", f: "externo", n: "Balanza comercial", nota: "US$ mil M por mes, prom. 3m", u: "mil M", d: 1, ks: ["trade_balance"], g: "balanza", s: () => roll(escala(S("trade_balance"), 1 / 1000), 3) },
-  { id: "dolar", f: "externo", n: "Dólar amplio", nota: "interanual", u: "%", d: 1, ks: ["dollar"], g: "dolar", s: () => yoy(S("dollar")) },
+  { id: "dolar", f: "externo", n: "Dólar multilateral", nota: "interanual", u: "%", d: 1, ks: ["dollar"], g: "dolar", s: () => yoy(S("dollar")) },
   { id: "cc", f: "externo", n: "Cuenta corriente", nota: "% del PBI", u: "%", d: 1, q: true, ks: ["current_account"], g: "cuentaCorriente", s: () => join(S("current_account"), S("gdp_nom"), (a, b) => a * 4 / 1000 / b * 100) },
   { id: "deficit", f: "fiscal", n: "Resultado fiscal", nota: "% del PBI, 12 meses", u: "%", d: 1, ks: ["deficit"], g: "deficit", s: () => deficitPBI() },
   { id: "intereses", f: "fiscal", n: "Intereses de la deuda", nota: "% del PBI", u: "%", d: 2, q: true, ks: ["interest_fed"], g: "intereses", s: () => interesesPBI() },
