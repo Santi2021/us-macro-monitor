@@ -5,7 +5,7 @@ import { CAT } from "./catalogo.js";
 
 export const SECCIONES = [
   ["portada", "Portada"], ["mi", "Mi monitor"], ["tablero", "Tablero"], ["calendario", "Calendario"], ["|"],
-  ["actividad", "Actividad"], ["consumidor", "Consumidor"], ["precios", "Precios"], ["empleo", "Empleo"], ["tasas", "Tasas"], ["externo", "Externo y fiscal"], ["|"],
+  ["actividad", "Actividad"], ["consumidor", "Consumidor"], ["precios", "Precios"], ["empleo", "Empleo"], ["tasas", "Tasas"], ["externo", "Externo"], ["fiscal", "Fiscal"], ["|"],
   ["explorador", "Explorador"], ["metodologia", "Metodología"],
 ];
 const VALIDAS = new Set(SECCIONES.map(s => s[0]).filter(s => s !== "|"));

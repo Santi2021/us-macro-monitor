@@ -92,7 +92,7 @@ export function abrirBuscador() {
 }
 
 const ATAJOS = [["Ctrl+K o /", "Buscar"], ["?", "Esta ayuda"], ["P", "Portada"], ["M", "Mi monitor"], ["T", "Tablero"], ["C", "Calendario"],
-  ["1 a 6", "Actividad, Consumidor, Precios, Empleo, Tasas, Externo y fiscal"], ["E", "Explorador"], ["G", "Metodología"],
+  ["1 a 7", "Actividad, Consumidor, Precios, Empleo, Tasas, Externo, Fiscal"], ["E", "Explorador"], ["G", "Metodología"],
   ["D", "Cambiar tema claro u oscuro"], ["L", "Letra grande o normal"], ["← →", "Semana anterior o siguiente (calendario)"], ["Esc", "Cerrar ventanas"]];
 function ayuda() {
   const box = el("div", { class: "ayuda-atajos" }, ATAJOS.map(([k, t]) => `<div><span>${esc(t)}</span><kbd>${esc(k)}</kbd></div>`).join(""));
@@ -111,7 +111,7 @@ export function atajos() {
     if (hayModal()) return;
     const ir = { p: "portada", m: "mi", t: "tablero", c: "calendario", e: "explorador", g: "metodologia" }[k];
     if (ir) { navegar(ir); return; }
-    if (/^[1-6]$/.test(k)) { navegar(frentes[Number(k) - 1]); return; }
+    if (/^[1-7]$/.test(k)) { navegar(frentes[Number(k) - 1]); return; }
     if (k === "d") acciones.tema(document.documentElement.dataset.theme === "dark" || (!document.documentElement.dataset.theme && matchMedia("(prefers-color-scheme: dark)").matches) ? "claro" : "oscuro");
     if (k === "l") acciones.letra(ST.prefs.letra === "grande" ? "normal" : "grande");
     if ((k === "arrowleft" || k === "arrowright") && acciones.flecha) acciones.flecha(k === "arrowleft" ? -1 : 1);

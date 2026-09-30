@@ -281,8 +281,11 @@ const TRANSF = [["nivel", "Nivel"], ["yoy", "Variación interanual"], ["ann3", "
 let EXPLORA = [], OPERA = { op: "", a: 0, b: 1 };
 function grupoSerie(k) {
   if (k.startsWith("cat:")) return "Precios: rubros del core";
-  const g = [["actividad", /^(gdp|gdi|c_|profits|inv_|indpro|retail|core_orders|housing|permits|final_sales)/], ["consumidor", /^(dpi|pce_real|saving|pce_dur|pce_ndur|pce_serv$|comp|transfers|sentiment)/],
-    ["precios", /^(pce_|cpi|ppi|infl_)/], ["empleo", /^(payrolls|unemploy|ahe|epop|participation|openings|quits|claims|cont_|sahm)/], ["tasas", /^(fed_|ust|tips|breakeven|term_|spread|mortgage)/], ["externo", /^(dollar|trade|imp_|deficit|interest|debt)/]];
+  const g = [["fiscal", /^(deficit|interest|debt_gdp|debt_public|customs|imp_goods|fed_receipts|fed_expend)/],
+    ["actividad", /^(gdp|gdi|c_|profits|inv_|indpro|core_orders|housing|permits|final_sales|tcu|productivity|ulc|philly|empire)/],
+    ["consumidor", /^(dpi|pce_real|saving|pce_dur|pce_ndur|pce_serv$|comp|transfers|sentiment|retail|consumer_credit|delinq|autos|net_worth|debt_service)/],
+    ["precios", /^(pce_|cpi|ppi|infl_|import_prices|export_prices)/], ["empleo", /^(payrolls|unemploy|u6|ahe|eci|epop|participation|openings|quits|hires|layoffs|claims|cont_|sahm)/],
+    ["tasas", /^(fed_|ust|tips|breakeven|term_|spread|mortgage|nfci|baa|hy_|reserves)/], ["externo", /^(dollar|trade|imp_capital|exports|imports|current_account)/]];
   const m = g.find(([, re]) => re.test(k)); return m ? FRENTES[m[0]] : "Otras";
 }
 function aplicarTransf(k, tr) {
@@ -362,6 +365,10 @@ export function vistaExplorador(main, rerender) {
 
 // ───────── Metodología ─────────
 const CHANGELOG = [
+  ["4.2", "2026-09-30", ["Fiscal pasa a ser una sección propia, con ingresos y gastos federales, aranceles (tasa efectiva y recaudación) e intereses sobre la recaudación.",
+    "Nuevos gráficos: brecha del producto (CBO) y uso de la capacidad, productividad y costo laboral unitario, encuestas manufactureras de la Fed, ventas de vehículos, patrimonio de los hogares, carga de la deuda de los hogares, núcleo de la inflación (mediana y media recortada), PPI, bienes core y precios de importación, quién crea el empleo, contrataciones y despidos, qué descuenta el mercado de la Fed, spreads de crédito, balance de la Fed, exportaciones e importaciones y cuenta corriente.",
+    "Cambios: términos de intercambio con precios de exportación e importación; desempleo con U-6; morosidad con todos los préstamos al consumo; ventas minoristas pasan a Consumidor; PBI nominal contra tasa pasa a Fiscal.",
+    "Se quitan: el colchón de ahorro de la pandemia (ya consumido) y el bloque Qué cambió de la portada."]],
   ["4.0", "2026-09-30", ["Plataforma: buscador (Ctrl+K), atajos, Mi monitor, enlaces directos por gráfico, tema y tamaño de letra.",
     "Cada gráfico con pestañas Gráfico, Tabla y Fuentes, línea de datos, descargas (PNG para X e informe, CSV y cita) y cursor sincronizado.",
     "Selectores de vista (interanual, mensual, 3 meses) en 11 gráficos y de nominal o real en 5.",
@@ -373,6 +380,12 @@ const CHANGELOG = [
 ];
 const GLOSARIO = [
   ["Core", "Inflación sin alimentos ni energía, que son los componentes más volátiles."],
+  ["Brecha del producto", "Diferencia entre el PBI real y el PBI potencial (lo que la economía puede producir sin acelerar la inflación), en % del potencial. El potencial lo estima la Oficina de Presupuesto del Congreso (CBO)."],
+  ["Media recortada y mediana", "Medidas del núcleo de la inflación que descartan cada mes los rubros con subas y bajas más extremas (media recortada, Fed de Dallas) o toman el rubro del medio (mediana, Fed de Cleveland)."],
+  ["Costo laboral unitario", "Remuneración por hora dividida la productividad: cuánto cuesta en salarios producir una unidad."],
+  ["Tasa arancelaria efectiva", "Aranceles efectivamente cobrados sobre el valor de los bienes importados. Suele quedar por debajo de la tasa anunciada."],
+  ["Spread de crédito", "Rendimiento extra que paga una empresa sobre un bono del Tesoro del mismo plazo: la compensación por el riesgo de que no pague."],
+  ["Índice de difusión", "Porcentaje de empresas que informan mejora menos el que informa deterioro. Cero es sin cambios."],
   ["PCE", "Índice de precios del gasto de consumo personal (BEA). Es la medida de inflación a la que apunta la Fed; pondera menos la vivienda que el CPI."],
   ["CPI", "Índice de precios al consumidor (BLS). Sale antes que el PCE y es el dato que más mueve al mercado."],
   ["Supercore", "Inflación de servicios sin energía ni vivienda: la parte más ligada a salarios."],

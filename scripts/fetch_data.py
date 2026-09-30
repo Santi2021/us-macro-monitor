@@ -61,6 +61,12 @@ FRED = {
     "core_orders":     ("NEWORDER", "Órdenes de bienes de capital sin defensa ni aviones", "US$ millones", "M", "Census"),
     "housing_starts":  ("HOUST", "Inicios de viviendas", "miles, tasa anual", "M", "Census"),
     "permits":         ("PERMIT", "Permisos de construcción", "miles, tasa anual", "M", "Census"),
+    "gdp_pot":         ("GDPPOT", "PBI potencial (CBO)", "US$ miles de M de 2017", "Q", "CBO"),
+    "tcu":             ("TCU", "Utilización de la capacidad instalada", "%", "M", "Fed"),
+    "productivity":    ("OPHNFB", "Productividad laboral, empresas no agrícolas", "índice 2017=100", "Q", "BLS"),
+    "ulc":             ("ULCNFB", "Costo laboral unitario, empresas no agrícolas", "índice 2017=100", "Q", "BLS"),
+    "philly":          ("GACDFSA066MSFRBPHI", "Encuesta manufacturera de la Fed de Filadelfia: actividad general", "índice de difusión", "M", "Fed de Filadelfia"),
+    "empire":          ("GACDISA066MSFRBNY", "Encuesta Empire State de la Fed de Nueva York: condiciones generales", "índice de difusión", "M", "Fed de Nueva York"),
     "gdpnow":          ("GDPNOW", "GDPNow: estimación en tiempo real del PBI del trimestre", "%", "Q", "Fed de Atlanta"),
     # Consumidor
     "dpi_real":        ("DSPIC96", "Ingreso disponible real", "US$ miles de M de 2017", "M", "BEA"),
@@ -75,6 +81,10 @@ FRED = {
     "sentiment":       ("UMCSENT", "Confianza del consumidor", "índice", "M", "U. de Michigan"),
     "consumer_credit": ("TOTALSL", "Crédito al consumo", "US$ millones", "M", "Fed"),
     "delinq_cards":    ("DRCCLACBS", "Morosidad de tarjetas de crédito (bancos)", "%", "Q", "Fed"),
+    "delinq_consumer": ("DRCLACBS", "Morosidad de préstamos al consumo (bancos)", "%", "Q", "Fed"),
+    "autos":           ("TOTALSA", "Ventas de vehículos", "millones, tasa anual", "M", "BEA"),
+    "debt_service":    ("TDSP", "Servicio de la deuda de los hogares / ingreso disponible", "%", "Q", "Fed"),
+    "net_worth":       ("TNWBSHNO", "Patrimonio neto de los hogares", "US$ millones", "Q", "Fed"),
     # Precios
     "pce_p":           ("PCEPI", "PCE general", "índice", "M", "BEA"),
     "pce_core":        ("PCEPILFE", "PCE core", "índice", "M", "BEA"),
@@ -84,6 +94,12 @@ FRED = {
     "pce_services":    ("DSERRG3M086SBEA", "PCE servicios", "índice", "M", "BEA"),
     "pce_supercore":   ("IA001260M", "PCE servicios sin energía ni vivienda", "índice", "M", "BEA"),
     "ppi_capital":     ("WPSFD41312", "PPI bienes de capital", "índice", "M", "BLS"),
+    "ppi_fd":          ("PPIFIS", "PPI demanda final", "índice", "M", "BLS"),
+    "ppi_core":        ("PPICOR", "PPI demanda final sin alimentos ni energía (sin desestacionalizar)", "índice", "M", "BLS"),
+    "cpi_median":      ("MEDCPIM094SFRBCLE", "CPI mediana", "índice", "M", "Fed de Cleveland"),
+    "pce_trim":        ("PCETRIM12M159SFRBDAL", "PCE media recortada, interanual", "%", "M", "Fed de Dallas"),
+    "import_prices":   ("IR", "Precios de importación (sin desestacionalizar)", "índice 2000=100", "M", "BLS"),
+    "export_prices":   ("IQ", "Precios de exportación (sin desestacionalizar)", "índice 2000=100", "M", "BLS"),
     "infl_exp_1y":     ("MICH", "Inflación esperada a 1 año (encuesta)", "%", "M", "U. de Michigan"),
     "infl_exp_5y5y":   ("T5YIFR", "Inflación esperada 5 años dentro de 5 (mercado)", "%", "M", "Fed de St. Louis"),
     # Empleo (sólo FRED)
@@ -105,14 +121,25 @@ FRED = {
     "dollar":          ("DTWEXBGS", "Dólar amplio", "índice", "M", "Fed"),
     "nfci":            ("NFCI", "Índice de condiciones financieras (NFCI)", "índice", "M", "Fed de Chicago"),
     "nfci_credit":     ("NFCICREDIT", "NFCI: subíndice de crédito", "índice", "M", "Fed de Chicago"),
+    "baa_spread":      ("BAA10Y", "Spread corporativo Baa − Treasury 10 años", "%", "M", "Moody's"),
+    "hy_oas":          ("BAMLH0A0HYM2", "Spread high yield (ICE BofA, sólo últimos 3 años en FRED)", "%", "M", "ICE BofA"),
+    "fed_assets":      ("WALCL", "Activos totales de la Fed", "US$ millones", "M", "Fed"),
+    "reserves":        ("WRESBAL", "Reservas de los bancos en la Fed", "US$ millones", "M", "Fed"),
     # Externo
     "trade_balance":   ("BOPGSTB", "Balanza comercial de bienes y servicios", "US$ millones", "M", "BEA y Census"),
+    "exports":         ("BOPTEXP", "Exportaciones de bienes y servicios", "US$ millones", "M", "BEA y Census"),
+    "imports":         ("BOPTIMP", "Importaciones de bienes y servicios", "US$ millones", "M", "BEA y Census"),
+    "current_account": ("IEABC", "Cuenta corriente", "US$ millones por trimestre", "Q", "BEA"),
     "imp_capital":     ("A650RC1Q027SBEA", "Importaciones de bienes de capital (sin autos)", "US$ miles de M", "Q", "BEA"),
     # Fiscal
     "deficit":         ("MTSDS133FMS", "Resultado fiscal federal mensual", "US$ millones", "M", "Tesoro"),
     "interest_fed":    ("A091RC1Q027SBEA", "Intereses pagados por el gobierno federal", "US$ miles de M", "Q", "BEA"),
     "debt_gdp":        ("GFDEGDQ188S", "Deuda pública federal total / PBI", "%", "Q", "Tesoro y Fed de St. Louis"),
     "debt_public":     ("FYGFGDQ188S", "Deuda federal en manos del público / PBI", "%", "Q", "Tesoro y Fed de St. Louis"),
+    "fed_receipts":    ("FGRECPT", "Ingresos corrientes del gobierno federal", "US$ miles de M, tasa anual", "Q", "BEA"),
+    "fed_expend":      ("FGEXPND", "Gastos corrientes del gobierno federal", "US$ miles de M, tasa anual", "Q", "BEA"),
+    "customs":         ("B235RC1Q027SBEA", "Recaudación por aranceles", "US$ miles de M, tasa anual", "Q", "BEA"),
+    "imp_goods":       ("A255RC1Q027SBEA", "Importaciones de bienes (cuentas nacionales)", "US$ miles de M, tasa anual", "Q", "BEA"),
     # Ciclo
     "usrec":           ("USREC", "Recesión según el NBER (1 = sí)", "0/1", "M", "NBER"),
 }
@@ -120,10 +147,13 @@ FRED = {
 SIN_PROMEDIO = {"deficit"}
 # Series de mercado: cambian todos los días, no cuentan como "novedad" de un release
 ALTA_FRECUENCIA = {"fed_funds", "ust2", "ust10", "ust30", "tips10", "breakeven10", "term_premium",
-                   "mortgage30", "dollar", "infl_exp_5y5y", "spread_10y3m", "gdpnow", "nfci", "nfci_credit"}
+                   "mortgage30", "dollar", "infl_exp_5y5y", "spread_10y3m", "gdpnow", "nfci", "nfci_credit",
+                   "baa_spread", "hy_oas", "fed_assets", "reserves"}
+# Series que traen proyecciones a futuro (el PBI potencial de la CBO llega a 10 años): se cortan en hoy
+HASTA_HOY = {"gdp_pot"}
 # Series cuya primera publicación se guarda para mostrar revisiones
 CLAVES_REVISION = {"payrolls", "gdp_growth", "retail", "pce_core", "pce_p", "cpi_core", "cpi", "openings",
-                   "indpro", "housing_starts", "core_orders", "dpi_real", "pce_real", "trade_balance", "ahe"}
+                   "indpro", "housing_starts", "core_orders", "dpi_real", "pce_real", "trade_balance", "ahe", "ppi_fd"}
 
 CURVA = [("1M", "DGS1MO"), ("3M", "DGS3MO"), ("6M", "DGS6MO"), ("1A", "DGS1"), ("2A", "DGS2"), ("3A", "DGS3"),
          ("5A", "DGS5"), ("7A", "DGS7"), ("10A", "DGS10"), ("20A", "DGS20"), ("30A", "DGS30")]
@@ -140,6 +170,13 @@ BLS = {
     "cpi":          ("CUSR0000SA0", "CPIAUCSL", "CPI general", "índice"),
     "cpi_core":     ("CUSR0000SA0L1E", "CPILFESL", "CPI core", "índice"),
     "cpi_shelter":  ("CUSR0000SAH1", "CUSR0000SAH1", "CPI vivienda", "índice"),
+    "cpi_core_goods": ("CUSR0000SACL1E", "CUSR0000SACL1E", "CPI bienes sin alimentos ni energía", "índice"),
+    "u6":           ("LNS13327709", "U6RATE", "Desempleo ampliado (U-6)", "%"),
+    "hires":        ("JTS000000000000000HIR", "JTSHIR", "Tasa de contrataciones (JOLTS)", "%"),
+    "layoffs":      ("JTS000000000000000LDR", "JTSLDR", "Tasa de despidos (JOLTS)", "%"),
+    "payrolls_priv":   ("CES0500000001", "USPRIV", "Empleo privado", "miles de puestos"),
+    "payrolls_gov":    ("CES9000000001", "USGOVT", "Empleo público", "miles de puestos"),
+    "payrolls_health": ("CES6562000001", "CES6562000001", "Empleo en salud y asistencia social", "miles de puestos"),
 }
 
 # BEA: rubros del PCE core, tabla NIPA 2.8.4 (mensual)
@@ -272,6 +309,8 @@ def bajar(anterior):
         try:
             rel = fred_release(fred_key, sid)
             s = fred(fred_key, sid, freq, k not in SIN_PROMEDIO)
+            if k in HASTA_HOY:
+                s = s[s.index <= pd.Timestamp(HOY)]
             rid = rel[0] if rel else rel_previo.get(k)
             data[k] = empaquetar(s, nombre, unidad, freq, "FRED", sid, org, release=rid)
             if rel:

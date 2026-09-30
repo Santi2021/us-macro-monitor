@@ -2,7 +2,7 @@
 import { T, P, DIA_MS, hoyUTC, fm, fq, fw, fd, nf, sg, unidadTxt, leer, guardar, horaBA } from "./util.js";
 import { last, prev, diff, pct, yoy, escala } from "./calc.js";
 
-export const VERSION = "4.0";
+export const VERSION = "4.2";
 export const ST = {
   DATA: null,
   rango: { modo: "2022", desde: null, hasta: null },
@@ -85,6 +85,14 @@ export const RELEASES_ES = {
   "Employment Cost Index": "Índice de costo laboral (ECI)",
   "G.19 Consumer Credit": "Crédito al consumo",
   "Charge-Off and Delinquency Rates on Loans and Leases at Commercial Banks": "Morosidad bancaria",
+  "Productivity and Costs": "Productividad y costos",
+  "Manufacturing Business Outlook Survey": "Encuesta de la Fed de Filadelfia",
+  "Empire State Manufacturing Survey": "Encuesta Empire State (Fed de Nueva York)",
+  "U.S. Import and Export Price Indexes": "Precios de importación y exportación",
+  "U.S. International Transactions": "Balanza de pagos",
+  "Z.1 Financial Accounts of the United States": "Cuentas financieras (Z.1)",
+  "Household Debt Service and Financial Obligations Ratios": "Carga de la deuda de los hogares",
+  "Supplemental Estimates, Motor Vehicles": "Ventas de vehículos",
 };
 // Organismo, hora de Nueva York e importancia (3 alta, 2 media, 1 baja)
 const RELEASE_INFO = [
@@ -95,9 +103,11 @@ const RELEASE_INFO = [
   [/G\.17/, "Fed", "9:15", 2], [/Residential Construction/, "Census", "8:30", 2], [/\(M3\)/, "Census", "10:00", 2],
   [/International Trade/, "BEA y Census", "8:30", 2], [/Producer Price/, "BLS", "8:30", 2], [/Monthly Treasury/, "Tesoro", "14:00", 1],
   [/Sahm/, "Fed de St. Louis", "", 1], [/Employment Cost/, "BLS", "8:30", 2], [/Consumer Credit/, "Fed", "15:00", 1],
-  [/Charge-Off/, "Fed", "", 1],
+  [/Charge-Off/, "Fed", "", 1], [/Productivity and Costs/, "BLS", "8:30", 2], [/Business Outlook/, "Fed de Filadelfia", "8:30", 2],
+  [/Empire State/, "Fed de Nueva York", "8:30", 2], [/Import and Export Price|Import Price/, "BLS", "8:30", 1], [/International Transactions/, "BEA", "8:30", 1],
+  [/Z\.1|Financial Accounts/, "Fed", "12:00", 1], [/Debt Service/, "Fed", "", 1], [/Motor Vehicle/, "BEA", "", 1],
 ];
-const FUERA_DE_AGENDA = /H\.10|Primary Mortgage|Arbitrage-Free|H\.15|Interest Rate Spreads|GDPNow|Recession|Business Cycle|Treasury Inflation|Selected Interest|Financial Conditions/;
+const FUERA_DE_AGENDA = /H\.4\.1|ICE BofA|Median Consumer|Trimmed Mean|Budget|Economic Outlook|Potential|Moody|Factors Affecting|H\.10|Primary Mortgage|Arbitrage-Free|H\.15|Interest Rate Spreads|GDPNow|Recession|Business Cycle|Treasury Inflation|Selected Interest|Financial Conditions/;
 export const nombreRelease = n => RELEASES_ES[n] || n;
 export function infoRelease(n) { const r = RELEASE_INFO.find(([re]) => re.test(n)); return r ? { org: r[1], hora: r[2], imp: r[3] } : { org: "", hora: "", imp: 1 }; }
 
@@ -210,7 +220,13 @@ export function resultadoRelease(nombre) {
     else if (/Residential Construction/.test(nombre)) add("Inicios", "housing_starts", "nivel", 0, "mil");
     else if (/\(M3\)/.test(nombre)) add("Órdenes de capital m/m", "core_orders", "pct", 1, "%", true);
     else if (/International Trade/.test(nombre)) add("Balanza", "trade_balance", "nivel", 1, "mil M", false, 1 / 1000);
-    else if (/Producer Price/.test(nombre)) addSerie("PPI bienes de capital m/m", "ppi_capital", pct(S("ppi_capital")), 1, "%", true);
+    else if (/Producer Price/.test(nombre)) { if (S("ppi_fd")) add("PPI demanda final m/m", "ppi_fd", "pct", 1, "%", true); else addSerie("PPI bienes de capital m/m", "ppi_capital", pct(S("ppi_capital")), 1, "%", true); }
+    else if (/Productivity and Costs/.test(nombre)) { addSerie("Productividad a/a", "productivity", yoy(S("productivity"), 4), 1); addSerie("Costo laboral unitario a/a", "ulc", yoy(S("ulc"), 4), 1); }
+    else if (/Business Outlook/.test(nombre)) addSerie("Actividad (difusión)", "philly", S("philly"), 1, "", true);
+    else if (/Empire State/.test(nombre)) addSerie("Condiciones generales (difusión)", "empire", S("empire"), 1, "", true);
+    else if (/Import and Export Price|Import Price/.test(nombre)) addSerie("Precios de importación a/a", "import_prices", yoy(S("import_prices")), 1);
+    else if (/International Transactions/.test(nombre)) addSerie("Cuenta corriente", "current_account", escala(S("current_account"), 1 / 1000), 0, "mil M");
+    else if (/Debt Service/.test(nombre)) addSerie("Servicio de la deuda / ingreso", "debt_service", S("debt_service"), 1);
     else if (/Monthly Treasury/.test(nombre)) addSerie("Resultado del mes", "deficit", escala(S("deficit"), 1 / 1000), 0, "mil M");
     else if (/Sahm/.test(nombre)) addSerie("Sahm", "sahm", S("sahm"), 2, "pp");
     else if (/Employment Cost/.test(nombre)) addSerie("ECI a/a", "eci", yoy(S("eci"), 4), 1);

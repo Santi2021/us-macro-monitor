@@ -27,8 +27,8 @@ async function abrir(ruta, ancho = 1280) {
   return { estado, errores: errores.concat(estado.errores || []) };
 }
 
-const rutas = ["portada?periodo=todo", "portada", "mi", "tablero", "calendario", "actividad", "consumidor", "precios", "empleo", "tasas", "externo", "explorador", "metodologia", "metodologia/series", "metodologia/graficos", "metodologia/actualizaciones"];
-const conGraficos = new Set(["portada", "mi", "actividad", "consumidor", "precios", "empleo", "tasas", "externo", "explorador"]);
+const rutas = ["portada?periodo=todo", "portada", "mi", "tablero", "calendario", "actividad", "consumidor", "precios", "empleo", "tasas", "externo", "fiscal", "explorador", "metodologia", "metodologia/series", "metodologia/graficos", "metodologia/actualizaciones"];
+const conGraficos = new Set(["portada", "mi", "actividad", "consumidor", "precios", "empleo", "tasas", "externo", "fiscal", "explorador"]);
 for (const r of rutas) {
   const { estado, errores } = await abrir("#/" + r);
   const fallas = [...errores];
