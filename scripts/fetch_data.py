@@ -75,13 +75,13 @@ FRED = {
     "dollar":          ("DTWEXBGS", "Dólar amplio (Fed)", "índice", "M"),
     # Externo
     "trade_balance":   ("BOPGSTB", "Balanza comercial de bienes y servicios", "US$ millones", "M"),
-    "imp_capital":     ("IEAMGCN", "Importaciones de bienes de capital", "US$ millones", "M"),
+    "imp_capital":     ("A650RC1Q027SBEA", "Importaciones de bienes de capital (sin autos)", "US$ miles de M", "Q"),
 }
 
 # Organismo que produce cada serie de FRED (para citar la fuente en la web)
 ORG = {"indpro": "Fed", "retail": "Census", "sentiment": "U. de Michigan", "claims": "Dpto. de Trabajo",
        "fed_funds": "Fed", "ust2": "Tesoro", "ust10": "Tesoro", "ust30": "Tesoro", "tips10": "Tesoro",
-       "breakeven10": "Fed de St. Louis", "dollar": "Fed", "imp_capital": "Census", "trade_balance": "BEA y Census"}
+       "breakeven10": "Fed de St. Louis", "dollar": "Fed", "trade_balance": "BEA y Census"}
 
 # BLS: clave -> (id BLS, id equivalente en FRED, nombre, unidad)
 BLS = {

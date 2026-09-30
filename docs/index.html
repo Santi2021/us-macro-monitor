@@ -86,7 +86,8 @@ button { font: inherit; color: inherit; }
 .tile .lab { font-size: 13px; color: var(--ink-2); font-weight: 500; }
 .tile .val { font-size: 28px; font-weight: 600; letter-spacing: -0.015em; line-height: 1.15; }
 .tile .val small { font-size: 15px; font-weight: 500; color: var(--ink-2); margin-left: 2px; }
-.tile .del { font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.tile .del { font-size: 12.5px; color: var(--muted); }
+.tile .cmb { font-size: 12.5px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
 .tile svg { display: block; width: 100%; height: 34px; margin-top: 4px; }
 .pctl { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 8px; font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .pctl i { position: relative; display: block; height: 4px; border-radius: 2px; background: var(--grid); }
@@ -403,18 +404,18 @@ const G = {};
 
 // Consumidor
 G.colchon = () => {
-  const sr = S("saving_rate"), dpi = S("dpi_nom"), p = S("pce_p");
-  if (!sr || !dpi || !p) return null;
+  // Ahorro excedente = lo ahorrado por encima de la tasa normal 2015-19, acumulado desde 2020.
+  // Se suma en dólares nominales: un dólar ahorrado en 2020 sigue siendo un dólar hoy.
+  const sr = S("saving_rate"), dpi = S("dpi_nom");
+  if (!sr || !dpi) return null;
   const b = sr.filter(x => x[0] >= T(2015) && x[0] < T(2020)).map(x => x[1]);
   const base = b.reduce((x, y) => x + y, 0) / b.length;
-  const pm = new Map(p), pHoy = last(p)[1];
-  const flujo = join(sr, dpi, (s, d) => (s - base) / 100 * d / 12).filter(x => x[0] >= T(2020) && pm.has(x[0]))
-    .map(([t, v]) => [t, v * pHoy / pm.get(t)]);
+  const flujo = join(sr, dpi, (s, d) => (s - base) / 100 * d / 12).filter(x => x[0] >= T(2020));
   let acc = 0; const stock = flujo.map(([t, v]) => [t, acc += v]);
   const ritmo = flujo.slice(-3).reduce((x, y) => x + y[1], 0) / 3, hoy = last(stock)[1];
   const titulo = hoy > 0 && ritmo < 0 ? `Al ritmo actual, el colchón de ahorro alcanza para ${nf(hoy / -ritmo, 0)} meses`
     : hoy <= 0 ? "El colchón de ahorro de la pandemia ya se consumió" : "El consumidor vuelve a ahorrar por encima de lo normal";
-  return { titulo, sub: `Ahorro acumulado por encima de la tasa normal 2015-19 (${nf(base)}%), en miles de millones de US$ de hoy. Ritmo de los últimos 3 meses: ${sg(ritmo, 0)} por mes.`,
+  return { titulo, sub: `Ahorro acumulado desde 2020 por encima de la tasa normal 2015-19 (${nf(base)}%), en miles de millones de US$. Ritmo de los últimos 3 meses: ${sg(ritmo, 0)} por mes.`,
     fuente: fuente("saving_rate", "dpi_nom"), unidad: "", dec: 0, fijo: T(2020), cero: true,
     series: [{ n: "Ahorro excedente acumulado", d: stock, area: true, c: 2 }], refs: [{ y: 0 }] };
 };
@@ -677,9 +678,9 @@ G.balanza = () => {
 };
 G.capexImport = () => {
   const i = S("imp_capital"), e = S("inv_info"), s = S("inv_software"); if (!i || !e || !s) return null;
-  const iq = yoy(toQ(i, "sum"), 4), cq = yoy(join(e, s, (a, b) => a + b), 4);
+  const iq = yoy(i, 4), cq = yoy(join(e, s, (a, b) => a + b), 4);
   return { titulo: `Importaciones de capital ${sg(last(iq)[1])}% vs inversión tecnológica ${sg(last(cq)[1])}% interanual`,
-    sub: "Si crecen juntas, parte del boom de inversión se abastece afuera y resta en la balanza comercial.", fuente: "BEA y Census vía FRED", freq: "Q",
+    sub: "Si crecen juntas, parte del boom de inversión se abastece afuera y resta en la balanza comercial.", fuente: "BEA vía FRED", freq: "Q",
     yMin: t0() < T(2021) ? -30 : undefined, yMax: t0() < T(2021) ? 40 : undefined,
     series: [{ n: "Inversión tecnológica", d: cut(cq, t0()), c: 0 }, { n: "Importaciones de bienes de capital", d: cut(iq, t0()), c: 1 }], refs: [{ y: 0 }] };
 };
@@ -807,7 +808,8 @@ function tiles() {
     const cambio = pv ? v - pv[1] : null;
     el.innerHTML = `<div class="lab">${lab}</div>
       <div class="val">${nf(v, d)}<small>${u}</small></div>
-      <div class="del">${f === "Q" ? fq(t) : fm(t)} · ${nota}${cambio != null ? ` · ${cambio >= 0 ? "▲" : "▼"} ${nf(Math.abs(cambio), d)}` : ""}</div>
+      <div class="del">${f === "Q" ? fq(t) : fm(t)} · ${nota}</div>
+      <div class="cmb">${cambio != null ? `${cambio > 0 ? "▲" : cambio < 0 ? "▼" : "="} ${nf(Math.abs(cambio), d)} vs. ${f === "Q" ? "trim." : "mes"} anterior` : ""}</div>
       ${sparkline(a.slice(f === "Q" ? -16 : -36))}
       <div class="pctl" title="Posición del último dato dentro de la historia desde 2000"><i><b style="left:calc(${p}% - 1px)"></b></i><span>p${p} desde 2000</span></div>`;
     box.appendChild(el);
