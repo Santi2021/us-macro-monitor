@@ -56,45 +56,13 @@ function bloque(main, titulo, lista, grupo) {
   grilla(main, lista, grupo);
 }
 
-// ───────── Qué cambió y avisos ─────────
-// Releases de los últimos días hábiles que ya están incorporados al monitor
-function recientes() {
-  const hoy = hoyUTC(), out = [], vistos = new Set();
-  let lim = hoy, habiles = 0;
-  while (habiles < 2) { lim -= DIA_MS; const w = new Date(lim).getUTCDay(); if (w !== 0 && w !== 6) habiles++; }
-  for (const c of agenda().slice().sort((a, b) => b.fecha.localeCompare(a.fecha))) {
-    if (vistos.has(c.rid) || P(c.fecha) < lim || P(c.fecha) > hoy) continue;
-    const e = estadoRelease(c);
-    if (e.e === "pub") { vistos.add(c.rid); out.push({ c, e }); }
-  }
-  return out.sort((a, b) => infoRelease(b.c.nombre).imp - infoRelease(a.c.nombre).imp || b.c.fecha.localeCompare(a.c.fecha));
-}
+// ───────── Avisos ─────────
 const graficoDeRelease = nombre => {
   const r = resultadoRelease(nombre)[0]; if (!r) return null;
   return Object.values(CAT).find(c => c.ks[0] === r.k || c.ks.includes(r.k))?.id || null;
 };
 function lineaResultado(r) {
   return `${esc(r.n)} <b>${esc(r.v)}</b>${r.p ? ` · ant. ${esc(r.p)}${r.pr ? ` <span class="rev" title="Primera publicación: ${esc(r.pr)}">®</span>` : ""}` : ""}`;
-}
-function queCambio() {
-  const rs = recientes();
-  const box = el("section", { class: "cambios", "aria-label": "Qué cambió" });
-  if (!rs.length) {
-    const prox = agenda().filter(c => estadoRelease(c).e === "prog").sort((a, b) => a.fecha.localeCompare(b.fecha))[0];
-    box.innerHTML = `<h2>Qué cambió <small>sin datos nuevos en los últimos dos días hábiles${prox ? ` · próximo: ${esc(nombreRelease(prox.nombre))}, ${fd(P(prox.fecha))}` : ""}</small></h2>`;
-    return box;
-  }
-  const ul = el("ul");
-  for (const { c, e } of rs.slice(0, 8)) {
-    const res = resultadoRelease(c.nombre), g = graficoDeRelease(c.nombre), h = e.det ? horaBA(e.det) : null, imp = infoRelease(c.nombre).imp;
-    const li = el("li", { class: imp === 3 ? "alta" : "" });
-    li.innerHTML = `<a href="${g ? construir(CAT[g].frente, CAT[g].slug) : construir("calendario")}">${esc(nombreRelease(c.nombre))}</a>
-      ${res.map(r => `<span>${lineaResultado(r)}</span>`).join("")}<small>Publicado ${fd(P(c.fecha))}${h ? ` · incorporado ${h.txt} h` : ""}</small>`;
-    ul.appendChild(li);
-  }
-  box.innerHTML = `<h2>Qué cambió <small>publicados en los últimos dos días hábiles · ® = el dato anterior fue revisado</small></h2>`;
-  box.appendChild(ul);
-  return box;
 }
 function avisos() {
   const lista = (ST.DATA.avisos || []).filter(a => Date.now() - P(a.det) < 7 * DIA_MS).slice(-2);
@@ -138,7 +106,7 @@ function lectura() {
   return s;
 }
 export function vistaPortada(main) {
-  if (ST.T1 === Infinity) { const a = avisos(); if (a) main.appendChild(a); main.appendChild(queCambio()); }
+  if (ST.T1 === Infinity) { const a = avisos(); if (a) main.appendChild(a); }
   main.appendChild(tiraTiles(RESUMEN_TILES));
   if (ST.T1 === Infinity) main.appendChild(agendaResumen());
   main.appendChild(lectura());

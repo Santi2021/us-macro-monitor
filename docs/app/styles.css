@@ -162,17 +162,6 @@ h2.bloque { margin: 26px 0 12px; font-size: 13px; font-weight: 600; text-transfo
 .imp i { width: 5px; height: 5px; border-radius: 50%; background: var(--grid); }
 .imp i.on { background: var(--s2); }
 
-/* Qué cambió */
-.cambios { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 14px 20px; margin-bottom: 16px; }
-.cambios h2 { margin: 0 0 8px; font-size: 15px; font-weight: 600; display: flex; gap: 10px; align-items: baseline; justify-content: space-between; flex-wrap: wrap; }
-.cambios h2 small { font-weight: 400; color: var(--muted); font-size: var(--fs-xs); }
-.cambios ul { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 8px 20px; }
-.cambios li { display: grid; gap: 1px; padding: 6px 0 6px 12px; border-left: 3px solid var(--axis); }
-.cambios li.alta { border-left-color: var(--s2); }
-.cambios li a { color: var(--ink); font-weight: 600; text-decoration: none; font-size: 14px; }
-.cambios li a:hover { text-decoration: underline; }
-.cambios li span { font-size: var(--fs-s); color: var(--ink-2); font-variant-numeric: tabular-nums; }
-.cambios li small { font-size: var(--fs-xs); color: var(--muted); }
 .avisos { display: grid; gap: 6px; margin-bottom: 12px; }
 .aviso-b { display: flex; gap: 10px; align-items: flex-start; border: 1px solid var(--line); border-left: 3px solid var(--alerta); background: var(--surface); border-radius: 8px; padding: 8px 12px; font-size: var(--fs-s); color: var(--ink-2); }
 
