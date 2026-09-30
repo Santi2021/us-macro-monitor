@@ -1,0 +1,917 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>US Macro Monitor</title>
+<meta name="description" content="Monitor de la economía de EE.UU. con datos de BEA, BLS y FRED, actualizado automáticamente.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: encabezado con período global → pestañas por bloque → resumen (tiles + lectura) o grilla de tarjetas de gráfico. */
+:root {
+  color-scheme: light;
+  --bg: #f4f6f9;
+  --surface: #ffffff;
+  --ink: #111722;
+  --ink-2: #465063;
+  --muted: #6f7a8c;
+  --grid: #e5e8ee;
+  --axis: #c5cbd5;
+  --line: rgba(17, 23, 34, 0.10);
+  --band: rgba(42, 120, 214, 0.07);
+  --hover: rgba(17, 23, 34, 0.04);
+  --s1: #2a78d6;
+  --s2: #eb6834;
+  --s3: #1baf7a;
+  --s4: #eda100;
+  --ref: #52514e;
+  --div-lo: #2a78d6;
+  --div-mid: #f0efec;
+  --div-hi: #e34948;
+  --font: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Consolas, monospace;
+  --r: 10px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #0e1117; --surface: #161b24; --ink: #eef1f6; --ink-2: #b6bfcc; --muted: #8791a2;
+    --grid: #252c38; --axis: #353e4c; --line: rgba(255,255,255,0.09); --band: rgba(57,135,229,0.10);
+    --hover: rgba(255,255,255,0.05);
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --ref: #c3c2b7;
+    --div-lo: #3987e5; --div-mid: #383835; --div-hi: #e66767;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0e1117; --surface: #161b24; --ink: #eef1f6; --ink-2: #b6bfcc; --muted: #8791a2;
+  --grid: #252c38; --axis: #353e4c; --line: rgba(255,255,255,0.09); --band: rgba(57,135,229,0.10);
+  --hover: rgba(255,255,255,0.05);
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --ref: #c3c2b7;
+  --div-lo: #3987e5; --div-mid: #383835; --div-hi: #e66767;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font); font-size: 15px; line-height: 1.5; }
+.wrap { max-width: 1320px; margin: 0 auto; padding-inline: clamp(16px, 3vw, 32px); padding-block: 20px 48px; }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--s1); outline-offset: 2px; }
+
+/* Encabezado */
+.top { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px 24px; padding-block: 8px 18px; border-bottom: 1px solid var(--line); }
+.brand h1 { margin: 0; font-size: 26px; font-weight: 600; letter-spacing: -0.01em; }
+.brand p { margin: 2px 0 0; color: var(--muted); font-size: 13.5px; }
+.brand p b { color: var(--ink-2); font-weight: 500; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--surface); }
+.seg button { border: 0; background: none; padding: 7px 13px; font-size: 13.5px; color: var(--ink-2); cursor: pointer; }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--surface); }
+.seg button:not([aria-pressed="true"]):hover { background: var(--hover); }
+.periodo { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.periodo span { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+
+/* Pestañas */
+.tabs { display: flex; gap: 4px; overflow-x: auto; padding-block: 12px; scrollbar-width: none; }
+.tabs::-webkit-scrollbar { display: none; }
+.tabs button { flex: none; border: 0; background: none; padding: 8px 14px; border-radius: 8px; font-size: 14.5px; font-weight: 500; color: var(--ink-2); cursor: pointer; }
+.tabs button:hover { background: var(--hover); }
+.tabs button[aria-selected="true"] { background: var(--surface); color: var(--ink); box-shadow: 0 0 0 1px var(--line); }
+
+/* Resumen */
+.tiles { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; margin-top: 4px; }
+.tile { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 14px 16px 12px; display: grid; gap: 4px; min-width: 0; }
+.tile .lab { font-size: 13px; color: var(--ink-2); font-weight: 500; }
+.tile .val { font-size: 28px; font-weight: 600; letter-spacing: -0.015em; line-height: 1.15; }
+.tile .val small { font-size: 15px; font-weight: 500; color: var(--ink-2); margin-left: 2px; }
+.tile .del { font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.tile svg { display: block; width: 100%; height: 34px; margin-top: 4px; }
+.pctl { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 8px; font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.pctl i { position: relative; display: block; height: 4px; border-radius: 2px; background: var(--grid); }
+.pctl i b { position: absolute; top: -3px; width: 2px; height: 10px; border-radius: 1px; background: var(--ink-2); }
+
+.lectura { margin-top: 20px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 18px 20px; }
+.lectura h2 { margin: 0 0 10px; font-size: 15px; font-weight: 600; }
+.lectura ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 10px; }
+.lectura li { display: grid; grid-template-columns: 104px 1fr; gap: 12px; font-size: 15px; color: var(--ink); max-width: 110ch; }
+.lectura li span { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); padding-top: 3px; }
+.proximos { margin-top: 12px; font-size: 13px; color: var(--muted); }
+
+h2.bloque { margin: 28px 0 12px; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); }
+
+/* Tarjetas */
+.grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 18px 18px 12px; display: flex; flex-direction: column; min-width: 0; }
+.card.ancha { grid-column: 1 / -1; }
+.card h3 { margin: 0; font-size: 17px; font-weight: 600; line-height: 1.3; text-wrap: balance; }
+.card .sub { margin: 4px 0 0; font-size: 13.5px; color: var(--muted); }
+.card .chart { height: 330px; margin-top: 10px; }
+.card.ancha .chart { height: 380px; }
+.card.alta .chart { height: 470px; }
+.card footer { display: flex; justify-content: space-between; align-items: center; gap: 12px; border-top: 1px solid var(--line); margin-top: 8px; padding-top: 10px; font-size: 12.5px; color: var(--muted); }
+.card footer button { border: 1px solid var(--line); background: none; border-radius: 6px; padding: 4px 10px; font-size: 12.5px; color: var(--ink-2); cursor: pointer; }
+.card footer button:hover { background: var(--hover); }
+.tabla { margin-top: 10px; max-height: 320px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; }
+.tabla table { border-collapse: collapse; width: 100%; font-size: 13px; font-variant-numeric: tabular-nums; }
+.tabla th, .tabla td { padding: 6px 10px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--grid); }
+.tabla th:first-child, .tabla td:first-child { text-align: left; }
+.tabla thead th { position: sticky; top: 0; background: var(--surface); color: var(--ink-2); font-weight: 500; }
+.vacio { display: grid; place-items: center; height: 100%; color: var(--muted); font-size: 14px; text-align: center; padding: 20px; }
+
+.estado { margin-top: 40px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 28px; max-width: 640px; }
+.estado h2 { margin: 0 0 8px; font-size: 18px; }
+.estado p { margin: 0; color: var(--ink-2); }
+
+.pie { margin-top: 36px; font-size: 12.5px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 6px 18px; justify-content: space-between; }
+.pie a { color: var(--ink-2); }
+
+@media (max-width: 1100px) { .tiles { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@media (max-width: 900px) {
+  .grid { grid-template-columns: minmax(0, 1fr); }
+  .card .chart { height: 300px; }
+  .card.alta .chart { height: 520px; }
+}
+@media (max-width: 560px) {
+  .brand h1 { font-size: 22px; }
+  .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .tile { padding: 12px; }
+  .tile .val { font-size: 23px; }
+  .lectura li { grid-template-columns: 1fr; gap: 2px; }
+  .card { padding: 14px 12px 10px; }
+  .card h3 { font-size: 16px; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <h1>US Macro Monitor</h1>
+      <p id="meta">Cargando datos…</p>
+    </div>
+    <div class="periodo">
+      <span id="lbl-periodo">Período</span>
+      <div class="seg" role="group" aria-labelledby="lbl-periodo" id="rango">
+        <button type="button" id="r-2022" data-r="2022" aria-pressed="true">Desde 2022</button>
+        <button type="button" id="r-5" data-r="5" aria-pressed="false">5 años</button>
+        <button type="button" id="r-10" data-r="10" aria-pressed="false">10 años</button>
+        <button type="button" id="r-2000" data-r="2000" aria-pressed="false">Desde 2000</button>
+      </div>
+    </div>
+  </header>
+  <nav class="tabs" role="tablist" aria-label="Bloques" id="tabs"></nav>
+  <main id="main"></main>
+  <footer class="pie">
+    <span>Fuentes: BEA, BLS, Census y Tesoro de EE.UU. vía FRED y APIs oficiales. Se actualiza solo los días hábiles.</span>
+    <span>@SantiGonzalezAR</span>
+  </footer>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/echarts/5.5.1/echarts.min.js"></script>
+<script>
+"use strict";
+// ─────────────────────────── utilidades ───────────────────────────
+const SECC = [
+  ["resumen", "Resumen"], ["actividad", "Actividad"], ["consumidor", "Consumidor"],
+  ["precios", "Precios"], ["empleo", "Empleo"], ["tasas", "Tasas"], ["externo", "Externo"],
+];
+const MES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+const EVENTOS = [["2008-09-15", "Lehman"], ["2020-03-01", "COVID"], ["2022-03-16", "Fed sube"], ["2024-09-18", "Fed baja"]];
+let DATA = null, RANGO = "2022", SEC = "resumen";
+const CHARTS = [];
+
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const nf = (v, d = 1) => v == null || !isFinite(v) ? "–" :
+  v.toLocaleString("es-AR", { minimumFractionDigits: d, maximumFractionDigits: d });
+const sg = (v, d = 1) => v == null || !isFinite(v) ? "–" : (v > 0 ? "+" : "") + nf(v, d);
+const fm = t => { const d = new Date(t); return MES[d.getUTCMonth()] + "-" + String(d.getUTCFullYear()).slice(2); };
+const fq = t => { const d = new Date(t); return "Q" + (Math.floor(d.getUTCMonth() / 3) + 1) + "-" + String(d.getUTCFullYear()).slice(2); };
+const T = (y, m = 1) => Date.UTC(y, m - 1, 1);
+
+function S(k) {
+  const s = DATA && DATA.series[k];
+  return s ? s.d.map(([d, v]) => [Date.parse(d + "T00:00:00Z"), v]) : null;
+}
+const last = a => a && a.length ? a[a.length - 1] : null;
+const prev = (a, n = 1) => a && a.length > n ? a[a.length - 1 - n] : null;
+function lagged(a, k, fn) {
+  if (!a) return null;
+  const out = [];
+  for (let i = k; i < a.length; i++) if (a[i - k][1]) out.push([a[i][0], fn(a[i][1], a[i - k][1])]);
+  return out;
+}
+const yoy = (a, k = 12) => lagged(a, k, (x, y) => (x / y - 1) * 100);
+const ann = (a, k, per = 12) => lagged(a, k, (x, y) => (Math.pow(x / y, per / k) - 1) * 100);
+const diff = (a, k = 1) => lagged(a, k, (x, y) => x - y);
+function roll(a, w) {
+  if (!a) return null;
+  const out = [];
+  for (let i = w - 1; i < a.length; i++) {
+    let s = 0; for (let j = i - w + 1; j <= i; j++) s += a[j][1];
+    out.push([a[i][0], s / w]);
+  }
+  return out;
+}
+function join(a, b, fn) {
+  if (!a || !b) return null;
+  const m = new Map(b); return a.filter(p => m.has(p[0])).map(p => [p[0], fn(p[1], m.get(p[0]))]);
+}
+function toQ(a, modo = "avg") {
+  if (!a) return null;
+  const g = new Map();
+  for (const [t, v] of a) {
+    const d = new Date(t), k = Date.UTC(d.getUTCFullYear(), Math.floor(d.getUTCMonth() / 3) * 3, 1);
+    if (!g.has(k)) g.set(k, []); g.get(k).push(v);
+  }
+  return [...g].filter(([, v]) => v.length === 3)
+    .map(([k, v]) => [k, modo === "sum" ? v.reduce((x, y) => x + y, 0) : v.reduce((x, y) => x + y, 0) / 3]);
+}
+function idx(a, t0) {
+  if (!a) return null;
+  const b = a.filter(p => p[0] >= t0); if (!b.length) return null;
+  return b.map(p => [p[0], p[1] / b[0][1] * 100]);
+}
+function t0() {
+  const hoy = new Date(), y = hoy.getUTCFullYear(), m = hoy.getUTCMonth() + 1;
+  return RANGO === "2022" ? T(2022) : RANGO === "2000" ? T(2000) : T(y - Number(RANGO), m);
+}
+const cut = (a, t) => a ? a.filter(p => p[0] >= t) : null;
+function rangoNormal(a) {
+  const r = a.filter(p => p[0] >= T(2000) && p[0] < T(2020)).map(p => p[1]).sort((x, y) => x - y);
+  if (r.length < 12) return null;
+  const q = f => r[Math.round(f * (r.length - 1))];
+  return [q(0.1), q(0.9)];
+}
+function pctl(a, v) {
+  const r = a.filter(p => p[0] >= T(2000)).map(p => p[1]);
+  return r.length ? Math.round(r.filter(x => x <= v).length / r.length * 100) : null;
+}
+function fuente(...ks) {
+  const f = new Set(ks.map(k => DATA.series[k] && (DATA.series[k].org ? DATA.series[k].org + (DATA.series[k].src === "FRED" ? " vía FRED" : "") : DATA.series[k].src)).filter(Boolean));
+  return [...f].join(" · ");
+}
+
+// ─────────────────────────── gráficos ───────────────────────────
+// Cada spec devuelve {titulo, sub, fuente, series:[{n,d,c,t,w,area,stack}], unidad, dec, refs, banda, tipo}
+function paleta() { return [css("--s1"), css("--s2"), css("--s3"), css("--s4")]; }
+
+function opcionesLinea(sp, freq) {
+  const col = paleta(), ink = css("--ink"), ink2 = css("--ink-2"), muted = css("--muted"),
+    grid = css("--grid"), axis = css("--axis"), ref = css("--ref"), surf = css("--surface");
+  const u = sp.unidad ?? "%", dec = sp.dec ?? 1;
+  const fx = freq === "Q" ? fq : fm;
+  const x0 = Math.min(...sp.series.map(s => s.d.length ? s.d[0][0] : Infinity));
+  const series = sp.series.map((s, i) => {
+    const c = col[s.c ?? i];
+    const base = {
+      name: s.n, data: s.d, z: 3,
+      itemStyle: { color: c },
+      emphasis: { focus: "series" },
+    };
+    if (s.t === "bar") return Object.assign(base, {
+      type: "bar", stack: s.stack, barMaxWidth: 26, barMinWidth: 1,
+      itemStyle: { color: c, borderRadius: [2, 2, 0, 0] },
+    });
+    return Object.assign(base, {
+      type: "line", stack: s.stack, showSymbol: false, symbolSize: 7, smooth: false,
+      lineStyle: { width: s.w ?? 2.2, color: c },
+      areaStyle: s.area ? { color: c, opacity: s.stack ? 0.85 : 0.10 } : undefined,
+      endLabel: s.fin === false ? undefined : {
+        show: true, formatter: p => nf(s.finValor ?? p.value[1], dec) + (u === "%" ? "%" : ""),
+        color: ink, fontFamily: css("--font"), fontSize: 12.5, fontWeight: 600, distance: 6,
+      },
+      labelLayout: { moveOverlap: "shiftY" },
+    });
+  });
+  // referencias, banda normal y eventos van en una serie auxiliar sin datos visibles
+  const aux = { type: "line", data: [], silent: true, markLine: { symbol: "none", data: [] }, markArea: { data: [] } };
+  for (const r of sp.refs || []) aux.markLine.data.push({
+    yAxis: r.y, lineStyle: { color: ref, type: [5, 4], width: 1.2 },
+    label: { formatter: r.l || "", position: "insideStartTop", color: ink2, fontSize: 12 },
+  });
+  if (sp.banda) aux.markArea.data.push([{
+    yAxis: sp.banda[0], itemStyle: { color: css("--band") },
+    label: { show: true, position: "insideTopRight", formatter: sp.bandaTexto || "Rango normal 2000-19", color: muted, fontSize: 11.5 },
+  }, { yAxis: sp.banda[1] }]);
+  if (sp.eventos !== false) for (const [f, l] of EVENTOS) {
+    const t = Date.parse(f + "T00:00:00Z");
+    if (t >= x0) aux.markLine.data.push({
+      xAxis: t, lineStyle: { color: axis, type: "solid", width: 1 },
+      label: { formatter: l, position: "insideEndTop", color: muted, fontSize: 11 },
+    });
+  }
+  aux.markLine.silent = true;
+  series.push(aux);
+  return {
+    useUTC: true, animationDuration: 350,
+    textStyle: { fontFamily: css("--font"), color: ink2 },
+    color: col,
+    grid: { left: 8, right: 58, top: sp.series.length > 1 ? 40 : 16, bottom: 6, containLabel: true },
+    legend: sp.series.length > 1 ? {
+      top: 0, left: 0, icon: "roundRect", itemWidth: 14, itemHeight: 4, itemGap: 16,
+      textStyle: { color: ink2, fontSize: 13 },
+      data: sp.series.map(s => s.n),
+    } : undefined,
+    tooltip: {
+      trigger: "axis", confine: true,
+      axisPointer: { type: sp.series.some(s => s.t === "bar") ? "shadow" : "line", lineStyle: { color: axis }, shadowStyle: { color: css("--hover") } },
+      backgroundColor: surf, borderColor: css("--line"), textStyle: { color: ink, fontSize: 13 },
+      formatter: ps => {
+        const ps2 = ps.filter(p => p.seriesName && p.value);
+        if (!ps2.length) return "";
+        let h = `<div style="font-weight:600;margin-bottom:4px">${fx(ps2[0].value[0])}</div>`;
+        for (const p of ps2) h += `<div style="display:flex;gap:10px;justify-content:space-between;align-items:center">
+          <span>${p.marker}${p.seriesName}</span><b style="font-variant-numeric:tabular-nums">${nf(p.value[1], dec)}${u === "%" ? "%" : u ? " " + u : ""}</b></div>`;
+        return h;
+      },
+    },
+    xAxis: {
+      type: "time", boundaryGap: sp.series.some(s => s.t === "bar") ? ["2%", "2%"] : false,
+      axisLine: { lineStyle: { color: axis } }, axisTick: { show: false },
+      axisLabel: { color: muted, fontSize: 12.5, hideOverlap: true,
+        formatter: v => { const d = new Date(v); return d.getUTCMonth() === 0 ? String(d.getUTCFullYear()) : MES[d.getUTCMonth()]; } },
+      splitLine: { show: false },
+    },
+    yAxis: {
+      type: "value", scale: !sp.cero,
+      axisLabel: { color: muted, fontSize: 12.5, formatter: v => nf(v, sp.decEje ?? (Math.abs(v) >= 100 ? 0 : dec > 0 ? 1 : 0)) + (u === "%" ? "%" : "") },
+      splitLine: { lineStyle: { color: grid } },
+      min: sp.yMin, max: sp.yMax,
+    },
+    series,
+  };
+}
+
+function opcionesHeat(sp, ancho) {
+  const ink = css("--ink"), muted = css("--muted");
+  const izq = ancho < 600 ? 128 : 178;
+  return {
+    textStyle: { fontFamily: css("--font"), color: css("--ink-2") },
+    grid: { left: izq, right: 8, top: 8, bottom: 78 },
+    tooltip: {
+      confine: true, backgroundColor: css("--surface"), borderColor: css("--line"), textStyle: { color: ink, fontSize: 13 },
+      formatter: p => `<b>${sp.filas[p.value[1]]}</b><br>${sp.cols[p.value[0]]}: ${nf(p.value[2], 1)}% anualizado 3m`,
+    },
+    xAxis: { type: "category", data: sp.cols, axisTick: { show: false }, axisLine: { show: false },
+      axisLabel: { color: muted, fontSize: 12, interval: 0, rotate: sp.cols.length > 12 ? 45 : 0 } },
+    yAxis: { type: "category", data: sp.filas, inverse: true, axisTick: { show: false }, axisLine: { show: false },
+      axisLabel: { color: css("--ink-2"), fontSize: ancho < 600 ? 11.5 : 12.5, width: izq - 12, overflow: "truncate" } },
+    visualMap: { min: -4, max: 8, calculable: false, orient: "horizontal", left: "center", bottom: 0, itemWidth: 12, itemHeight: 180,
+      text: ["8%", "−4%"], textStyle: { color: muted, fontSize: 12 },
+      inRange: { color: [css("--div-lo"), css("--div-mid"), css("--div-hi")] } },
+    series: [{
+      type: "heatmap", data: sp.data, itemStyle: { borderColor: css("--surface"), borderWidth: 2, borderRadius: 3 },
+      label: { show: ancho >= 600, fontSize: 11.5, fontFamily: css("--font"),
+        formatter: p => nf(p.value[2], 1),
+        color: ink },
+      emphasis: { itemStyle: { borderColor: ink, borderWidth: 1 } },
+    }],
+  };
+}
+
+function opcionesCategoria(sp) {
+  // barras apiladas por trimestre con línea (contribuciones al PBI)
+  const col = paleta(), ink = css("--ink"), muted = css("--muted");
+  const series = sp.series.map((s, i) => s.t === "line" ? {
+    type: "line", name: s.n, data: s.d, z: 5, symbol: "circle", symbolSize: 7,
+    lineStyle: { color: ink, width: 2 }, itemStyle: { color: ink, borderColor: css("--surface"), borderWidth: 2 },
+    label: { show: true, position: "top", formatter: p => nf(p.value, 1), color: ink, fontSize: 12, fontWeight: 600 },
+  } : {
+    type: "bar", name: s.n, data: s.d, stack: "c", barMaxWidth: 34,
+    itemStyle: { color: col[s.c ?? i], borderColor: css("--surface"), borderWidth: 1 },
+  });
+  return {
+    textStyle: { fontFamily: css("--font"), color: css("--ink-2") },
+    grid: { left: 8, right: 16, top: 40, bottom: 6, containLabel: true },
+    legend: { top: 0, left: 0, icon: "roundRect", itemWidth: 12, itemHeight: 8, itemGap: 14, textStyle: { color: css("--ink-2"), fontSize: 13 } },
+    tooltip: { trigger: "axis", confine: true, axisPointer: { type: "shadow", shadowStyle: { color: css("--hover") } },
+      backgroundColor: css("--surface"), borderColor: css("--line"), textStyle: { color: ink, fontSize: 13 },
+      formatter: ps => `<div style="font-weight:600;margin-bottom:4px">${ps[0].axisValue}</div>` + ps.map(p =>
+        `<div style="display:flex;gap:10px;justify-content:space-between"><span>${p.marker}${p.seriesName}</span><b>${sg(p.value, 1)} ${p.seriesType === "line" ? "%" : "pp"}</b></div>`).join("") },
+    xAxis: { type: "category", data: sp.cats, axisTick: { show: false }, axisLine: { lineStyle: { color: css("--axis") } },
+      axisLabel: { color: muted, fontSize: 12, hideOverlap: true } },
+    yAxis: { type: "value", axisLabel: { color: muted, fontSize: 12.5, formatter: v => nf(v, 0) + " pp" }, splitLine: { lineStyle: { color: css("--grid") } } },
+    series,
+  };
+}
+
+// ─────────────────────────── catálogo de gráficos ───────────────────────────
+const G = {};
+
+// Consumidor
+G.colchon = () => {
+  const sr = S("saving_rate"), dpi = S("dpi_nom"), p = S("pce_p");
+  if (!sr || !dpi || !p) return null;
+  const b = sr.filter(x => x[0] >= T(2015) && x[0] < T(2020)).map(x => x[1]);
+  const base = b.reduce((x, y) => x + y, 0) / b.length;
+  const pm = new Map(p), pHoy = last(p)[1];
+  const flujo = join(sr, dpi, (s, d) => (s - base) / 100 * d / 12).filter(x => x[0] >= T(2020) && pm.has(x[0]))
+    .map(([t, v]) => [t, v * pHoy / pm.get(t)]);
+  let acc = 0; const stock = flujo.map(([t, v]) => [t, acc += v]);
+  const ritmo = flujo.slice(-3).reduce((x, y) => x + y[1], 0) / 3, hoy = last(stock)[1];
+  const titulo = hoy > 0 && ritmo < 0 ? `Al ritmo actual, el colchón de ahorro alcanza para ${nf(hoy / -ritmo, 0)} meses`
+    : hoy <= 0 ? "El colchón de ahorro de la pandemia ya se consumió" : "El consumidor vuelve a ahorrar por encima de lo normal";
+  return { titulo, sub: `Ahorro acumulado por encima de la tasa normal 2015-19 (${nf(base)}%), en miles de millones de US$ de hoy. Ritmo de los últimos 3 meses: ${sg(ritmo, 0)} por mes.`,
+    fuente: fuente("saving_rate", "dpi_nom"), unidad: "", dec: 0, fijo: T(2020), cero: true,
+    series: [{ n: "Ahorro excedente acumulado", d: stock, area: true, c: 2 }], refs: [{ y: 0 }] };
+};
+G.ingresoConsumo = () => {
+  const a = idx(S("dpi_real"), t0()), b = idx(S("pce_real"), t0());
+  if (!a || !b) return null;
+  const g = last(a)[1] - last(b)[1];
+  return { titulo: g >= 0 ? `El ingreso real le lleva ${nf(g)} puntos al consumo real` : `El consumo real supera al ingreso real por ${nf(-g)} puntos`,
+    sub: `Índice ${fm(a[0][0])} = 100. Si el consumo crece más rápido que el ingreso, baja el ahorro.`,
+    fuente: fuente("dpi_real"), unidad: "", dec: 1, eventos: false,
+    series: [{ n: "Ingreso disponible real", d: a, c: 0 }, { n: "Consumo real", d: b, c: 1 }], refs: [{ y: 100 }] };
+};
+G.ahorro = () => {
+  const s = S("saving_rate"); if (!s) return null;
+  const rn = rangoNormal(s), v = last(s)[1];
+  const pos = rn ? (v < rn[0] ? "debajo de" : v > rn[1] ? "encima de" : "dentro de") : "vs.";
+  const c = cut(s, t0());
+  const sinPandemia = c.filter(p => p[0] < T(2020, 3) || p[0] > T(2021, 6)).map(p => p[1]);
+  const pico = Math.max(...c.map(p => p[1]));
+  const recorte = pico > Math.max(...sinPandemia) * 1.6;
+  return { titulo: `Tasa de ahorro en ${nf(v)}%: ${pos} su rango normal`,
+    sub: "% del ingreso disponible." + (recorte ? ` Eje recortado en la pandemia (pico: ${nf(pico)}%).` : ""),
+    fuente: fuente("saving_rate"), banda: rn, yMax: recorte ? Math.ceil(Math.max(...sinPandemia) + 1) : undefined,
+    series: [{ n: "Tasa de ahorro", d: c, c: 2 }] };
+};
+G.consumoTipo = () => {
+  const ks = [["pce_serv", "Servicios"], ["pce_ndur", "No durables"], ["pce_dur", "Durables"]];
+  const ss = ks.map(([k, n], i) => ({ n, d: idx(S(k), t0()), c: i }));
+  if (ss.some(s => !s.d)) return null;
+  const lider = ss.reduce((a, b) => last(a.d)[1] > last(b.d)[1] ? a : b);
+  return { titulo: `${lider.n} lideran el consumo real del período`, sub: `Índice ${fm(ss[0].d[0][0])} = 100.`,
+    fuente: fuente("pce_serv"), unidad: "", dec: 1, eventos: false, series: ss, refs: [{ y: 100 }] };
+};
+G.motores = () => {
+  const a = yoy(S("comp")), b = yoy(S("transfers")); if (!a || !b) return null;
+  return { titulo: `Salarios ${sg(last(a)[1])}% interanual, transferencias ${sg(last(b)[1])}%`,
+    sub: "Variación interanual nominal de las dos fuentes principales del ingreso personal.",
+    fuente: fuente("comp"), yMin: RANGO === "2000" || RANGO === "10" ? -5 : undefined, yMax: RANGO === "2000" || RANGO === "10" ? 20 : undefined,
+    series: [{ n: "Remuneración a asalariados", d: cut(a, t0()), c: 0 }, { n: "Transferencias del gobierno", d: cut(b, t0()), c: 1 }], refs: [{ y: 0 }] };
+};
+G.sentimiento = () => {
+  const s = S("sentiment"); if (!s) return null;
+  const v = last(s)[1], p = pctl(s, v);
+  return { titulo: `Confianza del consumidor en ${nf(v)}: percentil ${p} desde 2000`,
+    sub: "Índice de la Universidad de Michigan.", fuente: fuente("sentiment"), unidad: "", dec: 1,
+    banda: rangoNormal(s), series: [{ n: "Confianza del consumidor", d: cut(s, t0()), c: 0 }] };
+};
+
+// Precios
+G.pce = () => {
+  const h = yoy(S("pce_p")), c = yoy(S("pce_core")); if (!h || !c) return null;
+  const v = last(c)[1];
+  return { titulo: `Core PCE en ${nf(v)}%: ${nf(Math.abs(v - 2))} pp ${v >= 2 ? "por encima" : "por debajo"} de la meta`,
+    sub: `Variación interanual. General ${nf(last(h)[1])}%; la diferencia con el core es energía y alimentos.`,
+    fuente: fuente("pce_core"), banda: rangoNormal(c), bandaTexto: "Rango normal del core 2000-19",
+    series: [{ n: "PCE general", d: cut(h, t0()), c: 1 }, { n: "PCE core", d: cut(c, t0()), c: 0, w: 2.8 }],
+    refs: [{ y: 2, l: "Meta Fed 2%" }] };
+};
+G.momentum = () => {
+  const c = S("pce_core"); if (!c) return null;
+  const y = yoy(c), m3 = ann(c, 3), m6 = ann(c, 6);
+  const verbo = last(m3)[1] < last(y)[1] ? "se desacelera" : "se acelera";
+  return { titulo: `El core ${verbo}: ${nf(last(m3)[1])}% anualizado a 3 meses vs ${nf(last(y)[1])}% interanual`,
+    sub: "Si el anualizado corto queda por debajo del interanual, la desinflación sigue.", fuente: fuente("pce_core"),
+    series: [{ n: "3 meses anualizado", d: cut(m3, t0()), c: 3, w: 1.6 }, { n: "6 meses anualizado", d: cut(m6, t0()), c: 2 },
+      { n: "Interanual", d: cut(y, t0()), c: 0, w: 2.8 }], refs: [{ y: 2, l: "Meta Fed 2%" }] };
+};
+G.componentes = () => {
+  const e = yoy(S("pce_energy")), f = yoy(S("pce_food")), c = yoy(S("pce_core")); if (!e || !f || !c) return null;
+  return { titulo: `Energía ${sg(last(e)[1])}%, alimentos ${sg(last(f)[1])}% y core ${nf(last(c)[1])}% interanual`,
+    sub: "Qué explica la diferencia entre la inflación general y la del núcleo.", fuente: fuente("pce_energy"),
+    series: [{ n: "Core", d: cut(c, t0()), c: 0, w: 2.8 }, { n: "Energía", d: cut(e, t0()), c: 1 }, { n: "Alimentos", d: cut(f, t0()), c: 3 }], refs: [{ y: 0 }] };
+};
+G.serviciosBienes = () => {
+  const g = yoy(S("pce_goods")), s = yoy(S("pce_services")), sc = yoy(S("pce_supercore")); if (!g || !s) return null;
+  const ss = [{ n: "Servicios", d: cut(s, t0()), c: 0 }, { n: "Bienes", d: cut(g, t0()), c: 1 }];
+  if (sc) ss.push({ n: "Servicios sin energía ni vivienda", d: cut(sc, t0()), c: 2 });
+  return { titulo: `Servicios en ${nf(last(s)[1])}% y bienes en ${nf(last(g)[1])}% interanual`,
+    sub: "La inflación persistente vive en servicios; el supercore es la medida que sigue la Fed.", fuente: fuente("pce_services"),
+    series: ss, refs: [{ y: 0 }] };
+};
+G.cpiPce = () => {
+  const a = yoy(S("cpi_core")), b = yoy(S("pce_core")); if (!a || !b) return null;
+  return { titulo: `CPI core ${nf(last(a)[1])}% vs PCE core ${nf(last(b)[1])}%`,
+    sub: "Variación interanual. El CPI pondera más la vivienda; la Fed apunta al PCE.", fuente: fuente("cpi_core", "pce_core"),
+    series: [{ n: "CPI core", d: cut(a, t0()), c: 1 }, { n: "PCE core", d: cut(b, t0()), c: 0, w: 2.8 }], refs: [{ y: 2, l: "Meta Fed 2%" }] };
+};
+function rubros() {
+  const ks = Object.keys(DATA.series).filter(k => k.startsWith("cat:"));
+  return ks.map(k => ({ n: DATA.series[k].n, a3: ann(S(k), 3) }));
+}
+G.heat = () => {
+  const rs = rubros(); if (rs.length < 5) return null;
+  const fechas = rs[0].a3.slice(-18).map(p => p[0]);
+  const ult = rs.map(r => ({ n: r.n, m: new Map(r.a3), v: last(r.a3)[1] })).sort((a, b) => b.v - a.v);
+  const data = [];
+  ult.forEach((r, yi) => fechas.forEach((t, xi) => { const v = r.m.get(t); if (v != null) data.push([xi, yi, v]); }));
+  const cal = ult.filter(r => r.v > 3).length;
+  return { tipo: "heat", titulo: `${cal} de ${ult.length} rubros del núcleo corren arriba de 3% anual`,
+    sub: "Inflación por rubro del PCE core, anualizada a 3 meses. Gris = meta de 2%; rojo, arriba; azul, abajo. Ordenado por el último mes.",
+    fuente: "BEA, tabla NIPA 2.8.4", cols: fechas.map(fm), filas: ult.map(r => r.n), data,
+    tabla: { cab: ["Rubro", ...fechas.slice(-6).map(fm)], filas: ult.map(r => [r.n, ...fechas.slice(-6).map(t => nf(r.m.get(t)))]) } };
+};
+G.difusion = () => {
+  const rs = rubros(); if (rs.length < 5) return null;
+  const m = new Map();
+  for (const r of rs) for (const [t, v] of r.a3) { const e = m.get(t) || [0, 0]; e[0] += v > 3 ? 1 : 0; e[1]++; m.set(t, e); }
+  const s = roll([...m].sort((a, b) => a[0] - b[0]).map(([t, [a, n]]) => [t, a / n * 100]), 3);
+  return { titulo: `La presión de precios alcanza al ${nf(last(s)[1], 0)}% de los rubros del núcleo`,
+    sub: "Porcentaje de rubros del PCE core con inflación anualizada a 3 meses mayor a 3% (promedio móvil 3 meses).",
+    fuente: "BEA, tabla NIPA 2.8.4", dec: 0, banda: rangoNormal(s), yMin: 0, yMax: 100,
+    series: [{ n: "Rubros arriba de 3%", d: cut(s, t0()), c: 1 }] };
+};
+
+// Empleo
+G.nominas = () => {
+  const p = S("payrolls"); if (!p) return null;
+  const d = diff(p), m3 = roll(d, 3);
+  const dd = cut(d, Math.max(t0(), T(2021))), mm = cut(m3, Math.max(t0(), T(2021)));
+  return { titulo: `La economía suma ${nf(last(m3)[1], 0)} mil puestos por mes (promedio de 3 meses)`,
+    sub: `Variación mensual de las nóminas no agrícolas, en miles. Último mes: ${sg(last(d)[1], 0)} mil.` + (t0() < T(2021) ? " Desde 2021 para no aplastar la escala con la pandemia." : ""),
+    fuente: fuente("payrolls"), unidad: "mil", dec: 0, eventos: false,
+    series: [{ n: "Cambio mensual", d: dd, t: "bar", c: 0 }, { n: "Promedio 3 meses", d: mm, c: 1, w: 2.4 }], refs: [{ y: 0 }] };
+};
+G.desempleo = () => {
+  const u = S("unemployment"); if (!u) return null;
+  const v = last(u)[1], min12 = Math.min(...u.slice(-12).map(p => p[1]));
+  return { titulo: `Desempleo en ${nf(v)}%, ${nf(v - min12)} pp sobre su mínimo de 12 meses`,
+    sub: "Una suba de 0,5 pp sobre el mínimo de 12 meses (regla de Sahm, con promedio 3m) anticipó cada recesión desde 1970.",
+    fuente: fuente("unemployment"), banda: rangoNormal(u), yMax: t0() < T(2020, 4) ? 11 : undefined,
+    series: [{ n: "Tasa de desempleo", d: cut(u, t0()), c: 0 }] };
+};
+G.salarioReal = () => {
+  const w = yoy(S("ahe")), c = yoy(S("pce_core")); if (!w || !c) return null;
+  const real = join(w, c, (a, b) => a - b);
+  return { titulo: `Los salarios suben ${nf(last(w)[1])}% interanual: ${sg(last(real)[1])} pp por encima del core PCE`,
+    sub: "Salario horario promedio del sector privado vs inflación core, variación interanual.", fuente: fuente("ahe", "pce_core"),
+    yMin: t0() < T(2021) ? -2 : undefined, yMax: t0() < T(2021) ? 9 : undefined,
+    series: [{ n: "Salario horario", d: cut(w, t0()), c: 0, w: 2.8 }, { n: "PCE core", d: cut(c, t0()), c: 1 }], refs: [{ y: 0 }] };
+};
+G.epop = () => {
+  const e = S("epop_prime"); if (!e) return null;
+  const v = last(e)[1];
+  return { titulo: `Empleo 25-54 años en ${nf(v)}%: percentil ${pctl(e, v)} desde 2000`,
+    sub: "Proporción de la población de 25 a 54 años con empleo. No depende del envejecimiento ni de cuántos buscan trabajo.",
+    fuente: fuente("epop_prime"), banda: rangoNormal(e), yMin: t0() < T(2020, 4) ? 72 : undefined,
+    series: [{ n: "Tasa de empleo 25-54", d: cut(e, t0()), c: 2 }] };
+};
+G.vacantes = () => {
+  const o = S("openings"), c = S("claims"); if (!o) return null;
+  const v = last(o)[1];
+  return { titulo: `Vacantes en ${nf(v / 1000, 1)} millones, percentil ${pctl(o, v)} desde 2000`,
+    sub: "Puestos vacantes (JOLTS), en millones.", fuente: fuente("openings"), unidad: "M", dec: 2,
+    series: [{ n: "Vacantes", d: cut(o, t0()).map(p => [p[0], p[1] / 1000]), c: 0 }] };
+};
+G.pedidos = () => {
+  const c = S("claims"); if (!c) return null;
+  const v = last(c)[1];
+  return { titulo: `Pedidos iniciales de desempleo: ${nf(v / 1000, 0)} mil por semana`,
+    sub: "Promedio mensual de los pedidos semanales. Es el dato de mayor frecuencia del mercado laboral.",
+    fuente: fuente("claims"), unidad: "mil", dec: 0, yMax: t0() < T(2020, 4) ? 700 : undefined,
+    series: [{ n: "Pedidos iniciales", d: cut(c, t0()).map(p => [p[0], p[1] / 1000]), c: 1 }] };
+};
+
+// Actividad
+G.contribuciones = () => {
+  const ks = [["c_consumo", "Consumo"], ["c_inversion", "Inversión"], ["c_gobierno", "Gobierno"], ["c_externo", "Export. netas"]];
+  const g = S("gdp_growth"); if (!g || ks.some(([k]) => !S(k))) return null;
+  const desde = Math.max(t0(), T(2021));
+  const gg = cut(g, desde), ts = gg.map(p => p[0]);
+  const series = ks.map(([k, n], i) => { const m = new Map(S(k)); return { n, c: i, d: ts.map(t => m.get(t) ?? 0) }; });
+  series.push({ n: "PBI real", t: "line", d: gg.map(p => p[1]) });
+  const u = series.slice(0, 4).map(s => [s.n, s.d[s.d.length - 1]]).sort((a, b) => b[1] - a[1])[0];
+  return { tipo: "cat", titulo: `PBI ${nf(last(g)[1])}% en ${fq(last(g)[0])}: el motor fue ${u[0].toLowerCase()} (${sg(u[1])} pp)`,
+    sub: "Contribuciones al crecimiento real, % trimestral anualizado. Desde 2021.", fuente: fuente("gdp_growth"),
+    cats: ts.map(fq), series };
+};
+G.pbiGdi = () => {
+  const a = yoy(S("gdp_real"), 4), b = yoy(S("gdi_real"), 4); if (!a || !b) return null;
+  const br = Math.abs(last(a)[1] - last(b)[1]);
+  return { titulo: br < 0.5 ? "Gasto e ingreso coinciden: la señal de crecimiento es confiable" : `Gasto e ingreso difieren en ${nf(br)} pp`,
+    sub: "PBI medido por el gasto (PBI) y por el ingreso (GDI), variación interanual real.", fuente: fuente("gdp_real"), freq: "Q",
+    yMin: t0() < T(2021) ? -5 : undefined, yMax: t0() < T(2021) ? 8 : undefined,
+    series: [{ n: "PBI real", d: cut(a, t0()), c: 0 }, { n: "GDI real", d: cut(b, t0()), c: 2 }], refs: [{ y: 0 }] };
+};
+G.capex = () => {
+  const e = S("inv_info"), s = S("inv_software"), g = S("gdp_nom"); if (!e || !s || !g) return null;
+  const ep = join(e, g, (a, b) => a / b * 100), sp = join(s, g, (a, b) => a / b * 100);
+  const tot = join(ep, sp, (a, b) => a + b);
+  const pc = Math.max(...tot.filter(p => p[0] < T(2003)).map(p => p[1])), d = last(tot)[1] - pc;
+  return { titulo: d > 0 ? `La inversión tecnológica supera el pico punto com en ${nf(d, 2)} pp del PBI` : `La inversión tecnológica está a ${nf(-d, 2)} pp del pico punto com`,
+    sub: "Equipos de procesamiento de información + software, % del PBI nominal. Las estructuras (data centers) no tienen serie propia.",
+    fuente: fuente("inv_info"), freq: "Q", dec: 2, decEje: 1, fijo: T(2000), cero: true, eventos: false,
+    series: [{ n: "Equipos de información", d: ep, area: true, stack: "t", c: 0, fin: false }, { n: "Software", d: sp, area: true, stack: "t", c: 2, finValor: last(tot)[1] }],
+    refs: [{ y: pc, l: `Pico punto com: ${nf(pc, 2)}%` }] };
+};
+G.ganancias = () => {
+  const p = S("profits"), g = S("gdp_nom"); if (!p || !g) return null;
+  const r = join(p, g, (a, b) => a / b * 100);
+  return { titulo: `Las ganancias corporativas equivalen al ${nf(last(r)[1])}% del PBI`,
+    sub: "Ganancias corporativas (con ajustes de inventario y amortización) sobre PBI nominal.", fuente: fuente("profits"), freq: "Q",
+    banda: rangoNormal(r), series: [{ n: "Ganancias / PBI", d: cut(r, t0()), c: 2 }] };
+};
+G.industria = () => {
+  const i = yoy(S("indpro")), r = yoy(S("retail")); if (!i || !r) return null;
+  return { titulo: `Producción industrial ${sg(last(i)[1])}% y ventas minoristas ${sg(last(r)[1])}% interanual`,
+    sub: "Producción industrial (real) y ventas minoristas (nominales), variación interanual.", fuente: fuente("indpro", "retail"),
+    yMin: t0() < T(2021) ? -20 : undefined, yMax: t0() < T(2021) ? 25 : undefined,
+    series: [{ n: "Producción industrial", d: cut(i, t0()), c: 0 }, { n: "Ventas minoristas", d: cut(r, t0()), c: 1 }], refs: [{ y: 0 }] };
+};
+
+// Tasas
+G.curva = () => {
+  const ks = [["fed_funds", "Fondos federales"], ["ust2", "Treasury 2 años"], ["ust10", "Treasury 10 años"], ["ust30", "Treasury 30 años"]];
+  const ss = ks.map(([k, n], i) => ({ n, d: cut(S(k), t0()), c: i })).filter(s => s.d);
+  if (ss.length < 3) return null;
+  return { titulo: `Fed ${nf(last(ss[0].d)[1], 2)}%, 2 años ${nf(last(ss[1].d)[1], 2)}%, 10 años ${nf(last(ss[2].d)[1], 2)}%`,
+    sub: "Promedios mensuales, en %.", fuente: "Fed y Tesoro de EE.UU. vía FRED", dec: 2, series: ss };
+};
+G.pendiente = () => {
+  const a = S("ust10"), b = S("ust2"); if (!a || !b) return null;
+  const s = join(a, b, (x, y) => (x - y) * 100);
+  const v = last(s)[1];
+  return { titulo: v >= 0 ? `Curva 10-2 positiva en ${nf(v, 0)} pb` : `Curva 10-2 invertida en ${nf(-v, 0)} pb`,
+    sub: "Diferencia entre la tasa a 10 años y la tasa a 2 años, en puntos básicos.", fuente: "Tesoro de EE.UU. vía FRED", unidad: "pb", dec: 0,
+    series: [{ n: "10 años − 2 años", d: cut(s, t0()), c: 0, area: true }], refs: [{ y: 0 }] };
+};
+G.tasaReal = () => {
+  const r = S("tips10"), be = S("breakeven10"); if (!r || !be) return null;
+  const v = last(r)[1];
+  return { titulo: `Tasa real a 10 años en ${nf(v, 2)}%: percentil ${pctl(r, v)} desde 2003`,
+    sub: "El rendimiento nominal a 10 años se divide en tasa real (TIPS) e inflación esperada (breakeven).", fuente: "Tesoro de EE.UU. vía FRED", dec: 2,
+    series: [{ n: "Tasa real (TIPS 10a)", d: cut(r, t0()), c: 0, w: 2.8 }, { n: "Inflación esperada (breakeven 10a)", d: cut(be, t0()), c: 1 }], refs: [{ y: 0 }] };
+};
+G.politica = () => {
+  const f = S("fed_funds"), c = yoy(S("pce_core")); if (!f || !c) return null;
+  const r = join(f, c, (a, b) => a - b), v = last(r)[1];
+  return { titulo: v > 0 ? `La política monetaria es restrictiva: tasa real de ${nf(v)}%` : `La tasa real de la Fed es negativa: ${nf(v)}%`,
+    sub: "Tasa de fondos federales menos inflación core PCE interanual. Se estima que el nivel neutral ronda 0,5% a 1%.",
+    fuente: fuente("fed_funds", "pce_core"), series: [{ n: "Tasa real de la Fed", d: cut(r, t0()), c: 0, area: true }],
+    refs: [{ y: 0 }, { y: 1, l: "Neutral aprox." }] };
+};
+G.nominalTasa = () => {
+  const n = yoy(S("gdp_nom"), 4), t = toQ(S("ust10")); if (!n || !t) return null;
+  const tt = join(n, t, (a, b) => b), d = last(n)[1] - last(tt)[1];
+  return { titulo: d > 0 ? `El PBI nominal crece ${nf(d)} pp por encima de la tasa a 10 años` : `La tasa a 10 años supera al PBI nominal por ${nf(-d)} pp`,
+    sub: "Si el nominal corre por encima del costo de financiamiento, la deuda se licúa como % del PBI.", fuente: "BEA y Tesoro de EE.UU. vía FRED", freq: "Q",
+    yMin: t0() < T(2021) ? -6 : undefined, yMax: t0() < T(2021) ? 14 : undefined,
+    series: [{ n: "PBI nominal, interanual", d: cut(n, t0()), c: 1 }, { n: "Treasury 10 años", d: cut(tt, t0()), c: 0 }] };
+};
+
+// Externo
+G.balanza = () => {
+  const b = S("trade_balance"); if (!b) return null;
+  const s = cut(b, t0()).map(p => [p[0], p[1] / 1000]);
+  const v = last(s)[1], m12 = s.slice(-13, -1).reduce((x, y) => x + y[1], 0) / Math.min(12, s.length - 1);
+  return { titulo: `Déficit comercial de US$ ${nf(-v, 1)} mil M, contra ${nf(-m12, 1)} de promedio en 12 meses`,
+    sub: "Balanza de bienes y servicios, en miles de millones de US$ por mes.", fuente: fuente("trade_balance"), unidad: "mil M", dec: 1, eventos: false,
+    series: [{ n: "Balanza comercial", d: s, t: "bar", c: 1 }], refs: [{ y: 0 }] };
+};
+G.capexImport = () => {
+  const i = S("imp_capital"), e = S("inv_info"), s = S("inv_software"); if (!i || !e || !s) return null;
+  const iq = yoy(toQ(i, "sum"), 4), cq = yoy(join(e, s, (a, b) => a + b), 4);
+  return { titulo: `Importaciones de capital ${sg(last(iq)[1])}% vs inversión tecnológica ${sg(last(cq)[1])}% interanual`,
+    sub: "Si crecen juntas, parte del boom de inversión se abastece afuera y resta en la balanza comercial.", fuente: "BEA y Census vía FRED", freq: "Q",
+    yMin: t0() < T(2021) ? -30 : undefined, yMax: t0() < T(2021) ? 40 : undefined,
+    series: [{ n: "Inversión tecnológica", d: cut(cq, t0()), c: 0 }, { n: "Importaciones de bienes de capital", d: cut(iq, t0()), c: 1 }], refs: [{ y: 0 }] };
+};
+G.dolar = () => {
+  const d = S("dollar"); if (!d) return null;
+  const y = yoy(d);
+  return { titulo: `El dólar amplio ${last(y)[1] >= 0 ? "sube" : "cae"} ${nf(Math.abs(last(y)[1]))}% interanual`,
+    sub: "Índice del dólar ponderado por comercio (Fed), promedio mensual.", fuente: fuente("dollar"), unidad: "", dec: 1,
+    series: [{ n: "Dólar amplio", d: cut(d, t0()), c: 0 }] };
+};
+G.terminos = () => {
+  const d = S("gdp_defl"), p = S("pce_p"); if (!d || !p) return null;
+  const a = ann(d, 1, 4), b = ann(toQ(p), 1, 4);
+  const arriba = last(a)[1] > last(join(a, b, (x, y) => y))[1];
+  return { titulo: arriba ? "Términos de intercambio a favor: lo que EE.UU. produce se encarece más que lo que consume" : "Términos de intercambio en contra: lo que EE.UU. consume se encarece más que lo que produce",
+    sub: "Deflactor del PBI vs precios del consumo, % trimestral anualizado.", fuente: fuente("gdp_defl"), freq: "Q",
+    yMin: t0() < T(2021) ? -4 : undefined, yMax: t0() < T(2021) ? 10 : undefined,
+    series: [{ n: "Deflactor del PBI", d: cut(a, t0()), c: 1 }, { n: "Precios PCE", d: cut(b, t0()), c: 0 }] };
+};
+
+const BLOQUES = {
+  actividad: [["contribuciones", "ancha"], ["pbiGdi"], ["industria"], ["capex"], ["ganancias"]],
+  consumidor: [["colchon", "ancha"], ["ingresoConsumo"], ["ahorro"], ["consumoTipo"], ["motores"], ["sentimiento", "ancha"]],
+  precios: [["pce"], ["momentum"], ["heat", "ancha alta"], ["difusion"], ["componentes"], ["serviciosBienes"], ["cpiPce"]],
+  empleo: [["nominas", "ancha"], ["desempleo"], ["salarioReal"], ["epop"], ["vacantes"], ["pedidos", "ancha"]],
+  tasas: [["curva", "ancha"], ["pendiente"], ["tasaReal"], ["politica"], ["nominalTasa"]],
+  externo: [["balanza", "ancha"], ["capexImport"], ["dolar"], ["terminos", "ancha"]],
+};
+
+// ─────────────────────────── render ───────────────────────────
+function limpiar() { while (CHARTS.length) CHARTS.pop().dispose(); }
+
+function tarjeta(id, clase) {
+  let sp = null;
+  try { sp = G[id](); } catch (e) { console.error(id, e); }
+  const el = document.createElement("article");
+  el.className = "card " + (clase || "");
+  if (!sp) {
+    el.innerHTML = `<h3>Serie no disponible</h3><p class="sub">Falta alguna de las series de este gráfico en la última actualización.</p>`;
+    return el;
+  }
+  el.innerHTML = `<h3></h3><p class="sub"></p><div class="chart" role="img"></div>
+    <footer><span></span><button type="button" aria-expanded="false">Ver tabla</button></footer><div class="tabla" hidden></div>`;
+  el.querySelector("h3").textContent = sp.titulo;
+  el.querySelector(".sub").textContent = sp.sub;
+  el.querySelector(".chart").setAttribute("aria-label", sp.titulo);
+  el.querySelector("footer span").textContent = "Fuente: " + (sp.fuente || "");
+  const btn = el.querySelector("footer button"), tb = el.querySelector(".tabla");
+  btn.addEventListener("click", () => {
+    const abrir = tb.hidden; tb.hidden = !abrir; btn.setAttribute("aria-expanded", String(abrir));
+    btn.textContent = abrir ? "Ocultar tabla" : "Ver tabla";
+    if (abrir && !tb.firstChild) tb.appendChild(tablaDe(sp));
+  });
+  el._sp = sp;
+  return el;
+}
+
+function tablaDe(sp) {
+  const t = document.createElement("table");
+  let cab, filas;
+  if (sp.tabla) { cab = sp.tabla.cab; filas = sp.tabla.filas; }
+  else if (sp.tipo === "cat") {
+    cab = ["Trimestre", ...sp.series.map(s => s.n)];
+    filas = sp.cats.map((c, i) => [c, ...sp.series.map(s => nf(s.d[i]))]).reverse();
+  } else {
+    const fx = sp.freq === "Q" ? fq : fm, dec = sp.dec ?? 1;
+    const ts = [...new Set(sp.series.flatMap(s => s.d.map(p => p[0])))].sort((a, b) => b - a).slice(0, 36);
+    const ms = sp.series.map(s => new Map(s.d));
+    cab = [sp.freq === "Q" ? "Trimestre" : "Mes", ...sp.series.map(s => s.n)];
+    filas = ts.map(t => [fx(t), ...ms.map(m => nf(m.get(t), dec))]);
+  }
+  t.innerHTML = "<thead><tr>" + cab.map(c => `<th scope="col">${c}</th>`).join("") + "</tr></thead><tbody>" +
+    filas.map(f => "<tr>" + f.map(c => `<td>${c}</td>`).join("") + "</tr>").join("") + "</tbody>";
+  return t;
+}
+
+function dibujar(el) {
+  const sp = el._sp; if (!sp) return;
+  const box = el.querySelector(".chart");
+  const ch = echarts.init(box, null, { renderer: "canvas" });
+  let o;
+  if (sp.tipo === "heat") o = opcionesHeat(sp, box.clientWidth);
+  else if (sp.tipo === "cat") o = opcionesCategoria(sp);
+  else {
+    if (sp.fijo) sp.series.forEach(s => { s.d = s.d.filter(p => p[0] >= sp.fijo); });
+    o = opcionesLinea(sp, sp.freq || "M");
+  }
+  ch.setOption(o);
+  CHARTS.push(ch);
+}
+
+function sparkline(a) {
+  if (!a || a.length < 2) return "";
+  const v = a.map(p => p[1]), mn = Math.min(...v), mx = Math.max(...v), W = 200, H = 34, pad = 3;
+  const x = i => i / (v.length - 1) * W, y = t => H - pad - (mx === mn ? 0.5 : (t - mn) / (mx - mn)) * (H - 2 * pad);
+  const d = v.map((t, i) => (i ? "L" : "M") + x(i).toFixed(1) + " " + y(t).toFixed(1)).join("");
+  return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true">
+    <path d="${d} L${W} ${H} L0 ${H}Z" fill="var(--s1)" opacity=".08"/>
+    <path d="${d}" fill="none" stroke="var(--s1)" stroke-width="1.6" vector-effect="non-scaling-stroke"/>
+    <circle cx="${x(v.length - 1)}" cy="${y(v[v.length - 1])}" r="2.6" fill="var(--s1)"/></svg>`;
+}
+
+function tiles() {
+  const pay = S("payrolls"), payD = pay && roll(diff(pay), 3);
+  const curva = join(S("ust10"), S("ust2"), (a, b) => (a - b) * 100);
+  const L = [
+    ["PBI real", S("gdp_growth"), "%", 1, "t/t anualizado", "Q"],
+    ["Core PCE", yoy(S("pce_core")), "%", 1, "interanual"],
+    ["PCE general", yoy(S("pce_p")), "%", 1, "interanual"],
+    ["CPI core", yoy(S("cpi_core")), "%", 1, "interanual"],
+    ["Desempleo", S("unemployment"), "%", 1, "de la fuerza laboral"],
+    ["Nóminas", payD, "mil", 0, "por mes, prom. 3m"],
+    ["Salario horario", yoy(S("ahe")), "%", 1, "interanual"],
+    ["Tasa de ahorro", S("saving_rate"), "%", 1, "del ingreso"],
+    ["Fondos federales", S("fed_funds"), "%", 2, "promedio mensual"],
+    ["Treasury 10 años", S("ust10"), "%", 2, "promedio mensual"],
+    ["Tasa real 10 años", S("tips10"), "%", 2, "TIPS"],
+    ["Curva 10-2", curva, "pb", 0, "puntos básicos"],
+  ];
+  const box = document.createElement("div"); box.className = "tiles";
+  for (const [lab, a, u, d, nota, f] of L) {
+    if (!a || !a.length) continue;
+    const [t, v] = last(a), pv = prev(a), p = pctl(a, v);
+    const el = document.createElement("div"); el.className = "tile";
+    const cambio = pv ? v - pv[1] : null;
+    el.innerHTML = `<div class="lab">${lab}</div>
+      <div class="val">${nf(v, d)}<small>${u}</small></div>
+      <div class="del">${f === "Q" ? fq(t) : fm(t)} · ${nota}${cambio != null ? ` · ${cambio >= 0 ? "▲" : "▼"} ${nf(Math.abs(cambio), d)}` : ""}</div>
+      ${sparkline(a.slice(f === "Q" ? -16 : -36))}
+      <div class="pctl" title="Posición del último dato dentro de la historia desde 2000"><i><b style="left:calc(${p}% - 1px)"></b></i><span>p${p} desde 2000</span></div>`;
+    box.appendChild(el);
+  }
+  return box;
+}
+
+function lectura() {
+  const items = [];
+  try {
+    const g = S("gdp_growth"), ks = [["c_consumo", "el consumo"], ["c_inversion", "la inversión"], ["c_gobierno", "el gasto público"], ["c_externo", "el sector externo"]];
+    const m = ks.map(([k, n]) => [n, last(S(k))[1]]).sort((a, b) => b[1] - a[1])[0];
+    items.push(["Actividad", `El PBI creció ${nf(last(g)[1])}% anualizado en ${fq(last(g)[0])}; lo que más aportó fue ${m[0]} (${sg(m[1])} pp).`]);
+  } catch (e) {}
+  try {
+    const c = yoy(S("pce_real")), i = yoy(S("dpi_real")), s = last(S("saving_rate"))[1];
+    items.push(["Consumidor", `El consumo real crece ${nf(last(c)[1])}% interanual contra ${nf(last(i)[1])}% del ingreso disponible real. La tasa de ahorro está en ${nf(s)}%.`]);
+  } catch (e) {}
+  try {
+    const c = S("pce_core"), y = last(yoy(c))[1], m3 = last(ann(c, 3))[1];
+    const rs = rubros(), cal = rs.filter(r => r.a3.length && last(r.a3)[1] > 3).length;
+    items.push(["Precios", `El core PCE corre a ${nf(y)}% interanual y ${nf(m3)}% anualizado a 3 meses` + (rs.length ? `; ${cal} de ${rs.length} rubros superan 3%.` : ".")]);
+  } catch (e) {}
+  try {
+    const p = roll(diff(S("payrolls")), 3), u = last(S("unemployment"))[1];
+    items.push(["Empleo", `La economía suma ${nf(last(p)[1], 0)} mil puestos por mes en promedio de 3 meses, con desempleo en ${nf(u)}%.`]);
+  } catch (e) {}
+  try {
+    const r = S("tips10"), v = last(r)[1], f = last(S("fed_funds"))[1], c = last(yoy(S("pce_core")))[1];
+    items.push(["Tasas", `La tasa real a 10 años está en ${nf(v, 2)}% (percentil ${pctl(r, v)} desde 2003) y la tasa real de la Fed en ${nf(f - c)}%.`]);
+  } catch (e) {}
+  const el = document.createElement("section"); el.className = "lectura";
+  el.innerHTML = `<h2>Lectura del último dato</h2><ul>${items.map(([a, b]) => `<li><span>${a}</span><div>${b}</div></li>`).join("")}</ul>
+    <p class="proximos">Los títulos y la lectura se recalculan solos con cada actualización. Próximos releases del BEA: 29-oct, PBI Q3 (avance) y PCE de septiembre.</p>`;
+  return el;
+}
+
+function render() {
+  limpiar();
+  const main = document.getElementById("main");
+  main.innerHTML = "";
+  const tarjetas = [];
+  if (SEC === "resumen") {
+    main.appendChild(tiles());
+    main.appendChild(lectura());
+    const h = document.createElement("h2"); h.className = "bloque"; h.textContent = "Las tres preguntas del ciclo"; main.appendChild(h);
+    const gr = document.createElement("div"); gr.className = "grid";
+    for (const [id, cl] of [["colchon", "ancha"], ["heat", "ancha alta"], ["capex"], ["politica"]]) { const t = tarjeta(id, cl); gr.appendChild(t); tarjetas.push(t); }
+    main.appendChild(gr);
+  } else {
+    const gr = document.createElement("div"); gr.className = "grid";
+    for (const [id, cl] of BLOQUES[SEC]) { const t = tarjeta(id, cl); gr.appendChild(t); tarjetas.push(t); }
+    main.appendChild(gr);
+  }
+  requestAnimationFrame(() => tarjetas.forEach(dibujar));
+}
+
+function pestañas() {
+  const nav = document.getElementById("tabs");
+  nav.innerHTML = "";
+  for (const [id, n] of SECC) {
+    const b = document.createElement("button");
+    b.type = "button"; b.id = "tab-" + id; b.role = "tab"; b.textContent = n;
+    b.setAttribute("aria-selected", String(id === SEC));
+    b.addEventListener("click", () => { SEC = id; history.replaceState(null, "", "#" + id); pestañas(); render(); window.scrollTo({ top: 0 }); });
+    nav.appendChild(b);
+  }
+}
+
+function iniciar(json) {
+  DATA = json;
+  const fin = Object.values(DATA.series).map(s => s.d.length ? s.d[s.d.length - 1][0] : "").sort().pop();
+  const gen = new Date(DATA.generado);
+  document.getElementById("meta").innerHTML =
+    `Actualizado el <b>${gen.getUTCDate()}-${MES[gen.getUTCMonth()]}-${gen.getUTCFullYear()}</b> · ${Object.keys(DATA.series).length} series de BEA, BLS y FRED`;
+  const h = location.hash.replace("#", "");
+  if (SECC.some(([id]) => id === h)) SEC = h;
+  pestañas(); render();
+}
+
+document.querySelectorAll("#rango button").forEach(b => b.addEventListener("click", () => {
+  RANGO = b.dataset.r;
+  document.querySelectorAll("#rango button").forEach(x => x.setAttribute("aria-pressed", String(x === b)));
+  try { localStorage.setItem("umm-rango", RANGO); } catch (e) {}
+  if (DATA) render();
+}));
+try {
+  const r = localStorage.getItem("umm-rango");
+  if (r) { RANGO = r; document.querySelectorAll("#rango button").forEach(x => x.setAttribute("aria-pressed", String(x.dataset.r === r))); }
+} catch (e) {}
+
+let tRes;
+window.addEventListener("resize", () => { clearTimeout(tRes); tRes = setTimeout(() => CHARTS.forEach(c => c.resize()), 120); });
+window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => DATA && render());
+new MutationObserver(() => DATA && render()).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+
+fetch("data.json", { cache: "no-cache" })
+  .then(r => r.ok ? r.json() : Promise.reject(r.status))
+  .then(iniciar)
+  .catch(() => {
+    document.getElementById("meta").textContent = "Sin datos todavía";
+    document.getElementById("main").innerHTML = `<section class="estado"><h2>Todavía no hay datos</h2>
+      <p>La primera actualización automática todavía no corrió. En el repo, pestaña Actions → "Actualizar datos" → Run workflow. En un par de minutos esta página se llena sola.</p></section>`;
+  });
+</script>
+</body>
+</html>
