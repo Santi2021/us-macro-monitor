@@ -258,6 +258,8 @@ const DIA = ["dom", "lun", "mar", "mié", "jue", "vie", "sáb"];
 const EVENTOS = [["2008-09-15", "Lehman"], ["2020-03-01", "COVID"], ["2022-03-16", "Fed sube"], ["2024-09-18", "Fed baja"]];
 // Ventana en la que la pandemia distorsiona las series (incluye el rebote de transferencias y precios hasta mediados de 2022)
 const COVID = [Date.UTC(2020, 2, 1), Date.UTC(2022, 5, 1)];
+// El recorte sólo se activa si el período incluye el shock en sí (2020 y el primer semestre de 2021)
+const COVID_SHOCK = [Date.UTC(2020, 2, 1), Date.UTC(2021, 5, 1)];
 const ICONOS = {
   ampliar: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M9.5 2.5h4v4M6.5 13.5h-4v-4M13.5 2.5 9 7M2.5 13.5 7 9" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>',
   png: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.5v8M4.5 7 8 10.5 11.5 7M2.5 13.5h11" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>',
@@ -454,7 +456,7 @@ function pasoLindo(r) { const e = Math.pow(10, Math.floor(Math.log10(r))); const
 function recorteCovid(sp) {
   if (sp.tipo || sp.yMin != null || sp.yMax != null || sp.sinRecorte) return;
   const pts = sp.series.flatMap(s => s.d);
-  if (!pts.some(p => p[0] >= COVID[0] && p[0] <= COVID[1])) return;
+  if (!pts.some(p => p[0] >= COVID_SHOCK[0] && p[0] <= COVID_SHOCK[1])) return;
   const fuera = pts.filter(p => p[0] < COVID[0] || p[0] > COVID[1]).map(p => p[1]);
   if (fuera.length < 6) return;
   const todos = pts.map(p => p[1]);
@@ -543,9 +545,11 @@ function opcionesLinea(sp, ancho, grande) {
     },
     yAxis: {
       type: "value", scale: !sp.cero,
-      axisLabel: { color: muted, fontSize: fs, formatter: v => nf(v, sp.decEje ?? (Math.abs(v) >= 100 ? 0 : dec > 0 ? 1 : 0)) + (u === "%" ? "%" : "") },
+      axisLabel: { color: muted, fontSize: fs, showMinLabel: sp.yMin == null || sp.yMin === 0, showMaxLabel: sp.yMax == null || sp.yMax === 100,
+        formatter: v => nf(v, sp.decEje ?? (Math.abs(v) >= 100 ? 0 : dec > 0 ? 1 : 0)) + (u === "%" ? "%" : "") },
       splitLine: { lineStyle: { color: grid } },
       min: sp.yMin, max: sp.yMax,
+
     },
     series,
   };
