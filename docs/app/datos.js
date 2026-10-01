@@ -248,6 +248,7 @@ export function resultadoRelease(nombre) {
     else if (/Empire State/.test(nombre)) addSerie("Condiciones generales (difusión)", "empire", S("empire"), 1, "", true);
     else if (/Import and Export Price|Import Price/.test(nombre)) addSerie("Precios de importación a/a", "import_prices", yoy(S("import_prices")), 1);
     else if (/International Transactions/.test(nombre)) addSerie("Cuenta corriente", "current_account", escala(S("current_account"), 1 / 1000), 0, "mil M");
+    else if (/Motor Vehicle/.test(nombre)) addSerie("Ventas, millones por año", "autos", S("autos"), 1, "");
     else if (/Debt Service/.test(nombre)) addSerie("Servicio de la deuda / ingreso", "debt_service", S("debt_service"), 1);
     else if (/Monthly Treasury/.test(nombre)) addSerie("Resultado del mes", "deficit", escala(S("deficit"), 1 / 1000), 0, "mil M");
     else if (/Sahm/.test(nombre)) addSerie("Sahm", "sahm", S("sahm"), 2, "pp");

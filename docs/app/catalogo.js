@@ -1,7 +1,7 @@
 // Catálogo: cada gráfico es una definición (series, fórmula, selectores y cómo se arma su título).
 // De acá salen el gráfico, su tabla, su ficha de fuentes, el buscador, los enlaces y la metodología.
 import { T, P, nf, sg, fm, fq, fw, fd } from "./util.js";
-import { last, prev, yoy, ann, pct, diff, roll, join, joinQ, toQ, indice, deflactar, rangoNormal, pctl, escala, racha } from "./calc.js";
+import { last, prev, yoy, ann, pct, diff, roll, join, joinQ, toQ, indice, deflactar, rangoNormal, pctl, escala, racha, valorEn } from "./calc.js";
 import { ST, S, SD, freqD, usaDiario, cut, fuente, meta } from "./datos.js";
 
 export const FRENTES = { actividad: "Actividad", consumidor: "Consumidor", precios: "Precios", empleo: "Empleo", tasas: "Tasas", externo: "Externo", fiscal: "Fiscal" };
@@ -683,10 +683,10 @@ def("politica", { slug: "tasa-real-de-la-fed", nombre: "Tasa real de la Fed", si
   ks: ["fed_funds", "pce_core"],
   f: () => {
     const f = S("fed_funds"), c = yoy(S("pce_core")); if (!f || !c) return null;
-    const r = join(f, c, (a, b) => a - b), v = last(r)[1];
+    const r = join(f, c, (a, b) => a - b), fu = last(SD("fed_funds")), v = fu[1] - last(c)[1];
     const lectura = v > 1.3 ? "restrictiva" : v >= 0.5 ? "dentro del rango neutral" : v >= 0 ? "levemente expansiva" : "expansiva";
     return { titulo: `Tasa real de la Fed en ${nf(v)}%: política ${lectura}`,
-      sub: "Tasa de fondos federales menos inflación core PCE interanual. La tasa neutral no se observa: se estima. La proyección de largo plazo de la propia Fed (tasa nominal cerca de 3% menos la meta de 2%) da cerca de 1%, y los modelos de la Fed de Nueva York la ubican entre 0,5% y 1,3%. Por eso se muestra un rango y no un número.",
+      sub: `Tasa de fondos federales menos inflación core PCE interanual. El título usa la tasa al ${fw(fu[0])} y la inflación de ${fm(last(c)[0])}; el gráfico, promedios mensuales. La tasa neutral no se observa: se estima. La proyección de largo plazo de la propia Fed (tasa nominal cerca de 3% menos la meta de 2%) da cerca de 1%, y los modelos de la Fed de Nueva York la ubican entre 0,5% y 1,3%. Por eso se muestra un rango y no un número.`,
       banda: [0.5, 1.3], bandaTexto: "Rango de estimaciones de la tasa neutral real (0,5% a 1,3%)",
       series: [{ n: "Tasa real de la Fed", d: cut(r), c: 0, area: true }], refs: [{ y: 0 }] };
   } });
@@ -933,6 +933,16 @@ export function armar(id, o = {}) {
 }
 
 // ═════════════════════════ Indicadores (tiles, cabeceras y tablero) ═════════════════════════
+// Serie diaria equivalente a un indicador (para comparar el último cierre contra el de un mes antes)
+function diarioDe(ind) {
+  const D = ST.D; if (!D) return null;
+  if (typeof ind.ultD === "string") return D[ind.ultD];
+  if (ind.id === "ust2") return D.ust2;
+  if (ind.id === "ust10") return D.ust10;
+  if (ind.id === "curva") return join(D.ust10, D.ust2, (a, b) => (a - b) * 100);
+  if (ind.id === "descuenta") return join(D.ust2, D.fed_funds, (a, b) => (a - b) * 100);
+  return null;
+}
 const valorEnD = (a, t) => { let r = null; for (let i = a.length - 1; i >= 0; i--) if (a[i][0] <= t) { r = a[i][1]; break; } return r; };
 const ult_diario = plazo => { const c = ST.DATA.curva && ST.DATA.curva[plazo]; return c && c.length ? [P(c[c.length - 1][0]), c[c.length - 1][1]] : null; };
 export const IND = [
@@ -1014,10 +1024,16 @@ export function valorInd(ind) {
     const u = typeof ind.ultD === "function" ? ind.ultD() : (ST.D[ind.ultD] && ST.D[ind.ultD][ST.D[ind.ultD].length - 1]);
     if (u) { a[a.length - 1] = [a[a.length - 1][0], u[1]]; fechaTxt = fw(u[0]); }
   }
-  const [t, v] = last(a), p = prev(a), per = ind.q ? 1 : ind.w ? 4 : 3;
+  const [t, v] = last(a), per = ind.q ? 1 : ind.w ? 4 : 3;
+  let p = prev(a), cmpTxt = null;
+  const dd = fechaTxt ? diarioDe(ind) : null;
+  if (dd && dd.length) {
+    const u = dd[dd.length - 1], x = valorEn(dd, u[0] - 30 * 864e5);
+    if (x) { p = [x[0], x[1]]; cmpTxt = "hace un mes"; }
+  }
   const p3 = prev(a, per), p12 = prev(a, ind.q ? 4 : ind.w ? 52 : 12);
   const rn = rangoNormal(a);
-  return { a, t, v, fechaTxt, prev: p ? p[1] : null, cambio: p ? v - p[1] : null, tend: p3 ? v - p3[1] : null, hace12: p12 ? p12[1] : null,
+  return { a, t, v, fechaTxt, cmpTxt, prev: p ? p[1] : null, cambio: p ? v - p[1] : null, tend: p3 ? v - p3[1] : null, hace12: p12 ? p12[1] : null,
     pctl: pctl(a, v) ?? 50, banda: rn ? [pctl(a, rn[0]), pctl(a, rn[1])] : null };
 }
 export const fechaInd = (ind, r) => r.fechaTxt || (ind.q ? fq(r.t) : ind.w ? fw(r.t) : fm(r.t));
@@ -1053,7 +1069,7 @@ export function lineasLectura() {
     return `La economía suma ${nf(last(p)[1], 0)} mil puestos por mes en promedio de 3 meses, con desempleo en ${nf(u)}%` + (sh ? ` y la regla de Sahm en ${nf(last(sh)[1], 2)} pp (umbral 0,5).` : ".");
   });
   intento("tasas", () => {
-    const r = S("tips10"), v = last(r)[1], f = last(S("fed_funds"))[1], c = last(yoy(S("pce_core")))[1];
+    const r = SD("tips10"), v = last(r)[1], f = last(SD("fed_funds"))[1], c = last(yoy(S("pce_core")))[1];
     return `La tasa real a 10 años está en ${nf(v, 2)}% (percentil ${pctl(r, v)} desde 2003) y la tasa real de la Fed en ${nf(f - c)}%.`;
   });
   intento("externo", () => {

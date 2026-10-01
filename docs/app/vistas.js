@@ -28,7 +28,7 @@ export function tile(id) {
   e.innerHTML = `<div class="lab">${esc(ind.n)}</div>
     <div class="val">${nf(r.v, ind.d)}<small>${ind.u === "%" ? "%" : esc(ind.u)}</small></div>
     <div class="del">${fechaInd(ind, r)} · ${esc(ind.nota)}</div>
-    <div class="cmb">${r.cambio != null ? `${r.cambio > 0 ? "▲" : r.cambio < 0 ? "▼" : "="} ${nf(Math.abs(r.cambio), ind.d)} vs. ${per} anterior` : ""}</div>
+    <div class="cmb">${r.cambio != null ? `${r.cambio > 0 ? "▲" : r.cambio < 0 ? "▼" : "="} ${nf(Math.abs(r.cambio), ind.d)} vs. ${r.cmpTxt || per + " anterior"}` : ""}</div>
     ${sparkline(r.a.slice(ind.q ? -16 : ind.w ? -104 : -36))}
     <div class="pctl" title="Posición del último dato en la historia desde 2000 (0 = mínimo, 100 = máximo). La franja es el rango normal 2000-19.">${barraPctl(r)}<span>Percentil histórico ${r.pctl}</span></div>`;
   e.appendChild(botonEstrella("ind:" + id, ind.n));
