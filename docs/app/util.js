@@ -6,8 +6,10 @@ export const DIA_LARGO = ["domingo", "lunes", "martes", "miércoles", "jueves", 
 export const DIA_MS = 864e5;
 
 export const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
-export const nf = (v, d = 1) => v == null || !isFinite(v) ? "–" : v.toLocaleString("es-AR", { minimumFractionDigits: d, maximumFractionDigits: d });
-export const sg = (v, d = 1) => v == null || !isFinite(v) ? "–" : (v > 0 ? "+" : "") + nf(v, d);
+// Un valor que redondea a cero se muestra "0,0", nunca "-0,0" ni "+0,0"
+const redondo = (v, d) => { const r = Math.round(v * Math.pow(10, d)) / Math.pow(10, d); return r === 0 ? 0 : r; };
+export const nf = (v, d = 1) => v == null || !isFinite(v) ? "–" : redondo(v, d).toLocaleString("es-AR", { minimumFractionDigits: d, maximumFractionDigits: d });
+export const sg = (v, d = 1) => v == null || !isFinite(v) ? "–" : (redondo(v, d) > 0 ? "+" : "") + nf(v, d);
 export const T = (y, m = 1) => Date.UTC(y, m - 1, 1);
 export const P = s => Date.parse(s.length > 10 ? s : s + "T00:00:00Z");
 export const fm = t => { const d = new Date(t); return MES[d.getUTCMonth()] + "-" + String(d.getUTCFullYear()).slice(2); };

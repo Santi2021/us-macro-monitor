@@ -122,6 +122,11 @@ a { color: var(--s1); }
 .tile .cmb { font-size: var(--fs-xs); color: var(--ink-2); font-variant-numeric: tabular-nums; min-height: 1.5em; }
 .tile svg.spark { display: block; width: 100%; height: 30px; margin-top: 2px; }
 .tile .star { position: absolute; top: 8px; right: 8px; }
+/* Los indicadores de una fila comparten renglones: valor, nota, cambio, sparkline y percentil quedan a la misma altura */
+@supports (grid-template-rows: subgrid) {
+  .tiles > .tile { grid-template-rows: subgrid; grid-row: span 6; row-gap: 2px; }
+  .tiles > .tile > .pctl { align-self: end; }
+}
 .pctl { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 8px; font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .pctl i { position: relative; display: block; height: 4px; border-radius: 2px; background: var(--grid); }
 .pctl i s { position: absolute; top: 0; height: 4px; background: var(--band); outline: 1px solid var(--line); border-radius: 2px; text-decoration: none; }
@@ -135,7 +140,7 @@ a { color: var(--s1); }
 .cabecera { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 18px 20px; margin-bottom: 8px; display: grid; gap: 14px; }
 .cabecera h2 { margin: 0; font-size: 20px; font-weight: 600; letter-spacing: -0.01em; }
 .cabecera p { margin: 2px 0 0; font-size: var(--fs); color: var(--ink-2); max-width: 120ch; }
-.cabecera .tiles { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; }
+.cabecera .tiles { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; }
 .cabecera .tile { background: var(--surface-2); border-color: transparent; }
 .cabecera .tile:hover { border-color: var(--axis); }
 .cabecera .tile .val { font-size: 23px; }
@@ -148,10 +153,10 @@ a { color: var(--s1); }
 .lectura li span { font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); padding-top: 3px; }
 .nota { margin: 12px 0 0; font-size: var(--fs-s); color: var(--muted); max-width: 118ch; }
 .lista { margin: 0; padding: 0; list-style: none; display: grid; gap: 2px; }
-.lista li { display: grid; grid-template-columns: 100px 1fr; gap: 12px; padding: 7px 8px; border-radius: 6px; font-size: 14px; }
+.lista li { display: grid; grid-template-columns: 132px 1fr; gap: 12px; padding: 7px 8px; border-radius: 6px; font-size: 14px; }
 .lista li.hoy { background: var(--hoy); }
 .lista .fch { color: var(--ink-2); font-weight: 500; font-variant-numeric: tabular-nums; }
-.lista .fch small { display: block; font-weight: 400; color: var(--muted); font-size: var(--fs-xs); }
+.lista .fch small { display: block; font-weight: 400; color: var(--muted); font-size: var(--fs-xs); white-space: nowrap; }
 .lista .rel b { font-weight: 500; }
 .lista .rel .det { display: block; color: var(--muted); font-size: 12.5px; }
 .lista a { color: inherit; text-decoration: none; }
@@ -168,6 +173,17 @@ h2.bloque { margin: 26px 0 12px; font-size: 13px; font-weight: 600; text-transfo
 /* ───────── Tarjeta de gráfico ───────── */
 .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 .card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 16px 18px 10px; display: flex; flex-direction: column; min-width: 0; }
+/* Las tarjetas de una misma fila comparten sus renglones (título, subtítulo, selectores, leyenda, gráfico, pie):
+   así los gráficos vecinos arrancan a la misma altura aunque un título ocupe más líneas que el otro */
+@supports (grid-template-rows: subgrid) {
+  .grid > .card { display: grid; grid-template-rows: subgrid; grid-row: span 7; row-gap: 0; align-content: start; }
+  .grid > .card > .card-h, .grid > .card > .sub, .grid > .card > .barra { align-self: start; }
+  .grid > .card > .cuerpo { display: grid; grid-template-rows: subgrid; grid-row: span 2; row-gap: 0; min-width: 0; }
+  .grid > .card > .cuerpo > .leyenda { align-self: end; }
+  .grid > .card > .cuerpo > :only-child { grid-row: span 2; }
+  .grid > .card > .meta-g { align-self: start; }
+  .grid > .card > footer { align-self: end; }
+}
 .card.ancha { grid-column: 1 / -1; }
 .card-h { display: flex; gap: 8px; align-items: flex-start; justify-content: space-between; }
 .card h3 { margin: 0; font-size: 17px; font-weight: 600; line-height: 1.3; text-wrap: balance; }
@@ -355,6 +371,7 @@ a.evento:hover { border-color: var(--axis); background: var(--hover); }
 
 @media (max-width: 1100px) {
   .tiles { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .cabecera .tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .semana-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .buscar-btn { min-width: 0; }
   .buscar-btn span, .buscar-btn kbd { display: none; }

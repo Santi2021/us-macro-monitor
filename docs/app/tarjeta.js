@@ -4,7 +4,7 @@ import { el, esc, nf, sg, fm, fq, fw, fd, fPor, P, css, unidadTxt, ICONOS, toast
 import { last, prev, pctl } from "./calc.js";
 import { ST, S, meta, fuente, enlaceSerie, FREC_TXT, proximoRelease, incorporado, guardarPrefs, orgDe } from "./datos.js";
 import { CAT, armar } from "./catalogo.js";
-import { opciones, leyenda, recorteShock, unirCursor, colorSerie, spVisible } from "./graficos.js";
+import { opciones, leyenda, recorteShock, unirCursor, colorSerie, spVisible, ajustarEjes } from "./graficos.js";
 import { enlaceGrafico } from "./rutas.js";
 
 const VIVOS = new Set();
@@ -142,13 +142,14 @@ export function tarjeta(id, opts = {}) {
     if (chart) { chart.dispose(); VIVOS.delete(chart); chart = null; }
     cuerpo.innerHTML = "";
     const box = el("div", { class: "chart", role: "img", "aria-label": sp.titulo });
-    ley = leyenda(sp, () => chart, () => { if (chart) chart.setOption(opciones(spVisible(sp), box.clientWidth, !!opts.grande), { notMerge: true }); });
+    ley = leyenda(sp, () => chart, () => { if (chart) { const v = spVisible(sp); chart.setOption(opciones(v, box.clientWidth, !!opts.grande), { notMerge: true }); ajustarEjes(chart, v); } });
     cuerpo.appendChild(ley.box);
     cuerpo.appendChild(box);
     const init = () => {
       if (!box.isConnected) return;
       chart = echarts.init(box, null, { renderer: "canvas" });
       chart.setOption(opciones(spVisible(sp), box.clientWidth, !!opts.grande));
+      ajustarEjes(chart, spVisible(sp));
       VIVOS.add(chart);
       if (opts.grupo) unirCursor(opts.grupo, chart, ley, sp);
       art._chart = chart;
@@ -325,6 +326,7 @@ export function componerPNG(sp, W, H) {
     const ch = echarts.init(tmp, null, { renderer: "canvas", devicePixelRatio: k });
     const op = opciones(sp, anchoG, true); op.animation = false;
     ch.setOption(op);
+    ajustarEjes(ch, sp);
     const img = new Image();
     img.onload = () => {
       ctx.drawImage(img, pad - 8, y, anchoG, altoG);

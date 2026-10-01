@@ -1,9 +1,16 @@
 // Opciones de ECharts, leyenda HTML con valores y cursor sincronizado entre gráficos.
 import { css, nf, sg, esc, unidadTxt, P, T, MES, DIA_MS, fPor, fq, el } from "./util.js";
-import { ST, periodoLargo } from "./datos.js";
+import { ST, periodoLargo, iniciosFed } from "./datos.js";
 import { valorEn } from "./calc.js";
 
-export const EVENTOS = [["2008-09-15", "Lehman"], ["2020-03-01", "COVID"], ["2022-03-16", "Suba Fed"], ["2024-09-18", "Baja Fed"]];
+// Eventos de referencia: Lehman, COVID y el inicio de cada ciclo de la Fed (se detectan solos en la tasa objetivo)
+export function eventos() {
+  const ev = [[P("2008-09-15"), "Lehman"], [P("2020-03-01"), "COVID"]];
+  for (const t of iniciosFed(1)) ev.push([t, "Suba Fed"]);
+  for (const t of iniciosFed(-1)) ev.push([t, "Baja Fed"]);
+  if (ev.length === 2) ev.push([P("2022-03-16"), "Suba Fed"], [P("2024-09-18"), "Baja Fed"]);   // sin datos diarios
+  return ev.sort((a, b) => a[0] - b[0]);
+}
 // Recesiones del NBER (mes del pico, mes del piso). Se actualiza cuando el NBER declara una nueva; el motor avisa.
 export const RECESIONES = [["1948-11", "1949-10"], ["1953-07", "1954-05"], ["1957-08", "1958-04"], ["1960-04", "1961-02"],
   ["1969-12", "1970-11"], ["1973-11", "1975-03"], ["1980-01", "1980-07"], ["1981-07", "1982-11"], ["1990-07", "1991-03"],
@@ -77,7 +84,7 @@ function opcionesLinea(sp, ancho, grande) {
     series.push(Object.assign(base, {
       type: "line", stack: s.stack, showSymbol: false, symbol: "circle", symbolSize: 6,
       lineStyle: { width: s.w ?? (s.fina ? 1.2 : 2.2), color: c, type: s.punteada ? [6, 4] : "solid", opacity: s.fina ? 0.55 : 1 },
-      areaStyle: s.area ? { color: c, opacity: s.stack ? 0.85 : 0.10 } : undefined,
+      areaStyle: s.area && (!sp.banda || s.stack) ? { color: c, opacity: s.stack ? 0.85 : 0.10 } : undefined,
     }));
     if (s.fin !== false && !s.fina && s.d.length) {
       const [t, v] = s.d[s.d.length - 1];
@@ -94,8 +101,7 @@ function opcionesLinea(sp, ancho, grande) {
   if (sp.eventos !== false && isFinite(x0) && x1 > x0) {
     const largo = (x1 - x0) > 12 * 365 * DIA_MS, anchoPlot = Math.max(100, ancho - 80);
     let ultimoX = -Infinity;
-    for (const [f, l] of EVENTOS) {
-      const t = P(f);
+    for (const [t, l] of eventos()) {
       if (t < x0 || t > x1 || (largo && l.includes("Fed")) || (conRec && (l === "Lehman" || l === "COVID"))) continue;
       const px = (t - x0) / (x1 - x0) * anchoPlot;
       const conTexto = px - ultimoX > 72 && px > 24 && anchoPlot - px > 34;
@@ -105,6 +111,8 @@ function opcionesLinea(sp, ancho, grande) {
   }
   series.push(aux);
   const hayBarras = sp.series.some(s => s.t === "bar");
+  const decEjeAuto = dec > 0 ? 1 : 0;   // se ajusta al paso real del eje después de dibujar (ajustarEjes)
+  const largo = (x1 - x0) > 3.5 * 365 * DIA_MS;
   return {
     useUTC: true, animationDuration: 300,
     textStyle: { fontFamily: css("--font"), color: css("--ink-2") },
@@ -127,7 +135,7 @@ function opcionesLinea(sp, ancho, grande) {
       },
     }),
     xAxis: {
-      type: "time", boundaryGap: hayBarras ? ["1%", "1%"] : false,
+      type: "time", boundaryGap: hayBarras ? ["1%", "1%"] : false, minInterval: largo ? 365 * DIA_MS : undefined,
       axisLine: { lineStyle: { color: axis } }, axisTick: { show: false },
       axisLabel: { color: muted, fontSize: fs, hideOverlap: true, formatter: v => { const d = new Date(v); return d.getUTCMonth() === 0 ? String(d.getUTCFullYear()) : MES[d.getUTCMonth()]; } },
       splitLine: { show: false },
@@ -135,7 +143,7 @@ function opcionesLinea(sp, ancho, grande) {
     yAxis: [{
       type: sp.log ? "log" : "value", scale: !sp.cero,
       axisLabel: { color: muted, fontSize: fs, showMinLabel: sp.yMin == null || sp.yMin === 0, showMaxLabel: sp.yMax == null || sp.yMax === 100,
-        formatter: v => nf(v, sp.decEje ?? (Math.abs(v) >= 100 ? 0 : dec > 0 ? 1 : 0)) + (u === "%" ? "%" : "") },
+        formatter: v => nf(v, sp.decEje ?? decEjeAuto) + (u === "%" ? "%" : "") },
       splitLine: { lineStyle: { color: grid } },
       min: sp.yMin, max: sp.yMax,
     }].concat(conDer ? [{
@@ -145,6 +153,20 @@ function opcionesLinea(sp, ancho, grande) {
     }] : []),
     series,
   };
+}
+// Decimales del eje según el paso que eligió el gráfico: "18%" y no "18,0%" si las marcas son enteras
+export function ajustarEjes(chart, sp) {
+  if (!chart || sp.tipo || sp.decEje != null) return;
+  try {
+    const u = sp.unidad ?? "%", ejes = chart.getModel().getComponent("yAxis", 0) ? [0, 1] : [];
+    const yAxis = ejes.map(i => {
+      const m = chart.getModel().getComponent("yAxis", i); if (!m) return null;
+      const paso = m.axis.scale.getInterval ? m.axis.scale.getInterval() : null; if (!paso) return null;
+      const d = paso >= 1 - 1e-9 ? 0 : paso >= 0.1 - 1e-9 ? 1 : 2;
+      return { axisLabel: { formatter: v => nf(v, d) + (u === "%" ? "%" : "") } };
+    }).filter(Boolean);
+    if (yAxis.length) chart.setOption({ yAxis }, { lazyUpdate: false });
+  } catch (e) {}
 }
 export const mostrarRecesiones = (sp, x0, x1) => ST.prefs.recesiones !== false && sp.recesiones !== false && !sp.tipo &&
   (x1 - x0) > 9.5 * 365 * DIA_MS && RECESIONES.some(([a, b]) => b >= x0 && a <= x1);

@@ -2,7 +2,7 @@
 // De acá salen el gráfico, su tabla, su ficha de fuentes, el buscador, los enlaces y la metodología.
 import { T, P, nf, sg, fm, fq, fw, fd, esc, unidadTxt } from "./util.js";
 import { last, prev, yoy, ann, pct, diff, roll, join, joinQ, toQ, indice, deflactar, rangoNormal, pctl, escala, racha, valorEn } from "./calc.js";
-import { ST, S, SD, freqD, usaDiario, cut, fuente, meta } from "./datos.js";
+import { ST, S, SD, freqD, usaDiario, iniciosFed, cut, fuente, meta } from "./datos.js";
 
 export const FRENTES = { actividad: "Actividad", consumidor: "Consumidor", precios: "Precios", empleo: "Empleo", tasas: "Tasas", externo: "Externo", fiscal: "Fiscal" };
 
@@ -714,6 +714,7 @@ def("politica", { slug: "tasa-real-de-la-fed", nombre: "Tasa real de la Fed y ta
     // escalón: cada valor vale desde su reunión hasta la siguiente, llevado a fin de mes para que coincida con la serie mensual
     const neutral = lr ? r.filter(p => p[0] >= lr[0][0]).map(p => { let x = null; for (const q of lr) if (q[0] <= p[0] + 31 * 864e5) x = q[1]; return [p[0], x - 2]; }).filter(p => p[1] != null) : null;
     const n = lr ? last(lr)[1] - 2 : null;   // la última estimación de la Fed, aunque sea de este mes
+    if (neutral && neutral.length && last(lr)[0] > last(neutral)[0]) neutral.push([last(lr)[0], n]);
     const lectura = n == null ? (v > 1.3 ? "restrictiva" : v >= 0.5 ? "cerca de neutral" : "expansiva")
       : v > n + 0.5 ? "restrictiva" : v < n - 0.5 ? "expansiva" : "cerca de neutral";
     const ss = [{ n: "Tasa real de la Fed", d: cut(r), c: 0, area: true }];
@@ -861,7 +862,7 @@ def("deficit", { slug: "deficit-fiscal", nombre: "Resultado fiscal total y prima
     const r = deficitPBI(); if (!r) return null;
     const i = interesesPBI(), prim = i ? joinQ(r, i, (a, b) => a + b) : null;
     const v = last(r)[1];
-    const ss = [{ n: "Resultado total", d: cut(r), c: 1, area: true }];
+    const ss = [{ n: "Resultado total", d: cut(r), c: 1, w: 2.6 }];
     if (prim) ss.push({ n: "Resultado primario (sin intereses)", d: cut(prim), c: 0, w: 2 });
     return { titulo: (v < 0 ? `Déficit fiscal de ${nf(-v)}% del PBI en 12 meses` : `Superávit fiscal de ${nf(v)}% del PBI en 12 meses`) + (prim ? `; sin intereses, ${last(prim)[1] < 0 ? "déficit" : "superávit"} de ${nf(Math.abs(last(prim)[1]))}%` : ""),
       sub: "Negativo = déficit. La distancia entre las dos líneas es el costo de los intereses de la deuda.", banda: rangoNormal(r), bandaTexto: "Rango normal del total 2000-19",
@@ -962,25 +963,7 @@ def("mapa", { slug: "mapa-del-ciclo", nombre: "Mapa del ciclo", sin: ["percentil
 
 // Ciclos comparados: este ciclo de la Fed contra los anteriores, alineados al primer movimiento
 // Los inicios se detectan solos en la tasa objetivo: primer movimiento en una dirección después de uno en la dirección contraria
-function iniciosCiclo(signo) {
-  const a = (ST.D && ST.D.fed_obj) || [], b = (ST.D && ST.D.fed_obj_sup) || [];
-  const obj = a.filter(p => p[0] < T(2008, 12)).concat(b.filter(p => p[0] >= T(2008, 12)));
-  if (obj.length < 10) return null;
-  const out = []; let ult = 0;
-  for (let i = 1; i < obj.length; i++) {
-    const d = obj[i][1] - obj[i - 1][1]; if (Math.abs(d) < 0.01) continue;
-    const s_ = Math.sign(d);
-    if (s_ === signo && ult === -signo) {
-      // confirma: otro movimiento en la misma dirección dentro de 12 meses, o es el ciclo en curso (menos de 12 meses)
-      const lim = obj[i][0] + 365 * 864e5, sigue = obj.slice(i + 1).some(p => p[0] <= lim && Math.sign(p[1] - obj[obj.indexOf(p) - 1][1]) === signo);
-      const enCurso = lim > Date.now();
-      const f = new Date(obj[i][0]), t = Date.UTC(f.getUTCFullYear(), f.getUTCMonth(), 1);
-      if ((sigue || enCurso) && (!out.length || t - out[out.length - 1] > 365 * 864e5)) out.push(t);
-    }
-    ult = s_;
-  }
-  return out.filter(t => t >= T(1988));
-}
+const iniciosCiclo = signo => { const r = iniciosFed(signo).map(t => { const f = new Date(t); return Date.UTC(f.getUTCFullYear(), f.getUTCMonth(), 1); }); return r.length ? r : null; };
 const ANCLA = { id: "ancla", nombre: "Ciclo", valores: [["c", "Desde el primer recorte"], ["s", "Desde la primera suba"]] };
 function ciclos(o, serie, modo) {
   const ini = iniciosCiclo(o.ancla === "s" ? 1 : -1); if (!ini || !ini.length || !serie) return null;
@@ -1014,7 +997,7 @@ function defCiclo(id, slug, nombre, sujeto, sin, ks, serieFn, modo, unidad, dec,
       return { tipo: "cat", sinPuntos: true, signo: modo === "cambio", escala: true, unidad, dec, decEje: Math.min(dec, 1),
         titulo: va == null || vp == null ? `${nombre}: este ciclo contra los anteriores` : `A ${k} ${k === 1 ? "mes" : "meses"} ${deDir}, ${sujeto} ${modo === "cambio" ? "cambió" : "está en"} ${fmt(va)}, contra ${fmt(vp)} en el promedio de los ciclos anteriores`,
         yMin: rango[0], yMax: rango[1],
-        sub: `Meses desde la ${dir} de la Fed (0 = mes del movimiento).${rango[2] ? " Eje recortado para que un ciclo extremo (como la pandemia) no aplaste a los demás." : ""} ${modo === "cambio" ? "Cambio contra el mes 0." : "Nivel."} Líneas grises: cada ciclo desde 1988 (${c.filas.map(f => c.anio(f.t)).join(", ")}); al pasar el mouse se ve cuál es cuál. No depende del período elegido.`,
+        sub: `Meses ${o.ancla === "s" ? "desde la primera suba" : "desde el primer recorte"} de la Fed (0 = mes del movimiento).${rango[2] ? " Eje recortado para que un ciclo extremo (como la pandemia) no aplaste a los demás." : ""} ${modo === "cambio" ? "Cambio contra el mes 0." : "Nivel."} Líneas grises: cada ciclo desde 1988 (${c.filas.map(f => c.anio(f.t)).join(", ")}); al pasar el mouse se ve cuál es cuál. No depende del período elegido.`,
         cats: c.meses.map(x => (x > 0 ? "+" : "") + x), series };
     } });
 }
@@ -1138,20 +1121,25 @@ export const IND = [
   { id: "salario", f: "empleo", n: "Salario horario", nota: "interanual", u: "%", d: 1, ks: ["ahe"], g: "salarioReal", s: () => yoy(S("ahe")) },
   { id: "eci", f: "empleo", n: "ECI salarios", nota: "interanual", u: "%", d: 1, q: true, ks: ["eci"], g: "eci", s: () => yoy(S("eci"), 4) },
   { id: "pedidos", f: "empleo", n: "Pedidos de desempleo", nota: "miles, promedio 4 semanas", u: "mil", d: 0, w: true, ks: ["claims"], g: "pedidos", s: () => roll(escala(S("claims"), 1 / 1000), 4) },
-  { id: "fed", f: "tasas", n: "Fondos federales", nota: "tasa efectiva, último dato", ultD: "fed_funds", u: "%", d: 2, ks: ["fed_funds"], g: "curva", s: () => S("fed_funds") },
+  { id: "fed", f: "tasas", n: "Fondos federales", nota: "tasa efectiva", ultD: "fed_funds", u: "%", d: 2, ks: ["fed_funds"], g: "curva", s: () => S("fed_funds") },
   { id: "ust2", f: "tasas", n: "Treasury 2 años", nota: "último cierre", u: "%", d: 2, ks: ["ust2"], g: "curvaTesoro", diario: "2A", s: () => S("ust2") },
   { id: "ust10", f: "tasas", n: "Treasury 10 años", nota: "último cierre", u: "%", d: 2, ks: ["ust10"], g: "curvaTesoro", diario: "10A", s: () => S("ust10") },
   { id: "tips", f: "tasas", n: "Tasa real 10 años", nota: "TIPS, último cierre", ultD: "tips10", u: "%", d: 2, ks: ["tips10"], g: "tasaReal", s: () => S("tips10") },
   { id: "curva", f: "tasas", n: "Curva 10-2", nota: "puntos básicos, último cierre", u: "pb", d: 0, ks: ["ust10"], g: "pendiente", diario: ["10A", "2A"], s: () => join(S("ust10"), S("ust2"), (a, b) => (a - b) * 100) },
   { id: "prima", ultD: "term_premium", f: "tasas", n: "Prima por plazo 10 años", nota: "Kim-Wright", u: "%", d: 2, ks: ["term_premium"], g: "primaPlazo", s: () => S("term_premium") },
   { id: "nfci", f: "tasas", n: "Condiciones financieras", nota: "NFCI semanal, 0 = promedio", ultD: "nfci", u: "", d: 2, ks: ["nfci"], g: "nfci", s: () => S("nfci") },
-  { id: "descuenta", f: "tasas", n: "2 años − Fed", nota: "pb, último cierre; negativo = descuenta recortes", ultD: () => { const a = ST.D.ust2, b = ST.D.fed_funds; return a && b ? [a[a.length - 1][0], (a[a.length - 1][1] - (valorEnD(b, a[a.length - 1][0]) ?? b[b.length - 1][1])) * 100] : null; }, u: "pb", d: 0, ks: ["ust2", "fed_funds"], g: "senda", s: () => join(S("ust2"), S("fed_funds"), (a, b) => (a - b) * 100) },
+  { id: "descuenta", f: "tasas", n: "2 años − Fed", nota: "pb, último cierre", ultD: () => { const a = ST.D.ust2, b = ST.D.fed_funds; return a && b ? [a[a.length - 1][0], (a[a.length - 1][1] - (valorEnD(b, a[a.length - 1][0]) ?? b[b.length - 1][1])) * 100] : null; }, u: "pb", d: 0, ks: ["ust2", "fed_funds"], g: "senda", s: () => join(S("ust2"), S("fed_funds"), (a, b) => (a - b) * 100) },
   { id: "baa", f: "tasas", n: "Spread corporativo Baa", nota: "pp sobre el Treasury 10 años, último cierre", ultD: "baa_spread", u: "pp", d: 2, ks: ["baa_spread"], g: "spreads", s: () => S("baa_spread") },
   { id: "hipo", f: "tasas", n: "Hipotecaria 30 años", nota: "Freddie Mac, semanal", ultD: "mortgage30", u: "%", d: 2, ks: ["mortgage30"], g: "hipotecaria", s: () => S("mortgage30") },
   { id: "balanza", f: "externo", n: "Balanza comercial", nota: "US$ mil M por mes, prom. 3m", u: "mil M", d: 1, ks: ["trade_balance"], g: "balanza", s: () => roll(escala(S("trade_balance"), 1 / 1000), 3) },
   { id: "dolar", f: "externo", n: "Dólar multilateral", nota: "interanual", u: "%", d: 1, ks: ["dollar"], g: "dolar", s: () => yoy(S("dollar")) },
+  { id: "expo", f: "externo", n: "Exportaciones", nota: "interanual, bienes y servicios", u: "%", d: 1, ks: ["exports"], g: "expoImpo", s: () => yoy(S("exports")) },
+  { id: "impo", f: "externo", n: "Importaciones", nota: "interanual, bienes y servicios", u: "%", d: 1, ks: ["imports"], g: "expoImpo", s: () => yoy(S("imports")) },
+  { id: "terminos", f: "externo", n: "Términos de intercambio", nota: "precios de expo / impo, 2000 = 100", u: "", d: 1, ks: ["export_prices", "import_prices"], g: "terminos", s: () => join(S("export_prices"), S("import_prices"), (a, b) => a / b * 100) },
   { id: "cc", f: "externo", n: "Cuenta corriente", nota: "% del PBI", u: "%", d: 1, q: true, ks: ["current_account"], g: "cuentaCorriente", s: () => join(S("current_account"), S("gdp_nom"), (a, b) => a * 4 / 1000 / b * 100) },
   { id: "deficit", f: "fiscal", n: "Resultado fiscal", nota: "% del PBI, 12 meses", u: "%", d: 1, ks: ["deficit"], g: "deficit", s: () => deficitPBI() },
+  { id: "gastos", f: "fiscal", n: "Gasto federal", nota: "% del PBI, cuentas nacionales", u: "%", d: 1, q: true, ks: ["fed_expend"], g: "ingresosGastos", s: () => join(S("fed_expend"), S("gdp_nom"), (a, b) => a / b * 100) },
+  { id: "ingresos", f: "fiscal", n: "Recaudación federal", nota: "% del PBI, cuentas nacionales", u: "%", d: 1, q: true, ks: ["fed_receipts"], g: "ingresosGastos", s: () => join(S("fed_receipts"), S("gdp_nom"), (a, b) => a / b * 100) },
   { id: "intereses", f: "fiscal", n: "Intereses de la deuda", nota: "% del PBI", u: "%", d: 2, q: true, ks: ["interest_fed"], g: "intereses", s: () => interesesPBI() },
   { id: "deuda", f: "fiscal", n: "Deuda en manos del público", nota: "% del PBI", u: "%", d: 0, q: true, ks: ["debt_public"], g: "deuda", s: () => S("debt_public") },
   { id: "aranceles", f: "fiscal", n: "Tasa arancelaria efectiva", nota: "aranceles / importaciones de bienes", u: "%", d: 1, q: true, ks: ["customs", "imp_goods"], g: "aranceles", s: () => join(S("customs"), S("imp_goods"), (a, b) => a / b * 100) },
@@ -1164,8 +1152,8 @@ export const CABECERA_TILES = {
   precios: ["core", "core3", "cpicore", "ppi", "exp5", "exp1"],
   empleo: ["nominas", "desempleo", "sahm", "tension", "contrataciones", "pedidos"],
   tasas: ["fed", "ust2", "ust10", "curva", "descuenta", "tips"],
-  externo: ["balanza", "cc", "dolar"],
-  fiscal: ["deficit", "intereses", "deuda", "aranceles"],
+  externo: ["balanza", "expo", "impo", "cc", "dolar", "terminos"],
+  fiscal: ["deficit", "gastos", "ingresos", "intereses", "deuda", "aranceles"],
 };
 export function valorInd(ind) {
   let a = null;

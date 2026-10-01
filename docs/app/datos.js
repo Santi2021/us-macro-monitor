@@ -2,7 +2,7 @@
 import { T, P, DIA_MS, hoyUTC, fm, fq, fw, fd, nf, sg, unidadTxt, leer, guardar, horaBA } from "./util.js";
 import { last, prev, diff, pct, yoy, escala } from "./calc.js";
 
-export const VERSION = "4.4";
+export const VERSION = "4.5";
 export const ST = {
   DATA: null,
   rango: { modo: "2022", desde: null, hasta: null },
@@ -60,6 +60,21 @@ export async function cargarDiarios() {
     for (const [k, v] of Object.entries(j.series || {})) { const t0 = P(v.t0); out[k] = v.d.map(([n, x]) => [t0 + n * DIA_MS, x]); }
     ST.D = out;
   } catch (e) { ST.D = null; }
+}
+// Inicios de ciclo de la Fed (fecha exacta del primer movimiento): primer movimiento en una dirección después de uno
+// en la dirección contraria, confirmado por otro en 12 meses (o el ciclo en curso). Sale de la tasa objetivo.
+export function iniciosFed(signo) {
+  const a = (ST.D && ST.D.fed_obj) || [], b = (ST.D && ST.D.fed_obj_sup) || [], corte = Date.UTC(2008, 11, 1);
+  const obj = a.filter(p => p[0] < corte).concat(b.filter(p => p[0] >= corte));
+  if (obj.length < 10) return [];
+  const movs = []; for (let i = 1; i < obj.length; i++) { const d = obj[i][1] - obj[i - 1][1]; if (Math.abs(d) >= 0.01) movs.push([obj[i][0], Math.sign(d)]); }
+  const out = [];
+  for (let i = 1; i < movs.length; i++) {
+    const [t, s] = movs[i]; if (s !== signo || movs[i - 1][1] !== -signo) continue;
+    const lim = t + 365 * DIA_MS, sigue = movs.slice(i + 1).some(([u, x]) => u <= lim && x === signo);
+    if ((sigue || lim > Date.now()) && (!out.length || t - out[out.length - 1] > 365 * DIA_MS)) out.push(t);
+  }
+  return out.filter(t => t >= Date.UTC(1988, 0, 1));
 }
 export const usaDiario = () => !!ST.D && ((ST.T1 === Infinity ? Date.now() : ST.T1) - ST.T0) <= 5.5 * 365 * DIA_MS;
 // Serie de mercado: diaria si corresponde, mensual si no. Devuelve [serie, frecuencia]

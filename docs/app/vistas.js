@@ -10,6 +10,8 @@ import { paleta } from "./graficos.js";
 export const estadoPrueba = { graficos: 0, vacios: 0 };
 
 // ───────── Indicadores ─────────
+// Flecha según el cambio redondeado a los decimales que se muestran (un cambio que se ve como 0 no lleva flecha)
+const flecha = (v, d, sube, baja, igual) => { const r = Math.round(v * Math.pow(10, d)); return r > 0 ? sube : r < 0 ? baja : igual; };
 function sparkline(a, ancho = 200, alto = 30) {
   if (!a || a.length < 2) return "";
   const v = a.map(p => p[1]), mn = Math.min(...v), mx = Math.max(...v), pad = 4;
@@ -28,7 +30,7 @@ export function tile(id) {
   e.innerHTML = `<div class="lab">${esc(ind.n)}</div>
     <div class="val">${nf(r.v, ind.d)}<small>${ind.u === "%" ? "%" : esc(ind.u)}</small></div>
     <div class="del">${fechaInd(ind, r)} · ${esc(ind.nota)}</div>
-    <div class="cmb">${r.cambio != null ? `${r.cambio > 0 ? "▲" : r.cambio < 0 ? "▼" : "="} ${nf(Math.abs(r.cambio), ind.d)} vs. ${r.cmpTxt || per + " anterior"}` : ""}</div>
+    <div class="cmb">${r.cambio != null ? `${flecha(r.cambio, ind.d, "▲", "▼", "=")} ${nf(Math.abs(r.cambio), ind.d)} vs. ${r.cmpTxt || per + " anterior"}` : ""}</div>
     ${sparkline(r.a.slice(ind.q ? -16 : ind.w ? -104 : -36))}
     <div class="pctl" title="Posición del último dato en la historia desde 2000 (0 = mínimo, 100 = máximo). La franja es el rango normal 2000-19.">${barraPctl(r)}<span>Percentil histórico ${r.pctl}</span></div>`;
   e.appendChild(botonEstrella("ind:" + id, ind.n));
@@ -211,8 +213,8 @@ export function vistaTablero(main, rerender) {
     tr.innerHTML = `<td class="nom"><b>${esc(ind.n)}</b><small>${esc(ind.nota)}</small></td>
       <td class="val">${cel(r.v)}${ind.u && ind.u !== "%" ? ` <small style="font-weight:400;color:var(--muted)">${esc(ind.u)}</small>` : ""}</td>
       <td>${fechaInd(ind, r)}</td><td>${cel(r.prev)}</td>
-      <td>${r.cambio == null ? "–" : `${r.cambio > 0 ? "▲" : r.cambio < 0 ? "▼" : "="} ${nf(Math.abs(r.cambio), ind.d)}`}</td>
-      <td title="Cambio contra ${ind.q ? "el trimestre anterior" : ind.w ? "4 semanas atrás" : "3 meses atrás"}">${r.tend == null ? "–" : (r.tend > 0 ? "↗ " : r.tend < 0 ? "↘ " : "→ ") + sg(r.tend, ind.d)}</td>
+      <td>${r.cambio == null ? "–" : `${flecha(r.cambio, ind.d, "▲", "▼", "=")} ${nf(Math.abs(r.cambio), ind.d)}`}</td>
+      <td title="Cambio contra ${ind.q ? "el trimestre anterior" : ind.w ? "4 semanas atrás" : "3 meses atrás"}">${r.tend == null ? "–" : flecha(r.tend, ind.d, "↗ ", "↘ ", "→ ") + sg(r.tend, ind.d)}</td>
       <td>${cel(r.hace12)}</td>
       <td><span class="barra-p">${barraPctl(r)}${r.pctl}</span></td>
       <td>${sparkline(r.a.slice(ind.q ? -8 : ind.w ? -104 : -24), 92, 26)}</td>
@@ -400,6 +402,9 @@ function spExplora(EXP, OP) {
 }
 // ───────── Metodología ─────────
 const CHANGELOG = [
+  ["4.5", "2026-10-01", ["Revisión de diseño: en cada fila los gráficos y los indicadores quedan alineados aunque los títulos tengan distinto largo; todas las secciones con 6 indicadores en la cabecera.",
+    "Ejes con los decimales justos según la escala, fechas por año en períodos largos, sin rellenos superpuestos con el rango normal y sin \"-0,0\".",
+    "Las marcas de suba y baja de la Fed salen solas de su tasa objetivo (aparece la suba de septiembre de 2026)."]],
   ["4.4", "2026-09-30", ["Nueva sección Ciclo: mapa del ciclo (cada indicador en su percentil histórico, mes a mes), este ciclo de la Fed contra los anteriores (tasa, desempleo, core y spread, alineados al primer recorte o a la primera suba) y revisiones de las nóminas y del PBI respecto de su primera publicación.",
     "Proyecciones de la Fed como rombos en el core PCE, el desempleo, el PBI y la tasa; la tasa neutral pasa a ser la que estima la propia Fed y se actualiza en cada reunión.",
     "Qué descuenta el mercado: la senda implícita con las letras de 1, 3 y 6 meses, 1 y 2 años contra la tasa de la Fed, hoy y hace un mes.",
@@ -466,6 +471,8 @@ export function vistaMetodologia(main, sub) {
       <h3>Vista y precios</h3><p>Los gráficos que lo admiten muestran la variación interanual, la mensual (barras, como se publica el dato) o la de 3 meses anualizada, y los montos en dólares corrientes o reales. Cada gráfico declara qué deflactor usa y por qué.</p>
       <h3>Rango normal y percentil</h3><p>La franja celeste marca lo habitual entre 2000 y 2019 (percentiles 10 a 90). El percentil histórico ubica el último dato en su historia desde 2000.</p>
       <h3>Recesiones</h3><p>En períodos de 10 años o más, las franjas grises marcan las recesiones oficiales del NBER. Se pueden apagar en Ajustes.</p>
+      <h3>Dato diario y mensual</h3><p>Tasas, spreads, dólar y expectativas de mercado se muestran con su dato diario (o semanal, como la hipotecaria) cuando el período es de hasta 5 años; con períodos más largos, con su promedio mensual. Los títulos y los indicadores usan siempre el último cierre.</p>
+      <h3>Marcas en los gráficos</h3><p>Las líneas verticales marcan Lehman, el inicio de la pandemia y el comienzo de cada ciclo de suba o baja de la Fed, que se detecta solo en su tasa objetivo. Los rombos son las proyecciones de la Fed (mediana de su última reunión con proyecciones) para fin de este año y del próximo.</p>
       <h3>Estados del calendario</h3><p><b>Programado</b>: todavía no salió. <b>Esperando</b>: ya salió y entra en la próxima actualización. <b>Publicado</b>: el dato ya está en el monitor. <b>Sin dato nuevo</b>: la fuente no publicó cambios en las series que sigue el monitor. El símbolo ® indica que el dato anterior fue revisado; al pasar el mouse se ve su primera publicación.</p>
       <h3>Atajos</h3><p>Ctrl+K o / abren el buscador; la tecla ? muestra todos los atajos.</p>`;
   } else if (actual === "graficos") {
