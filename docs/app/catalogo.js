@@ -137,7 +137,7 @@ def("brecha", { slug: "brecha-del-producto", nombre: "Brecha del producto y del 
     const u = toQ(S("unemployment")), n = S("nrou");
     const bu = u && n ? join(n, u, (a, c) => a - c) : null;
     const ss = [{ n: "Brecha del producto (CBO)", d: cut(b), c: 0, w: 2.6, area: true }];
-    if (bu) ss.push({ n: "Brecha del desempleo (natural − actual)", d: cut(bu), c: 1, w: 2 });
+    if (bu) ss.push({ n: "Brecha del desempleo (natural − actual)", ley: "Brecha del desempleo", d: cut(bu), c: 1, w: 2 });
     const v = last(b)[1], w = bu ? last(bu)[1] : null;
     const caliente = v > 0.3, ajustado = w != null && w > 0.1, flojo = w != null && w < -0.1;
     const diag = w == null ? "" : caliente && ajustado ? ": recalentamiento" : !caliente && v < -0.3 && flojo ? ": hay holgura" : caliente && flojo ? ": las dos medidas no coinciden" : "";
@@ -218,7 +218,7 @@ def("viviendas", { slug: "vivienda", nombre: "Vivienda: permisos y casas nuevas 
     const u = S("permits1"), e = S("permits5"), st = S("meses_stock"); if (!u) return null;
     const u3 = roll(u, 3), cr = u3.length > 3 ? (Math.pow(last(u3)[1] / u3[u3.length - 4][1], 4) - 1) * 100 : null;
     const ss = [{ n: "Casas unifamiliares", d: cut(u3), c: 0, w: 2.8 }];
-    if (e) ss.push({ n: "Edificios (5 o más unidades)", d: cut(roll(e, 3)), c: "gris", w: 1.6 });
+    if (e) ss.push({ n: "Edificios (5 o más unidades)", ley: "Edificios 5+ unidades", d: cut(roll(e, 3)), c: "gris", w: 1.6 });
     if (st) ss.push({ n: "Meses de stock (eje derecho)", d: cut(st), c: 1, w: 1.6, der: true, dec: 1, u: "meses" });
     const vs = st ? last(st)[1] : null;
     return { titulo: `Permisos de casas unifamiliares ${sg(cr, 0)}% anualizado en 3 meses` + (vs != null ? `; ${nf(vs)} meses de stock sin vender, ${vs > 6.5 ? "sobre" : vs < 5.5 ? "bajo" : "cerca de"} el equilibrio de 6` : ""),
@@ -236,7 +236,7 @@ def("capex", { slug: "inversion-tecnologica", nombre: "Inversión tecnológica /
     return { titulo: `La inversión tecnológica pesa ${nf(v)}% del PBI (${sg(d)} pp contra el pico punto com)` + (aporte != null && gg ? ` y aportó ${nf(aporte)} pp al crecimiento` : ""),
       sub: "Equipos de procesamiento de información más software, % del PBI nominal. No incluye los edificios de los data centers.",
       freq: "Q", dec: 1, decEje: 1, cero: true, eventos: false, sinRecorte: true,
-      series: [{ n: "Equipos de información", d: cut(ep), area: true, stack: "t", c: 0, fin: false }, { n: "Software (tope = total)", d: cut(sp), area: true, stack: "t", c: 2, finValor: v }],
+      series: [{ n: "Equipos de información", d: cut(ep), area: true, stack: "t", c: 0, fin: false }, { n: "Software (tope = total)", ley: "Software", d: cut(sp), area: true, stack: "t", c: 2, finValor: v }],
       refs: [{ y: pc, l: `Pico punto com: ${nf(pc)}%` }] };
   } });
 def("ganancias", { slug: "margen-de-las-empresas", nombre: "Margen de las empresas no financieras", sin: ["profits", "márgenes", "empresas", "ganancias", "rentabilidad"], historia: true,
@@ -335,7 +335,7 @@ def("consumoTipo", { slug: "consumo-por-tipo", nombre: "Consumo real por tipo de
     const ds = ks.map(([k, n, c]) => ({ n, c, t: desvioTendencia(S(k)) })); if (ds.some(x => !x.t)) return null;
     const tot = desvioTendencia(S("pce_real"));
     const ss = ds.map(x => ({ n: `${x.n} (tendencia ${nf(x.t.ritmo)}% anual)`, d: cut(x.t.d), c: x.c, w: 2.4 }));
-    if (tot) ss.push({ n: "Consumo total", d: cut(tot.d), c: "gris", w: 1.4, punteada: true });
+    if (tot) ss.push({ n: "Consumo total", ley: "Total", d: cut(tot.d), c: "gris", w: 1.4, punteada: true });
     const v = i => sg(last(ds[i].t.d)[1]);
     return { titulo: `Contra su tendencia 2015-19, en ${fechaDe(ds[0].t.d)}: servicios ${v(0)}%, no durables ${v(1)}%, durables ${v(2)}%` + (tot ? `; consumo total ${sg(last(tot.d)[1])}%` : ""),
       sub: "Desvío del consumo real contra la tendencia de cada tipo de gasto en 2015-19. Cero es estar en la tendencia.",
@@ -932,7 +932,7 @@ function ultimoCambioFed() {
   return { t: u[0], v: u[1], d: u[1] - p[1] };
 }
 
-def("curvaTesoro", { slug: "curva-del-tesoro", nombre: "Curva del Tesoro", sin: ["curva", "yield curve", "rendimientos", "bonos"],
+def("curvaTesoro", { sinPeriodo: true, slug: "curva-del-tesoro", nombre: "Curva del Tesoro", sin: ["curva", "yield curve", "rendimientos", "bonos"],
   calc: "Rendimiento de los bonos del Tesoro por plazo (constant maturity), datos diarios, hoy y hace 1, 6 y 12 meses. Barras (eje derecho): cambio de cada plazo en el último mes, en puntos básicos. No depende del período elegido.",
   ks: ["ust10"],
   f: () => {
@@ -945,26 +945,26 @@ def("curvaTesoro", { slug: "curva-del-tesoro", nombre: "Curva del Tesoro", sin: 
     const menos = (f, meses) => { const d = new Date(P(f)); d.setUTCMonth(d.getUTCMonth() - meses); return d.toISOString().slice(0, 10); };
     const cortes = [[hoy, "Hoy", 0], [cerca(menos(hoy, 1)), "Hace 1 mes", 1], [cerca(menos(hoy, 6)), "Hace 6 meses", 2], [cerca(menos(hoy, 12)), "Hace 12 meses", 3]].filter(c => c[0]);
     const val = (p, f) => { const o = cv[p].filter(x => x[0] <= f).pop(); return o ? o[1] : null; };
-    const series = cortes.map(([f, n, c], i) => ({ n: `${n} (${fdia(P(f))}${i ? "-" + String(new Date(P(f)).getUTCFullYear()).slice(2) : ""})`, t: "line", c, w: i ? 1.8 : 3, punteada: i > 0, etiquetas: i === 0 ? "todas" : false, d: plazos.map(p => val(p, f)) }));
+    const series = cortes.map(([f, n, c], i) => ({ n: `${n} (${fdia(P(f))}${i ? "-" + String(new Date(P(f)).getUTCFullYear()).slice(2) : ""})`, ley: n, t: "line", c, w: i ? 1.8 : 3, punteada: i > 0, etiquetas: i === 0 ? "todas" : false, d: plazos.map(p => val(p, f)) }));
     const mes = cortes[1] && cortes[1][0], cb = p => mes && val(p, hoy) != null && val(p, mes) != null ? (val(p, hoy) - val(p, mes)) * 100 : null;
     if (mes) series.push({ n: "Cambio en 1 mes (pb, eje derecho)", t: "bar", c: "gris", suave: true, der: true, etiquetas: true, dec: 0, d: plazos.map(cb) });
     const pb = p => cb(p) != null ? `${p === "2A" ? "2 años" : p === "10A" ? "10 años" : "30 años"} ${sg(cb(p), 0)} pb` : "";
     return { tipo: "cat", titulo: `Curva del Tesoro al ${fdia(P(hoy))}: 3 meses ${nf(val("3M", hoy), 2)}%, 2 años ${nf(val("2A", hoy), 2)}%, 10 años ${nf(val("10A", hoy), 2)}%, 30 años ${nf(val("30A", hoy), 2)}%` + (mes ? `; en un mes, ${[pb("2A"), pb("10A"), pb("30A")].join(", ")}` : ""),
       sub: "Rendimiento por plazo (Tesoro de EE.UU.), datos diarios. Barras: cambio en el último mes, en puntos básicos.",
-      fuenteTxt: "Tesoro de EE.UU. vía FRED", unidad: "%", unidadDer: "pb", dec: 2, decEje: 1, signo: false, escala: true, apilado: false, cats: plazos, series };
+      fuenteTxt: "Tesoro de EE.UU. vía FRED", unidad: "%", unidadDer: "pb", dec: 2, decEje: 1, signo: false, escala: true, apilado: false, cats: plazos, fechaLey: fdia(P(hoy)), series };
   } });
 
 def("curva", { slug: "fed-y-treasuries", nombre: "Fed y Treasuries", sin: ["fondos federales", "tasa de política", "treasuries", "bonos", "suba de tasa", "baja de tasa"],
   calc: "Tasa efectiva de fondos federales (mediana de 5 días para sacar los saltos de fin de mes), techo del rango objetivo de la Fed (escalón gris) y rendimientos de Treasuries a 2, 10 y 30 años. Datos diarios con períodos de hasta 5 años; promedios mensuales con períodos más largos. Los rombos son la mediana de la tasa que proyecta la Fed para fin de año.",
   ks: ["fed_funds", "fed_obj_sup", "ust2", "ust10", "ust30", "sep_ff"],
   f: () => {
-    const ks = [["fed_funds", "Fondos federales (efectiva)"], ["ust2", "2 años"], ["ust10", "10 años"], ["ust30", "30 años"]];
+    const ks = [["fed_funds", "Fondos federales"], ["ust2", "2 años"], ["ust10", "10 años"], ["ust30", "30 años"]];
     const limpia = (k, a) => k === "fed_funds" && freqD(k) === "D" ? mediana5(a) : a;
     const ss = ks.map(([k, n], i) => ({ n, d: cut(limpia(k, SD(k))), c: i, dec: 2, w: i ? 1.8 : 2.6 })).filter(s => s.d && s.d.length); if (ss.length < 3) return null;
     const obj = SD("fed_obj_sup");
-    if (obj && obj.length) ss.push({ n: "Techo del rango objetivo", d: cut(obj.concat(obj[obj.length - 1][0] < last(ss[1].d)[0] ? [[last(ss[1].d)[0], obj[obj.length - 1][1]]] : [])), c: "gris", w: 1.2, escalon: true, fin: false, dec: 2 });
+    if (obj && obj.length) ss.push({ n: "Techo del rango objetivo", ley: "Techo del rango", d: cut(obj.concat(obj[obj.length - 1][0] < last(ss[1].d)[0] ? [[last(ss[1].d)[0], obj[obj.length - 1][1]]] : [])), c: "gris", w: 1.2, escalon: true, fin: false, dec: 2 });
     const sep = sepPuntos("sep_ff");
-    if (sep) ss.push({ n: "Proyección de la Fed para su tasa", t: "punto", c: 0, d: sep, dec: 2 });
+    if (sep) ss.push({ n: "Proyección de la Fed para su tasa", ley: "Proyección de la Fed", t: "punto", c: 0, d: sep, dec: 2 });
     const uc = ultimoCambioFed(), u = k => ultimoDato(k);
     const desde = k => { const a = diariaCompleta(k); const v0 = uc ? valorEn(a, uc.t - DIA) : null; return v0 ? (last(a)[1] - v0[1]) * 100 : null; };
     const ff = u("fed_funds");
@@ -1016,13 +1016,13 @@ def("politica", { slug: "tasa-real-de-la-fed", nombre: "Tasa real de la Fed y ta
     const conHoy = (a, x) => a && fu[0] > last(a)[0] ? a.concat([[fu[0], x]]) : a;
     const ss = [{ n: "Tasa real, core interanual", d: cut(conHoy(r, v)), c: 0, w: 2.8 }];
     if (r6) ss.push({ n: "Tasa real, core a 6 meses", d: cut(conHoy(r6, v6)), c: 0, fina: true });
-    if (neutral) ss.push({ n: "Neutral según la Fed (largo plazo − 2%)", d: cut(neutral), c: 1, w: 2, punteada: true, escalon: true });
+    if (neutral) ss.push({ n: "Neutral según la Fed (largo plazo − 2%)", ley: "Neutral según la Fed", d: cut(neutral), c: 1, w: 2, punteada: true, escalon: true });
     return { titulo: `Tasa real de la Fed al ${fdia(fu[0])}: ${nf(v)}% con core interanual (fondos ${nf(fu[1], 2)}% − core ${nf(last(c)[1])}%)` + (v6 != null ? `, ${nf(v6)}% con core a 6 meses` : "") + (n != null ? `; neutral según la Fed ${nf(n)}% (SEP de ${fm(last(lr)[0])})` : ""),
       sub: `Fondos federales menos core PCE (${fm(last(c)[0])}). Neutral: tasa de largo plazo que proyecta la Fed (mediana) menos su meta de 2%.`,
       series: ss, refs: [{ y: 0 }] };
   } });
 
-def("senda", { slug: "que-descuenta-el-mercado", nombre: "Curva corta contra la Fed", sin: ["recortes", "subas", "expectativas de tasa", "letras", "fed funds", "política esperada", "senda"],
+def("senda", { sinPeriodo: true, slug: "que-descuenta-el-mercado", nombre: "Curva corta contra la Fed", sin: ["recortes", "subas", "expectativas de tasa", "letras", "fed funds", "política esperada", "senda"],
   calc: "Rendimiento de las letras y bonos del Tesoro a 1, 3 y 6 meses, 1 y 2 años (datos diarios), contra la tasa efectiva de fondos federales, ubicados en la fecha en que vence cada plazo; hoy y hace un mes. Los rombos son la mediana de la tasa que proyecta la Fed a fin de cada año. Las letras incluyen una diferencia estructural con los fondos federales (oferta del Tesoro, liquidez) y los bonos a 1-2 años, prima por plazo: no son la senda esperada pura, que se mide con futuros de fondos federales y OIS (no están en FRED). No depende del período elegido.",
   ks: ["fed_funds", "ust2", "sep_ff"],
   f: () => {
@@ -1040,9 +1040,9 @@ def("senda", { slug: "que-descuenta-el-mercado", nombre: "Curva corta contra la 
     const sep = sepPuntos("sep_ff", 11, 1);
     const d1 = (val("1A", ult) - ff) * 100, d2 = (val("2A", ult) - ff) * 100;
     const h1 = ffHace ? (val("1A", hace) - ffHace[1]) * 100 : null, h2 = ffHace ? (val("2A", hace) - ffHace[1]) * 100 : null;
-    const ss = [{ n: `Hoy (${fdia(P(ult))})`, d: hoy, c: 0, w: 3, dec: 2 }, { n: "Hace un mes", d: previo, c: 1, w: 1.8, punteada: true, dec: 2 }];
+    const ss = [{ n: `Hoy (${fdia(P(ult))})`, ley: "Hoy", d: hoy, c: 0, w: 3, dec: 2 }, { n: "Hace un mes", d: previo, c: 1, w: 1.8, punteada: true, dec: 2 }];
     if (sep) ss.push({ n: "Proyección de la Fed (fin de año)", t: "punto", c: 0, d: sep, dec: 2 });
-    return { freq: "D", eventos: false, recesiones: false, sinRecorte: true, sinFecha: true,
+    return { freq: "D", eventos: false, recesiones: false, sinRecorte: true, sinFecha: true, fechaLey: fdia(P(ult)),
       titulo: `Al ${fdia(P(ult))}: letra a 1 año ${nf(val("1A", ult), 2)}% y bono a 2 años ${nf(val("2A", ult), 2)}%, contra la Fed en ${nf(ff, 2)}% (${sg(d1, 0)} y ${sg(d2, 0)} pb)` + (h1 != null ? `; hace un mes: ${sg(h1, 0)} y ${sg(h2, 0)} pb` : "") + (sep ? `; la Fed proyecta ${sep.map(p => `${nf(p[1], 2)}% a fin de ${anio(p[0])}`).join(" y ")}` : ""),
       sub: "Rendimiento de letras y bonos cortos del Tesoro, ubicados en la fecha en que vence cada plazo, contra la tasa efectiva de fondos federales. Incluye la diferencia estructural entre letras y fondos federales, y prima por plazo.",
       fuenteTxt: "Fed y Tesoro de EE.UU. vía FRED", dec: 2, series: ss };
@@ -1106,7 +1106,7 @@ def("spreads", { slug: "spreads-de-credito", nombre: "Spreads de crédito corpor
     const b = SD("baa_spread"), h = SD("hy_oas"); if (!b && !h) return null;
     const ss = [];
     if (b) ss.push({ n: "Baa − Treasury 10 años", d: cut(b), c: 0, w: 2.6, dec: 2 });
-    if (h) ss.push({ n: "High yield (ICE BofA, desde oct-23)", d: cut(h), c: 1, w: 1.4, dec: 2 });
+    if (h) ss.push({ n: "High yield (ICE BofA, desde oct-23)", ley: "High yield", d: cut(h), c: 1, w: 1.4, dec: 2 });
     const bm = S("baa_spread"), pr = promEntre(bm, 1986, 2019), pk = maxEntre(bm, 2008, 2009);
     const bw = b ? diariaCompleta("baa_spread") : null, rec = bw ? minEntre(bw.slice(0, -1), new Date().getUTCFullYear() - 3, 2100) : null;
     const refs = []; if (pr != null) refs.push({ y: pr, l: `Promedio 1986-2019: ${nf(pr, 2)} pp` }); if (pk) refs.push({ y: pk[1], l: `Máximo ${fm(pk[0])}: ${nf(pk[1], 2)} pp` });
@@ -1190,7 +1190,7 @@ def("expoImpo", { slug: "exportaciones-e-importaciones", nombre: "Exportaciones 
     return { titulo: `${fe.charAt(0).toUpperCase() + fe.slice(1)}: exportaciones US$ ${nf(last(e0)[1], 1)} mil M e importaciones ${nf(last(i0)[1], 1)} mil M por mes (promedio 3 meses: ${nf(last(roll(e0, 3))[1], 1)} y ${nf(last(roll(i0, 3))[1], 1)}); interanual nominal ${sg(last(ye)[1])}% y ${sg(last(yi)[1])}%` + (pe && pi ? `; precios de exportación ${sg(last(pe)[1])}% e importación ${sg(last(pi)[1])}%` : ""),
       sub: "Bienes y servicios, base balanza de pagos (BEA y Census), desestacionalizados, miles de millones de US$ por mes" + (real ? ", a precios del último mes (deflactados por los índices de precios de bienes del BLS)." : "."),
       unidad: "mil M", dec: 1, eventos: false,
-      series: [{ n: "Exportaciones, mensual", d: cut(e), c: 0, fina: true }, { n: "Exportaciones, promedio 3 meses", d: cut(roll(e, 3)), c: 0, w: 2.6 }, { n: "Importaciones, mensual", d: cut(i), c: 1, fina: true }, { n: "Importaciones, promedio 3 meses", d: cut(roll(i, 3)), c: 1, w: 2.6 }] };
+      series: [{ n: "Exportaciones, mensual", d: cut(e), c: 0, fina: true, enLeyenda: false }, { n: "Exportaciones, promedio 3 meses", ley: "Exportaciones", det: "promedio 3 meses (línea fina: dato mensual)", d: cut(roll(e, 3)), c: 0, w: 2.6 }, { n: "Importaciones, mensual", d: cut(i), c: 1, fina: true, enLeyenda: false }, { n: "Importaciones, promedio 3 meses", ley: "Importaciones", det: "promedio 3 meses (línea fina: dato mensual)", d: cut(roll(i, 3)), c: 1, w: 2.6 }] };
   } });
 
 def("cuentaCorriente", { slug: "cuenta-corriente", nombre: "Cuenta corriente / PBI", sin: ["cuenta corriente", "current account", "balanza de pagos", "financiamiento externo", "rentas", "ingreso primario"],
@@ -1276,7 +1276,7 @@ def("deficit", { slug: "deficit-fiscal", nombre: "Resultado fiscal total y prima
     const v = last(r)[1], p = promEntre(r, 2015, 2019), p07 = promEntre(r, 2007, 2007);
     const anios = v < 0 ? r.filter(q => q[1] <= v + 1e-9 && q[0] < last(r)[0] - 300 * DIA).map(q => anio(q[0])) : [];
     const ss = [{ n: "Resultado total", d: cut(r), c: 1, w: 2.6 }];
-    if (prim) ss.push({ n: "Resultado primario (sin intereses)", d: cut(prim), c: 0, w: 2 });
+    if (prim) ss.push({ n: "Resultado primario (sin intereses)", ley: "Primario", d: cut(prim), c: 0, w: 2 });
     const refs = [{ y: 0 }]; if (p != null) refs.push({ y: p, l: `Total, promedio 2015-19: ${nf(p)}%` }); if (p07 != null) refs.push({ y: p07, l: `Total, 2007: ${nf(p07)}%` });
     return { titulo: `${v < 0 ? "Déficit" : "Superávit"} fiscal ${nf(Math.abs(v))}% del PBI en 12 meses a ${fechaDe(r)}` + (prim ? `; primario ${nf(Math.abs(last(prim)[1]))}%${last(prim)[1] >= 0 ? " de superávit" : ""}` : "") + (p != null ? `; promedio 2015-19: ${nf(Math.abs(p))}%` : "") + (anios.length ? `; desde ${anio(r[0][0])}, déficits de ${nf(-v)}% o más sólo en ${rangosAnios(anios)}` : ""),
       sub: "Gobierno federal: resultado acumulado en 12 meses (Monthly Treasury Statement) sobre PBI nominal; negativo = déficit. Primario: sin intereses (BEA).",
@@ -1336,7 +1336,7 @@ def("deuda", { slug: "deuda-publica", nombre: "Deuda federal / PBI", sin: ["deud
   f: () => {
     const d = S("debt_public"), t = S("debt_gdp"); if (!d && !t) return null;
     const a = d || t, v = last(a)[1], mx = a.reduce((m, p) => p[1] > m[1] ? p : m), y07 = promEntre(a, 2007, 2007), y19 = promEntre(a, 2019, 2019);
-    const ss = []; if (d) ss.push({ n: "En manos del público", d: cut(d), c: 0, w: 2.8 }); if (t) ss.push({ n: "Total (con fondos del gobierno)", d: cut(t), c: "gris", w: 1.6 });
+    const ss = []; if (d) ss.push({ n: "En manos del público", d: cut(d), c: 0, w: 2.8 }); if (t) ss.push({ n: "Total (con fondos del gobierno)", ley: "Total", d: cut(t), c: "gris", w: 1.6 });
     const refs = []; if (y07 != null) refs.push({ y: y07, l: `2007: ${nf(y07, 1)}%` }); if (y19 != null) refs.push({ y: y19, l: `2019: ${nf(y19, 1)}%` }); if (mx[0] < last(a)[0]) refs.push({ y: mx[1], l: `Máximo ${fq(mx[0])}: ${nf(mx[1], 1)}%` });
     return { freq: "Q", titulo: `Deuda ${d ? "en manos del público" : "federal total"} ${nf(v, 1)}% del PBI en ${fq(last(a)[0])} (2019: ${nf(y19, 1)}%; 2007: ${nf(y07, 1)}%` + (mx[0] < last(a)[0] ? `; máximo ${fq(mx[0])}: ${nf(mx[1], 1)}%)` : "; máximo de la serie)") + (d && t ? `; total con fondos del gobierno ${nf(last(t)[1], 1)}%` : ""),
       sub: "Deuda federal sobre PBI (Tesoro y Fed de St. Louis), trimestral. En manos del público: excluye la que el Tesoro le debe a fondos del propio gobierno.",
@@ -1441,15 +1441,15 @@ function ciclos(o, serie, modo) {
   return { meses, actual, filas, prom, promR, promS, conR, sinR, da, ultK, giro, mesGiro, anio: t => new Date(t).getUTCFullYear(), mesTxt: t => fm(t) };
 }
 function defCiclo(id, slug, nombre, sujeto, sin, ks, serieFn, modo, unidad, dec, explica, refFn) {
-  def(id, { slug, nombre, sin, ops: [ANCLA], ks, historia: true, calc: `${explica} Cada línea gris es un ciclo anterior, con su año al final; al pasar el mouse por una se resalta. Los ciclos se alinean en el mes del primer movimiento de la tasa objetivo de la Fed (mes 0) y se detectan solos: el primer recorte después de una suba, o la primera suba después de un recorte. Desde 1988 (antes, la Fed movía su objetivo en pasos muy chicos y no hay ciclos claros). Los promedios se separan según haya empezado una recesión fechada por la NBER entre 6 meses antes y 24 meses después del mes 0; la regla se aplica sin excepciones (2019 cuenta como "con recesión" por la de 2020, aunque su causa fue la pandemia).`,
+  def(id, { slug, nombre, sin, ops: [ANCLA], ks, historia: true, sinPeriodo: true, calc: `${explica} Cada línea gris es un ciclo anterior, con su año al final; al pasar el mouse por una se resalta. Los ciclos se alinean en el mes del primer movimiento de la tasa objetivo de la Fed (mes 0) y se detectan solos: el primer recorte después de una suba, o la primera suba después de un recorte. Desde 1988 (antes, la Fed movía su objetivo en pasos muy chicos y no hay ciclos claros). Los promedios se separan según haya empezado una recesión fechada por la NBER entre 6 meses antes y 24 meses después del mes 0; la regla se aplica sin excepciones (2019 cuenta como "con recesión" por la de 2020, aunque su causa fue la pandemia).`,
     f: o => {
       const c = ciclos(o, serieFn(), modo); if (!c) return null;
       const refCiclo = refFn ? refFn() : null;
       const dir = o.ancla === "s" ? "primera suba" : "primer recorte", deDir = o.ancla === "s" ? "de la primera suba" : "del primer recorte";
       const series = c.filas.map(f => ({ n: `${c.anio(f.t)} (${c.mesTxt(f.t)})`, etiquetaFin: String(c.anio(f.t)), t: "line", c: "gris", fina: true, d: f.d, enLeyenda: false }));
       const anios = fs => fs.map(f => c.anio(f.t)).join(", ");
-      if (c.promR) series.push({ n: `Promedio con recesión (${anios(c.conR)})`, t: "line", c: "ink", w: 2, punteada: true, d: c.promR });
-      if (c.promS) series.push({ n: `Promedio sin recesión (${anios(c.sinR)})`, t: "line", c: 1, w: 2, punteada: true, d: c.promS });
+      if (c.promR) series.push({ n: `Promedio con recesión (${anios(c.conR)})`, ley: "Con recesión", t: "line", c: "ink", w: 2, punteada: true, d: c.promR });
+      if (c.promS) series.push({ n: `Promedio sin recesión (${anios(c.sinR)})`, ley: "Sin recesión", t: "line", c: 1, w: 2, punteada: true, d: c.promS });
       if (refCiclo) series.push({ n: refCiclo[1], t: "line", c: "gris", w: 1.2, punteada: true, d: c.meses.map(() => refCiclo[0]), enLeyenda: true });
       series.push({ n: `Este ciclo (${c.mesTxt(c.actual)})`, t: "line", c: 0, w: 3.2, d: c.da });
       const va = c.da[c.ultK], vp = c.prom[c.ultK], k = c.meses[c.ultK], vR = c.promR ? c.promR[c.ultK] : null, vS = c.promS ? c.promS[c.ultK] : null;
@@ -1490,7 +1490,7 @@ def("revEmpleo", { slug: "revisiones-del-empleo", nombre: "Revisiones de las nó
     return { titulo: `Revisiones de las nóminas en los 12 meses cerrados a ${fechaDe(cerr)}: ${sg(tot, 0)} mil (${sg(tot / 12, 0)} mil por mes)` + (desdeSigno ? `; ${tot < 0 ? "negativas" : "positivas"} en cada suma de 12 meses desde ${desdeSigno}` : "") + `; máximo ${tot < 0 ? "hacia abajo" : "hacia arriba"}: ${sg(pk[1], 0)} mil (${fm(pk[0])})`,
       sub: "Cambio mensual de las nóminas que se conoce hoy menos el publicado por primera vez (ALFRED), en miles. Gris claro: los 2 últimos meses, todavía abiertos.",
       unidad: "mil", dec: 0, cero: true, eventos: false, shock: [T(2020, 3), T(2021, 12)], shockVentana: [T(2020, 3), T(2021, 12)],
-      series: [{ n: "Revisión del mes", t: "bar", c: 1, d: cut(cerr) }, { n: "Meses abiertos", t: "bar", c: "gris", suave: true, d: cut(abiertos) }, { n: "Suma de 12 meses cerrados", c: "ink", w: 2.2, d: cut(s12) }], refs: [{ y: 0 }] };
+      series: [{ n: "Revisión del mes", t: "bar", c: 1, d: cut(cerr) }, { n: "Meses abiertos", sinValor: true, t: "bar", c: "gris", suave: true, d: cut(abiertos) }, { n: "Suma de 12 meses cerrados", c: "ink", w: 2.2, d: cut(s12) }], refs: [{ y: 0 }] };
   } });
 def("revPBI", { slug: "revisiones-del-pbi", nombre: "Revisiones del PBI", sin: ["revisiones", "primera estimación", "pbi", "advance", "confiabilidad"],
   calc: "Crecimiento trimestral anualizado del PBI real tal como se publicó por primera vez (estimación anticipada, ALFRED) contra el dato vigente hoy (BEA). Barras: la revisión (hoy menos primera); positivo: la primera estimación subestimó. Las marcas señalan los trimestres que cambiaron de signo. Un trimestre que todavía no se revisó no entra en los promedios. La serie de primeras estimaciones arranca en 2014.",

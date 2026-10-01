@@ -4,7 +4,7 @@ import { sinGuionFijo, el, esc, nf, sg, fm, fq, fw, fd, fPor, P, css, unidadTxt,
 import { last, prev, pctl } from "./calc.js";
 import { ST, S, meta, fuente, enlaceSerie, FREC_TXT, proximoRelease, incorporado, guardarPrefs, orgDe, calcularRango, cargarHistoria } from "./datos.js";
 import { CAT, armar } from "./catalogo.js";
-import { opciones, leyenda, recorteShock, unirCursor, colorSerie, spVisible, ajustarEjes } from "./graficos.js";
+import { opciones, leyenda, recorteShock, unirCursor, colorSerie, spVisible, ajustarEjes, nombreLey, unidadSerie, ejeDer } from "./graficos.js";
 import { enlaceGrafico } from "./rutas.js";
 import { AYUDA, TITULOS } from "./ayuda.js";
 
@@ -131,7 +131,7 @@ export function tarjeta(id, opts = {}) {
 
   // selectores (vista, real, escala) declarados por el gráfico
   const sel = art.querySelector(".selectores");
-  if (opts.grande && c && !opts.spFijo) {
+  if (opts.grande && c && !opts.spFijo && !c.sinPeriodo) {
     const per = [[null, "General"], ["2022", "2022"], ["5", "5 años"], ["10", "10 años"], ["2000", "2000"], ["todo", "Todo"]];
     const g = el("div", { class: "seg chico periodo", role: "group", "aria-label": "Período de este gráfico" });
     for (const [v, txt] of per) {
@@ -168,7 +168,7 @@ export function tarjeta(id, opts = {}) {
     if (chart) { chart.dispose(); VIVOS.delete(chart); chart = null; }
     cuerpo.innerHTML = "";
     const box = el("div", { class: "chart", role: "img", "aria-label": sp.titulo });
-    ley = leyenda(sp, () => chart, () => { if (chart) { const v = spVisible(sp); chart.setOption(opciones(v, box.clientWidth, !!opts.grande), { notMerge: true }); ajustarEjes(chart, v); } });
+    ley = leyenda(sp, () => chart, () => { if (chart) { const v = spVisible(sp); chart.setOption(opciones(v, box.clientWidth, !!opts.grande), { notMerge: true }); ajustarEjes(chart, v); } }, !!opts.grande);
     cuerpo.appendChild(ley.box);
     cuerpo.appendChild(box);
     const init = () => {
@@ -350,7 +350,7 @@ export function componerPNG(sp, W, H) {
     // leyenda
     const u = sp.unidad ?? (sp.tipo === "cat" ? "pp" : "%"), dec = sp.dec ?? 1;
     const items = sp.tipo === "heat" ? [] : sp.series.filter(s => s.enLeyenda !== false).map((s, i) => ({ c: colorSerie(sp, s, sp.series.indexOf(s)), forma: s.t === "bar" || s.area ? "cuadro" : s.t === "punto" ? "rombo" : s.punteada ? "punteada" : "linea",
-      t: s.n + (sp.tipo !== "cat" && s.d.length ? "  " + nf(s.finValor ?? s.d[s.d.length - 1][1], s.dec ?? dec) + unidadTxt(s.u ?? u) : "") }))
+      t: nombreLey(s) + (sp.tipo !== "cat" && s.d.length && !s.sinValor ? "  " + nf(s.finValor ?? s.d[s.d.length - 1][1], s.dec ?? dec) + unidadTxt(unidadSerie(s, u)) : "") + (ejeDer(s) ? "  (eje der.)" : "") }))
       .concat((sp.refs || []).filter(r => r.l).map(r => ({ c: css("--ref"), t: r.l, forma: "punteada" })))
       .concat(sp.banda ? [{ c: css("--band"), t: sp.bandaTexto || "Rango normal 2000-19", forma: "cuadro" }] : []);
     y += 10; ctx.font = `500 15px ${fnt}`;

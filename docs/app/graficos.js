@@ -96,7 +96,18 @@ function opcionesLinea(sp, ancho, grande) {
     }
   });
   const aux = { type: "line", name: "__aux", data: [], silent: true, tooltip: { show: false }, markLine: { symbol: "none", silent: true, data: [] }, markArea: { silent: true, data: [] } };
-  for (const r of sp.refs || []) aux.markLine.data.push({ yAxis: r.y, label: { show: false }, lineStyle: { color: ref, type: [5, 4], width: 1.2 } });
+  // cada referencia con nombre lleva su rótulo sobre la línea, a la izquierda (a la derecha están los datos recientes)
+  // dos referencias muy cercanas: la de arriba rotula por encima de su línea y la de abajo por debajo, así no se pisan
+  const valsY = sp.series.filter(x => x.t !== "nota" && !x.der).flatMap(x => x.d.map(p => p[1])).concat((sp.refs || []).map(r => r.y)).filter(v => v != null && isFinite(v));
+  const spanY = valsY.length ? Math.max(...valsY) - Math.min(...valsY) || 1 : 1;
+  const refsOrd = (sp.refs || []).filter(r => r.l).sort((x, y) => y.y - x.y), abajo = new Set();
+  // una referencia pegada al techo rotula por debajo, para no chocar con los rótulos de la Fed arriba
+  const maxY = valsY.length ? Math.max(...valsY) : 0;
+  for (const r of refsOrd) if (r.y > maxY - spanY * 0.08) abajo.add(r);
+  for (let k = 1; k < refsOrd.length; k++) if (refsOrd[k - 1].y - refsOrd[k].y < spanY * 0.07 && !abajo.has(refsOrd[k - 1])) abajo.add(refsOrd[k]);
+  for (const r of sp.refs || []) aux.markLine.data.push({ yAxis: r.y, lineStyle: { color: ref, type: [5, 4], width: 1.2 },
+    label: r.l && sp.rotularRefs !== false ? { show: true, formatter: r.l.replace(/\{/g, "("), position: abajo.has(r) ? "insideStartBottom" : "insideStartTop", color: css("--muted"), fontSize: (grande ? 12 : 11) * FS(), distance: 3,
+      textBorderColor: css("--surface"), textBorderWidth: 3 } : { show: false } });
   if (sp.banda) aux.markArea.data.push([{ yAxis: sp.banda[0], itemStyle: { color: css("--band") }, label: { show: false } }, { yAxis: sp.banda[1] }]);
   const conRec = mostrarRecesiones(sp, x0, x1);
   if (conRec) for (const [a, b] of RECESIONES) if (b >= x0 && a <= x1) aux.markArea.data.push([{ xAxis: Math.max(a, x0), itemStyle: { color: css("--rec") }, label: { show: false } }, { xAxis: Math.min(b, x1) }]);
@@ -136,7 +147,7 @@ function opcionesLinea(sp, ancho, grande) {
         let h = `<div style="font-weight:600;margin-bottom:4px">${fx(ps2[0].value[0])}</div>`;
         for (const p of ps2) {
           const s = sp.series.find(x => x.n === p.seriesName) || {};
-          h += `<div style="display:flex;gap:12px;justify-content:space-between;align-items:center"><span>${p.marker}${esc(p.seriesName)}</span><b style="font-variant-numeric:tabular-nums">${nf(p.value[1], s.dec ?? dec)}${unidadTxt(s.u ?? u)}</b></div>`;
+          h += `<div style="display:flex;gap:12px;justify-content:space-between;align-items:center"><span>${p.marker}${esc(p.seriesName)}</span><b style="font-variant-numeric:tabular-nums">${nf(p.value[1], s.dec ?? dec)}${unidadTxt(unidadSerie(s, u))}</b></div>`;
         }
         return h;
       },
@@ -243,20 +254,45 @@ export function opciones(sp, ancho, grande) {
 }
 
 // Leyenda HTML: cada serie con su valor (el último, o el de la fecha bajo el cursor). Clic muestra u oculta.
-export function leyenda(sp, getChart, redibujar) {
+
+// Leyenda: nombre corto + valor. El contexto que viaja entre paréntesis (eje, promedios, tendencias, fuente)
+// sale del rótulo y va al tooltip (nombre completo) y a la línea de detalle de Ampliar.
+const PAR = /\s*\(([^()]*)\)/g;
+const esUnidad = x => /^(eje derecho|pp|pb|%)$/.test(x.trim());
+export const ejeDer = s => !!s.der || /eje derecho/.test(s.n);
+export const unidadSerie = (s, u) => s.u ?? (/\(pp\)/.test(s.n) ? "pp" : u);
+export function nombreLey(s) {
+  if (s.ley) return s.ley;
+  return s.n.replace(/,\s*eje derecho\)/, ")")
+    .replace(PAR, (m, x) => esUnidad(x) || /^\d{4}-\d{2}:|^tendencia /.test(x) ? "" : m)
+    .replace(/, mensual$/, "").replace(/, promedio (\d+) (meses|semanas|trimestres)/, ", prom. $1 $2").trim();
+}
+export function detalleLey(s) {
+  if (s.det != null) return s.det;
+  const corto = nombreLey(s), xs = [];
+  for (const m of s.n.matchAll(PAR)) {
+    const x = m[1].replace(/,?\s*eje derecho/, "").trim();
+    if (x && !esUnidad(x) && !corto.includes("(" + m[1] + ")")) xs.push(x);
+  }
+  return xs.join("; ");
+}
+
+export function leyenda(sp, getChart, redibujar, grande = false) {
   const box = el("div", { class: "leyenda" });
   const api = { box, actualizar: () => {} };
   if (sp.tipo === "heat") return api;
   const u = sp.unidad ?? (sp.tipo === "cat" ? "pp" : "%"), dec = sp.dec ?? 1, conValor = sp.tipo !== "cat";
   const fx = fPor(sp.freq);
-  const fecha = conValor && !sp.sinFecha ? el("span", { class: "fecha" }) : null;
+  const fijaF = sp.fechaLey ?? (sp.tipo === "cat" && sp.freq && sp.cats?.length && !sp.sinFecha ? sp.cats[sp.cats.length - 1] : null);
+  const fecha = (conValor && !sp.sinFecha) || fijaF ? el("span", { class: "fecha" }) : null;
   if (fecha) box.appendChild(fecha);
   const valores = [];
   sp.series.forEach((s, i) => {
     if (s.enLeyenda === false) return;
     const b = el("button", { type: "button", "aria-pressed": "true", title: "Mostrar u ocultar" });
     const clase = s.t === "bar" ? (s.suave ? "barra suave" : "barra") : s.t === "punto" ? "punto" : s.area ? "area" : s.punteada ? "punteada" : s.fina ? "fina" : "";
-    b.innerHTML = `<i class="sw ${clase}" style="color:${colorSerie(sp, s, i)}"></i><span>${esc(s.n)}${conValor ? " <b></b>" : ""}</span>`;
+    b.title = s.n;
+    b.innerHTML = `<i class="sw ${clase}" style="color:${colorSerie(sp, s, i)}"></i><span>${esc(nombreLey(s))}${conValor && !s.sinValor ? " <b></b>" : ""}${ejeDer(s) ? ' <small class="der">eje der.</small>' : ""}</span>`;
     b.addEventListener("click", () => {
       const ch = getChart(); if (!ch) return;
       const oculta = b.getAttribute("aria-pressed") === "true";
@@ -269,21 +305,24 @@ export function leyenda(sp, getChart, redibujar) {
       b.setAttribute("aria-pressed", oculta ? "false" : "true");
     });
     box.appendChild(b);
-    if (conValor) valores.push([b.querySelector("b"), s]);
+    if (conValor && !s.sinValor) valores.push([b.querySelector("b"), s]);
   });
-  for (const r of sp.refs || []) if (r.l) box.insertAdjacentHTML("beforeend", `<span class="fija"><i class="sw ref"></i>${esc(r.l)}</span>`);
+  // las referencias se rotulan sobre su propia línea; la banda no tiene rótulo en el gráfico, así que queda acá
   if (sp.banda) box.insertAdjacentHTML("beforeend", `<span class="fija"><i class="sw banda"></i>${esc(sp.bandaTexto || "Rango normal 2000-19")}</span>`);
   const vis = sp.tipo ? [] : sp.series.filter(s => s.d.length && s.t !== "punto");
-  if (vis.length && mostrarRecesiones(sp, Math.min(...vis.map(s => s.d[0][0])), Math.max(...vis.map(s => s.d[s.d.length - 1][0]))))
-    box.insertAdjacentHTML("beforeend", `<span class="fija"><i class="sw rec"></i>Recesión (NBER)</span>`);
+  if (grande) {
+    const det = sp.series.filter(s => s.enLeyenda !== false).map(s => [nombreLey(s), detalleLey(s)]).filter(x => x[1]).map(([n, d]) => `${esc(n)}: ${esc(d)}`);
+    if (vis.length && mostrarRecesiones(sp, Math.min(...vis.map(s => s.d[0][0])), Math.max(...vis.map(s => s.d[s.d.length - 1][0])))) det.push(`<span class="nber"><i class="sw rec"></i>Recesión (NBER)</span>`);
+    if (det.length) box.insertAdjacentHTML("beforeend", `<div class="ley-det">${det.join('<span class="sep">·</span>')}</div>`);
+  }
   api.actualizar = t => {
     let fUlt = null;
     for (const [b, s] of valores) {
       const p = t == null ? (s.d.length ? [s.d[s.d.length - 1][0], s.finValor ?? s.d[s.d.length - 1][1]] : null) : valorEn(s.d, t);
-      b.textContent = p ? nf(p[1], s.dec ?? dec) + unidadTxt(s.u ?? u) : "–";
+      b.textContent = p ? nf(p[1], s.dec ?? dec) + unidadTxt(unidadSerie(s, u)) : "–";
       if (p && s.t !== "punto" && !s.ref && (fUlt == null || p[0] > fUlt)) fUlt = p[0];
     }
-    if (fecha) fecha.textContent = t == null ? (fUlt ? fx(fUlt) : "") : fx(valorEn(vis[0]?.d, t)?.[0] ?? t);
+    if (fecha) fecha.textContent = fijaF && (t == null || !conValor || sp.sinFecha) ? fijaF : t == null ? (fUlt ? fx(fUlt) : "") : fx(valorEn(vis[0]?.d, t)?.[0] ?? t);
     box.classList.toggle("cursor", t != null);
   };
   api.actualizar(null);

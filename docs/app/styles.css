@@ -201,7 +201,7 @@ h2.bloque { margin: 26px 0 12px; font-size: 13px; font-weight: 600; text-transfo
 .card.grande .chart { height: min(62vh, 680px); }
 :root[data-letra="grande"] .card .chart { height: 350px; }
 :root[data-letra="grande"] .card.ancha .chart { height: 400px; }
-.leyenda { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 10px; font-size: 13px; color: var(--ink-2); min-height: 20px; align-items: center; }
+.leyenda { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 10px; font-size: 13px; color: var(--ink-2); min-height: 20px; align-items: center; }
 :root[data-letra="grande"] .leyenda, :root[data-letra="grande"] .leyenda button { font-size: 14.5px; }
 .leyenda:empty { display: none; }
 .leyenda .fecha { font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; min-width: 52px; }
@@ -209,6 +209,10 @@ h2.bloque { margin: 26px 0 12px; font-size: 13px; font-weight: 600; text-transfo
 .leyenda button[aria-pressed="false"] { opacity: 0.4; }
 .leyenda span.fija { display: inline-flex; align-items: center; gap: 7px; color: var(--muted); }
 .leyenda b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+.leyenda small.der { color: var(--muted); font-size: 11px; font-weight: 500; letter-spacing: .01em; margin-left: 1px; }
+.leyenda .ley-det { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 2px 0; margin-top: 2px; font-size: 12px; color: var(--muted); line-height: 1.5; }
+.leyenda .ley-det .sep { margin: 0 8px; opacity: .6; }
+.leyenda .ley-det .nber { display: inline-flex; align-items: center; gap: 6px; }
 .sw { flex: none; display: inline-block; width: 16px; height: 0; border-top: 2.5px solid currentColor; border-radius: 2px; }
 .sw.barra { height: 10px; border: 0; background: currentColor; border-radius: 2px; width: 10px; }
 .sw.barra.suave { opacity: 0.4; }
