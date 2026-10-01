@@ -107,7 +107,7 @@ FRED = {
     "r_nafta":         ("RSGASS", "Ventas minoristas: estaciones de servicio", "US$ millones", "M", "Census"),
     "r_materiales":    ("RSBMGESD", "Ventas minoristas: materiales de construcción y jardín", "US$ millones", "M", "Census"),
     "r_restaurantes":  ("RSFSDP", "Ventas minoristas: restaurantes y bares", "US$ millones", "M", "Census"),
-    "auto_tasa":       ("RIFLPBCIANM60NM", "Tasa de préstamos bancarios para auto nuevo, 60 meses", "%", "M", "Fed"),
+    "auto_tasa":       ("RIFLPBCIANM60NM", "Tasa de préstamos bancarios para auto nuevo, 60 meses (trimestral)", "%", "Q", "Fed"),
     "credit_revol":    ("REVOLSL", "Crédito al consumo rotativo (tarjetas)", "US$ millones", "M", "Fed"),
     "pi_prop":         ("A041RC1", "Ingreso de cuentapropistas", "US$ miles de M", "M", "BEA"),
     "pi_rent":         ("A048RC1", "Ingreso por alquileres de personas", "US$ miles de M", "M", "BEA"),

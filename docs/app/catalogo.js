@@ -322,7 +322,7 @@ function desvioTendencia(a) {
   const mx = xs.reduce((s, v) => s + v, 0) / n, my = ys.reduce((s, v) => s + v, 0) / n;
   let sxy = 0, sxx = 0; for (let i = 0; i < n; i++) { sxy += (xs[i] - mx) * (ys[i] - my); sxx += (xs[i] - mx) ** 2; }
   const b = sxy / sxx, c = my - b * mx;
-  return { d: a.filter(p => p[0] >= T(2015)).map(p => [p[0], (p[1] / Math.exp(c + b * p[0] / DIA) - 1) * 100]), ritmo: (Math.exp(b * 365.25) - 1) * 100 };
+  return { d: a.map(p => [p[0], (p[1] / Math.exp(c + b * p[0] / DIA) - 1) * 100]), ritmo: (Math.exp(b * 365.25) - 1) * 100 };
 }
 def("consumoTipo", { slug: "consumo-por-tipo", nombre: "Consumo real por tipo de gasto contra su tendencia", sin: ["durables", "servicios", "bienes", "tendencia", "prepandemia"],
   calc: "Consumo real de servicios, bienes no durables y bienes durables (BEA), como desvío porcentual contra su propia tendencia 2015-19: una recta en logaritmos ajustada a esos cinco años (el último período sin pandemia) y extendida hasta hoy. Cada tipo se compara contra su propio ritmo porque crecen a velocidades distintas: los durables, por ejemplo, suben más rápido en términos reales porque la tecnología se abarata. En gris, el consumo total. Cero es estar en la tendencia.",
@@ -347,7 +347,7 @@ def("autos", { slug: "ventas-de-autos", nombre: "Ventas de vehículos y tasa de 
     const m3 = roll(a, 3), p = promEntre(a, 2015, 2019), t = S("auto_tasa");
     const ss = [{ n: "Ventas del mes", d: cut(a), c: 0, fina: true }, { n: "Promedio 3 meses", d: cut(m3), c: 0, w: 2.6 }];
     if (t) ss.push({ n: "Tasa a 60 meses (eje derecho)", d: cut(t), c: 1, w: 1.6, der: true, u: "%", dec: 2 });
-    return { titulo: `${nf(last(a)[1])} millones de vehículos por año en ${fechaDe(a)} (promedio 3 meses: ${nf(last(m3)[1])})` + (p ? `; promedio 2015-19: ${nf(p)}` : "") + (t ? `; tasa del préstamo a 60 meses: ${nf(last(t)[1], 2)}%` : ""),
+    return { titulo: `${nf(last(a)[1])} millones de vehículos por año en ${fechaDe(a)} (promedio 3 meses: ${nf(last(m3)[1])})` + (p ? `; promedio 2015-19: ${nf(p)}` : "") + (t ? `; tasa del préstamo a 60 meses: ${nf(last(t)[1], 2)}% (${fm(last(t)[0])})` : ""),
       sub: "Millones de unidades, tasa anual desestacionalizada. Eje derecho: tasa de los préstamos bancarios para auto nuevo a 60 meses.",
       unidad: "M", dec: 1, series: ss, refs: p ? [{ y: p, l: `Promedio 2015-19: ${nf(p)} M` }] : [] };
   } });
