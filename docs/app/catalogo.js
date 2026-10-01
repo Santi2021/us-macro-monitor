@@ -710,7 +710,7 @@ def("politica", { slug: "tasa-real-de-la-fed", nombre: "Tasa real de la Fed y ta
     const lr = S("sep_lr");
     // escalón: cada valor vale desde su reunión hasta la siguiente, llevado a fin de mes para que coincida con la serie mensual
     const neutral = lr ? r.filter(p => p[0] >= lr[0][0]).map(p => { let x = null; for (const q of lr) if (q[0] <= p[0] + 31 * 864e5) x = q[1]; return [p[0], x - 2]; }).filter(p => p[1] != null) : null;
-    const n = neutral && neutral.length ? last(neutral)[1] : null;
+    const n = lr ? last(lr)[1] - 2 : null;   // la última estimación de la Fed, aunque sea de este mes
     const lectura = n == null ? (v > 1.3 ? "restrictiva" : v >= 0.5 ? "cerca de neutral" : "expansiva")
       : v > n + 0.5 ? "restrictiva" : v < n - 0.5 ? "expansiva" : "cerca de neutral";
     const ss = [{ n: "Tasa real de la Fed", d: cut(r), c: 0, area: true }];
