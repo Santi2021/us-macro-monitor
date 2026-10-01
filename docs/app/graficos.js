@@ -113,6 +113,9 @@ function opcionesLinea(sp, ancho, grande) {
     }
   }
   series.push(aux);
+  // las referencias con nombre (promedios largos, máximos históricos) siempre entran en el eje: son el contexto de la lectura
+  const refsEje = (sp.refs || []).filter(r => r.l && r.y != null && isFinite(x0));
+  if (refsEje.length) series.push({ type: "scatter", name: "__aux", data: refsEje.map(r => [x0, r.y]), symbolSize: 0, silent: true, tooltip: { show: false }, z: 0 });
   const hayBarras = sp.series.some(s => s.t === "bar");
   const decEjeAuto = dec > 0 ? 1 : 0;   // se ajusta al paso real del eje después de dibujar (ajustarEjes)
   const largo = (x1 - x0) > 3.5 * 365 * DIA_MS;

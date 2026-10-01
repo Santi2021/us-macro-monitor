@@ -81,48 +81,42 @@ def("contribuciones", { slug: "contribuciones-al-pbi", nombre: "Contribuciones a
     return { tipo: "cat", freq: "Q", titulo: `PBI ${nf(last(g)[1])}% en ${fq(last(g)[0])}: sin inventarios ni exportaciones netas, ${nf(nucleo)}%` + (giro ? `; ${giro}` : ""),
       sub: "Contribuciones al crecimiento, pp de la tasa trimestral anualizada. Los inventarios, en gris, son ruido de corto plazo." + sepPBI(), unidadLinea: "%", cats: ts.map(fq), series };
   } });
-def("gdpnow", { slug: "gdpnow", nombre: "GDPNow: el PBI del trimestre en tiempo real", sin: ["nowcast", "atlanta", "pbi en tiempo real", "gdpnow"],
-  calc: "Cada estimación del modelo GDPNow de la Fed de Atlanta para el trimestre en curso, con la fecha en que se publicó (archivo de versiones ALFRED de la Fed de St. Louis). La estimación cambia en escalones, cada vez que entra un dato. En gris, el recorrido del trimestre anterior desplazado tres meses para comparar el momento, y el rombo es su PBI publicado. Las marcas indican el dato del día de cada movimiento de 0,3 pp o más. El error promedio compara la última estimación de cada trimestre con la primera publicación del PBI.",
-  ks: ["gdpnow", "gdp_1ra"],
+def("gdpnow", { slug: "gdpnow", nombre: "GDPNow vs PBI publicado", sin: ["nowcast", "atlanta", "pbi en tiempo real", "gdpnow"],
+  calc: "Última estimación del modelo GDPNow de la Fed de Atlanta para cada trimestre, contra el PBI real publicado por BEA (% trimestral anualizado). El movimiento del último mes y el dato que más lo explicó salen del archivo de versiones del modelo (ALFRED, Fed de St. Louis) cruzado con el calendario de publicaciones. El error promedio compara la última estimación de cada trimestre con la primera publicación del PBI.",
+  ks: ["gdpnow", "gdp_growth", "gdp_1ra"],
   f: () => {
+    const g = S("gdp_growth"), n = S("gdpnow"); if (!g || !n) return null;
+    const ult = last(n), pub = last(g), enCurso = ult[0] > pub[0];
+    // trimestres visibles: los del período elegido desde que existe el GDPNow
+    const desde = Math.max(ST.T0, n[0][0]);
+    const ts = [...new Set([...cut(g, desde).map(p => p[0]), ...cut(n, desde).map(p => p[0])])].sort((a, b) => a - b);
+    const mg = new Map(g), mn = new Map(n);
+    // recorrido del trimestre en curso: movimiento del último mes y el dato que más lo movió
     const rec = ST.DATA.gdpnow_rec || {}, hist = ST.DATA.gdpnow_hist || [];
-    const n = S("gdpnow"); if (!n) return null;
-    // recorrido por trimestre: ALFRED más lo que registra el monitor en cada corrida
-    const camino = q => { const m = new Map((rec[q] || []).map(([f, v]) => [f, v])); for (const [f, t, v] of hist) if (t === q && !m.has(f)) m.set(f, v); return [...m].sort((a, b) => a[0].localeCompare(b[0])).map(([f, v]) => [P(f), v]); };
-    const trims = [...new Set([...Object.keys(rec), ...hist.map(h => h[1])])].sort();
-    const qa = trims[trims.length - 1]; if (!qa) return null;
-    const qp = trims.length > 1 ? trims[trims.length - 2] : null;
-    const actual = camino(qa); if (actual.length < 2) return null;
-    const ant = qp ? camino(qp).map(([t, v]) => { const d = new Date(t); return [Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 3, d.getUTCDate()), v]; }) : [];
-    const v = last(actual)[1];
-    // movimiento del último mes y el dato que más lo movió
-    const hace = valorEn(actual, last(actual)[0] - 30 * DIA) || actual[0], dm = v - hace[1];
-    const movs = [];
-    for (let i = 1; i < actual.length; i++) {
-      const d = actual[i][1] - actual[i - 1][1]; if (Math.abs(d) < 0.3) continue;
-      const f = new Date(actual[i][0]).toISOString().slice(0, 10), f0 = new Date(actual[i][0] - 3 * DIA).toISOString().slice(0, 10);
-      const rel = (ST.DATA.calendario || []).filter(c => c.fecha <= f && c.fecha >= f0 && infoRelease(c.nombre).imp >= 2 && !/GDPNow|FOMC|Summary of Economic|Target Range/.test(c.nombre))
-        .sort((x, y) => infoRelease(y.nombre).imp - infoRelease(x.nombre).imp || y.fecha.localeCompare(x.fecha))[0];
-      movs.push({ p: actual[i], d, rel: rel ? nombreCorto(rel.nombre) : null });
+    const q = new Date(ult[0]).toISOString().slice(0, 10);
+    const m = new Map((rec[q] || []).map(([f, v]) => [f, v])); for (const [f, t, v] of hist) if (t === q && !m.has(f)) m.set(f, v);
+    const camino = [...m].sort((a, b) => a[0].localeCompare(b[0])).map(([f, v]) => [P(f), v]);
+    let mov = "";
+    if (enCurso && camino.length > 1) {
+      const hace = valorEn(camino, last(camino)[0] - 30 * DIA) || camino[0], dm = last(camino)[1] - hace[1];
+      let motor = null, mayor = 0;
+      for (let i = 1; i < camino.length; i++) {
+        const d = camino[i][1] - camino[i - 1][1]; if (camino[i][0] < last(camino)[0] - 30 * DIA || Math.abs(d) <= Math.abs(mayor)) continue;
+        const f = new Date(camino[i][0]).toISOString().slice(0, 10), f0 = new Date(camino[i][0] - 3 * DIA).toISOString().slice(0, 10);
+        const rel = (ST.DATA.calendario || []).filter(c => c.fecha <= f && c.fecha >= f0 && infoRelease(c.nombre).imp >= 2 && !/GDPNow|FOMC|Summary of Economic|Target Range/.test(c.nombre))
+          .sort((x, y) => infoRelease(y.nombre).imp - infoRelease(x.nombre).imp || y.fecha.localeCompare(x.fecha))[0];
+        if (rel) { motor = nombreCorto(rel.nombre); mayor = d; }
+      }
+      mov = Math.abs(dm) < 0.1 ? ": sin cambios en el último mes" : `: ${dm > 0 ? "subió" : "bajó"} ${nf(Math.abs(dm))} pp en el último mes` + (motor ? `, sobre todo por el dato de ${motor}` : "");
     }
-    // se anotan los 5 movimientos más grandes
-    const anotados = movs.slice().sort((x, y) => Math.abs(y.d) - Math.abs(x.d)).slice(0, 5).sort((x, y) => x.p[0] - y.p[0]);
-    const notas = anotados.map(m => m.p), textos = anotados.map(m => (m.rel ? m.rel + " " : "") + sg(m.d));
-    const recientes = movs.filter(m => m.rel && m.p[0] >= last(actual)[0] - 30 * DIA);
-    const motor = recientes.length ? recientes.reduce((x, y) => Math.abs(y.d) > Math.abs(x.d) ? y : x).rel : "";
     // error de los últimos 8 trimestres contra la primera publicación del PBI
     const p1 = S("gdp_1ra"), err = p1 ? join(n, p1, (a, b) => Math.abs(a - b)) : null;
     const e8 = err && err.length >= 4 ? err.slice(-8) : null, em = e8 ? e8.reduce((x, y) => x + y[1], 0) / e8.length : null;
-    const pubAnt = qp && p1 ? (new Map(p1)).get(P(qp)) : null;
-    const series = [];
-    if (ant.length) series.push({ n: `Trimestre anterior (${fq(P(qp))})`, d: ant, c: "gris", w: 1.6, escalon: true, fin: false, ref: true });
-    if (pubAnt != null && ant.length) series.push({ n: `PBI publicado ${fq(P(qp))}`, t: "punto", c: "gris", d: [[last(ant)[0] + 6 * DIA, pubAnt]], ref: true });
-    series.push({ n: `GDPNow ${fq(P(qa))}`, d: actual, c: 0, w: 2.8, escalon: true });
-    if (notas.length) series.push({ n: "Dato que la movió", t: "nota", c: 0, d: notas, textos, enLeyenda: false });
-    return { freq: "D", eventos: false, recesiones: false, sinRecorte: true,
-      titulo: `GDPNow estima ${nf(v)}% para ${fq(P(qa))}: ${Math.abs(dm) < 0.1 ? "sin cambios en el último mes" : `${dm > 0 ? "subió" : "bajó"} ${nf(Math.abs(dm))} pp en el último mes`}` + (motor && Math.abs(dm) >= 0.1 ? `, sobre todo por el dato de ${motor}` : ""),
-      sub: "Cada escalón es un dato nuevo; en gris, el trimestre anterior y su PBI." + (em != null ? ` Error promedio (${e8.length} trimestres): ${nf(em)} pp.` : ""),
-      series, refs: [{ y: 0 }] };
+    return { tipo: "cat", freq: "Q", apilado: false, signo: false, unidad: "%",
+      titulo: enCurso ? `GDPNow estima ${nf(ult[1])}% para ${fq(ult[0])}` + mov : `El último PBI publicado fue ${nf(pub[1])}% en ${fq(pub[0])}`,
+      sub: "PBI real publicado (barras) y la última estimación en tiempo real de la Fed de Atlanta para cada trimestre, % trimestral anualizado." + (em != null ? ` Error promedio de los últimos ${e8.length} trimestres: ${nf(em)} pp.` : ""),
+      cats: ts.map(fq),
+      series: [{ n: "PBI publicado", c: 0, t: "bar", d: ts.map(t => mg.get(t) ?? null) }, { n: "GDPNow", t: "line", c: 1, punteada: true, etiquetas: ts.length <= 24, d: ts.map(t => mn.get(t) ?? null) }] };
   } });
 def("demandaPrivada", { slug: "demanda-privada", nombre: "Demanda privada final", sin: ["ventas finales", "final sales", "demanda interna", "pbi núcleo"],
   calc: "Ventas finales reales a compradores privados domésticos: consumo más inversión fija privada (BEA). Deja afuera inventarios, gobierno y comercio exterior, los componentes ruidosos del PBI. Barras: variación trimestral anualizada (el momento); línea: interanual (la tendencia). Si las barras quedan por encima de la línea, la demanda se acelera.",
@@ -136,24 +130,24 @@ def("demandaPrivada", { slug: "demanda-privada", nombre: "Demanda privada final"
       series: [{ n: "Trimestral anualizado", d: cut(q), t: "bar", c: 0, suave: true }, { n: "Interanual", d: cut(a), c: 0, w: 3 }, { n: "PBI real, interanual", d: cut(ga), c: "gris", w: 1.4, punteada: true }], refs: [{ y: 0 }] };
   } });
 def("brecha", { slug: "brecha-del-producto", nombre: "Brecha del producto y del desempleo", sin: ["output gap", "potencial", "cbo", "holgura", "recalentamiento", "okun", "nairu", "desempleo natural"],
-  calc: "Brecha del producto: PBI real sobre el PBI potencial de la Oficina de Presupuesto del Congreso (CBO), menos 1, en %. Brecha del desempleo: tasa natural (no cíclica) de la CBO menos el desempleo, en puntos; positiva significa un mercado laboral más ajustado que lo normal. Las dos se leen igual: sobre cero, recalentamiento. La CBO revisa su potencial en cada informe, así que la historia puede moverse. Siempre desde 2000.",
+  calc: "Brecha del producto: PBI real sobre el PBI potencial de la Oficina de Presupuesto del Congreso (CBO), menos 1, en %. Brecha del desempleo: tasa natural (no cíclica) de la CBO menos el desempleo, en puntos; positiva significa un mercado laboral más ajustado que lo normal. Las dos se leen igual: sobre cero, recalentamiento. La CBO revisa su potencial en cada informe, así que la historia puede moverse.",
   ks: ["gdp_real", "gdp_pot", "unemployment", "nrou"],
   f: () => {
     const b = join(S("gdp_real"), S("gdp_pot"), (a, c) => (a / c - 1) * 100); if (!b) return null;
     const u = toQ(S("unemployment")), n = S("nrou");
     const bu = u && n ? join(n, u, (a, c) => a - c) : null;
-    const ss = [{ n: "Brecha del producto (CBO)", d: cut(b, T(2000)), c: 0, w: 2.6, area: true }];
-    if (bu) ss.push({ n: "Brecha del desempleo (natural − actual)", d: cut(bu, T(2000)), c: 1, w: 2 });
+    const ss = [{ n: "Brecha del producto (CBO)", d: cut(b), c: 0, w: 2.6, area: true }];
+    if (bu) ss.push({ n: "Brecha del desempleo (natural − actual)", d: cut(bu), c: 1, w: 2 });
     const v = last(b)[1], w = bu ? last(bu)[1] : null;
     const caliente = v > 0.3, ajustado = w != null && w > 0.1, flojo = w != null && w < -0.1;
     const diag = w == null ? "" : caliente && ajustado ? ": recalentamiento" : !caliente && v < -0.3 && flojo ? ": hay holgura" : caliente && flojo ? ": las dos medidas no coinciden" : "";
     return { freq: "Q", sinRecorte: false,
       titulo: `El PBI está ${nf(Math.abs(v))}% ${v >= 0 ? "sobre" : "bajo"} su potencial` + (w != null ? ` y el desempleo ${nf(Math.abs(w))} pp ${w >= 0 ? "bajo" : "sobre"} su nivel natural` : "") + diag,
-      sub: "Las dos brechas se leen igual: sobre cero, la economía usa más recursos de los que puede sostener y presiona sobre los precios. Desde 2000.",
+      sub: "Las dos brechas se leen igual: sobre cero, la economía usa más recursos de los que puede sostener y presiona sobre los precios.",
       series: ss, refs: [{ y: 0, l: "Potencial / nivel natural" }] };
   } });
 def("productividad", { slug: "productividad", nombre: "¿Hay un boom de productividad?", sin: ["productividad", "ia", "inteligencia artificial", "boom", "producto por hora"], historia: true,
-  calc: "Producto por hora del sector empresas no agrícolas (BLS). Línea: crecimiento anualizado a 5 años, la tendencia; barras: variación interanual. Las referencias son el crecimiento anual promedio del boom 1995-2004 y del período 2005-19, calculados con los datos. La productividad trimestral se mueve al revés del ciclo (en 2020 saltó porque se perdieron empleos de baja productividad): por eso la lectura es la de 5 años. Siempre desde 1990.",
+  calc: "Producto por hora del sector empresas no agrícolas (BLS). Línea: crecimiento anualizado a 5 años, la tendencia; barras: variación interanual. Las referencias son el crecimiento anual promedio del boom 1995-2004 y del período 2005-19, calculados con los datos. La productividad trimestral se mueve al revés del ciclo (en 2020 saltó porque se perdieron empleos de baja productividad): por eso la lectura es la de 5 años.",
   ks: ["productivity"],
   f: () => {
     const p = S("productivity"); if (!p) return null;
@@ -166,8 +160,8 @@ def("productividad", { slug: "productividad", nombre: "¿Hay un boom de producti
     if (normal) refs.push({ y: normal, l: `2005-19: ${nf(normal)}%` });
     const lect = boom && normal ? (v >= boom ? "al nivel del boom 1995-2004" : v > normal ? `por encima de 2005-19 (${nf(normal)}%), todavía debajo del boom 1995-2004 (${nf(boom)}%)` : `en el ritmo de 2005-19 (${nf(normal)}%), lejos del boom 1995-2004`) : "";
     return { freq: "Q", titulo: `La productividad crece ${nf(v)}% anual en 5 años` + (lect ? `: ${lect}` : ""),
-      sub: `Producto por hora, empresas no agrícolas. Línea: tendencia de 5 años; barras: interanual (último, ${nf(last(y)[1])}%). Desde 1990.`,
-      sinRecorte: true, series: [{ n: "Interanual", d: cut(y, T(1990)), t: "bar", c: 0, suave: true }, { n: "Anualizado a 5 años", d: cut(a5, T(1990)), c: 0, w: 3 }], refs };
+      sub: `Producto por hora, empresas no agrícolas. Línea: tendencia de 5 años; barras: interanual (último, ${nf(last(y)[1])}%).`,
+      sinRecorte: true, series: [{ n: "Interanual", d: cut(y), t: "bar", c: 0, suave: true }, { n: "Anualizado a 5 años", d: cut(a5), c: 0, w: 3 }], refs };
   } });
 def("encuestas", { slug: "encuestas-manufactureras", nombre: "Encuestas de la Fed: nuevos pedidos de la industria", sin: ["philly fed", "empire state", "pmi", "ism", "encuestas", "nuevos pedidos", "filadelfia", "nueva york"],
   calc: "Índices de difusión de nuevos pedidos y de actividad general de las encuestas manufactureras de la Fed de Filadelfia y de Nueva York (Empire State): porcentaje de empresas que ven mejora menos el que ve deterioro. Se promedian las dos encuestas y se suaviza con 3 meses. Los nuevos pedidos adelantan la actividad; la actividad general es la pregunta más anímica y volátil.",
@@ -184,21 +178,21 @@ def("encuestas", { slug: "encuestas-manufactureras", nombre: "Encuestas de la Fe
       unidad: "", dec: 1, series: ss, refs: [{ y: 0 }] };
   } });
 def("industria", { slug: "industria-manufacturera", nombre: "Industria manufacturera: producción y uso de la capacidad", sin: ["industria", "manufactura", "relocalización", "reshoring", "capacidad instalada", "fábricas"],
-  calc: "Índice de producción manufacturera de la Fed (2017 = 100) y uso de la capacidad manufacturera (%, eje derecho). La referencia es el máximo de la producción en 2007. El índice total de producción industrial suma minería y servicios públicos (que se mueven con el petróleo y el clima); acá va sólo manufactura. Siempre desde 2000.",
+  calc: "Índice de producción manufacturera de la Fed (2017 = 100) y uso de la capacidad manufacturera (%, eje derecho). La referencia es el máximo de la producción en 2007. El índice total de producción industrial suma minería y servicios públicos (que se mueven con el petróleo y el clima); acá va sólo manufactura.",
   ks: ["ip_man", "tcu_man"],
   f: () => {
     const m = S("ip_man"); if (!m) return null;
     const t = S("tcu_man"), pico = Math.max(...m.filter(p => p[0] >= T(2007) && p[0] < T(2008)).map(p => p[1]));
     const v = last(m)[1], d = (v / pico - 1) * 100, mm = pct(m);
-    const ss = [{ n: "Producción manufacturera", d: cut(m, T(2000)), c: 0, w: 2.8 }];
+    const ss = [{ n: "Producción manufacturera", d: cut(m), c: 0, w: 2.8 }];
     let txt = "";
     if (t) {
-      ss.push({ n: "Uso de la capacidad (eje derecho)", d: cut(t, T(2000)), c: 1, w: 1.4, der: true, u: "%" });
+      ss.push({ n: "Uso de la capacidad (eje derecho)", d: cut(t), c: 1, w: 1.4, der: true, u: "%" });
       const base = t.filter(p => p[0] >= T(2000) && p[0] < T(2020)).map(p => p[1]), prom = base.reduce((a, b) => a + b, 0) / base.length;
       txt = `; uso de la capacidad ${nf(last(t)[1])}% (promedio 2000-19: ${nf(prom)}%)`;
     }
     return { titulo: `Producción manufacturera ${nf(Math.abs(d))}% ${d < 0 ? "bajo" : "sobre"} su máximo de 2007` + txt,
-      sub: `Índice 2017 = 100. ${fechaDe(m)}: ${sg(last(mm)[1])}% en el mes. Desde 2000.`, unidad: "", dec: 1, sinRecorte: true,
+      sub: `Índice 2017 = 100. ${fechaDe(m)}: ${sg(last(mm)[1])}% en el mes.`, unidad: "", dec: 1, sinRecorte: true,
       series: ss, refs: [{ y: pico, l: "Máximo de 2007" }] };
   } });
 def("ordenes", { slug: "ordenes-de-capital", nombre: "Órdenes y envíos de bienes de capital", sin: ["core orders", "capex", "bienes durables", "inversión en equipos", "envíos", "book to bill"],
@@ -231,7 +225,7 @@ def("viviendas", { slug: "vivienda", nombre: "Vivienda: permisos y casas nuevas 
       sub: "Permisos en miles por año, promedio de 3 meses. Con mucho stock sin vender, los constructores frenan.", unidad: "mil", dec: 0, series: ss };
   } });
 def("capex", { slug: "inversion-tecnologica", nombre: "Inversión tecnológica / PBI", sin: ["ia", "data centers", "software", "punto com", "capex tecnológico", "inteligencia artificial"],
-  calc: "Inversión en equipos de procesamiento de información más software (BEA), sobre PBI nominal, desde 2000; la referencia es el pico punto com (máximo anterior a 2003). El aporte al crecimiento suma las contribuciones de los dos rubros al PBI real del último trimestre (BEA). Los data centers como edificios son estructuras y no están incluidos: Census publica su construcción por separado, pero no está en FRED.",
+  calc: "Inversión en equipos de procesamiento de información más software (BEA), sobre PBI nominal; la referencia es el pico punto com (máximo anterior a 2003). El aporte al crecimiento suma las contribuciones de los dos rubros al PBI real del último trimestre (BEA). Los data centers como edificios son estructuras y no están incluidos: Census publica su construcción por separado, pero no está en FRED.",
   ks: ["inv_info", "inv_software", "gdp_nom", "c_info", "c_software", "gdp_growth"],
   f: () => {
     const e = S("inv_info"), s = S("inv_software"), g = S("gdp_nom"); if (!e || !s || !g) return null;
@@ -240,13 +234,13 @@ def("capex", { slug: "inversion-tecnologica", nombre: "Inversión tecnológica /
     const ci = S("c_info"), cs = S("c_software"), gg = S("gdp_growth");
     const aporte = ci && cs ? last(ci)[1] + last(cs)[1] : null;
     return { titulo: `La inversión tecnológica pesa ${nf(v)}% del PBI (${sg(d)} pp contra el pico punto com)` + (aporte != null && gg ? ` y aportó ${nf(aporte)} pp al crecimiento` : ""),
-      sub: "Equipos de procesamiento de información más software, % del PBI nominal, desde 2000. No incluye los edificios de los data centers.",
+      sub: "Equipos de procesamiento de información más software, % del PBI nominal. No incluye los edificios de los data centers.",
       freq: "Q", dec: 1, decEje: 1, cero: true, eventos: false, sinRecorte: true,
-      series: [{ n: "Equipos de información", d: cut(ep, T(2000)), area: true, stack: "t", c: 0, fin: false }, { n: "Software (tope = total)", d: cut(sp, T(2000)), area: true, stack: "t", c: 2, finValor: v }],
+      series: [{ n: "Equipos de información", d: cut(ep), area: true, stack: "t", c: 0, fin: false }, { n: "Software (tope = total)", d: cut(sp), area: true, stack: "t", c: 2, finValor: v }],
       refs: [{ y: pc, l: `Pico punto com: ${nf(pc)}%` }] };
   } });
 def("ganancias", { slug: "margen-de-las-empresas", nombre: "Margen de las empresas no financieras", sin: ["profits", "márgenes", "empresas", "ganancias", "rentabilidad"], historia: true,
-  calc: "Ganancias de las empresas no financieras (con ajustes de valuación de inventarios y de amortización) sobre su valor agregado bruto (BEA): la medida clásica de margen, que aísla el negocio doméstico de las ganancias en el exterior y del sector financiero. La referencia es el promedio desde 1960. Si el margen sube, la participación de los salarios en lo producido baja. Siempre desde 1960.",
+  calc: "Ganancias de las empresas no financieras (con ajustes de valuación de inventarios y de amortización) sobre su valor agregado bruto (BEA): la medida clásica de margen, que aísla el negocio doméstico de las ganancias en el exterior y del sector financiero. La referencia es el promedio desde 1960. Si el margen sube, la participación de los salarios en lo producido baja.",
   ks: ["profits_nf", "gva_nf"],
   f: () => {
     const p = S("profits_nf"), g = S("gva_nf"); if (!p || !g) return null;
@@ -256,8 +250,8 @@ def("ganancias", { slug: "margen-de-las-empresas", nombre: "Margen de las empres
     const nivel = v >= max - 0.05 ? "máximo desde 1960" : `percentil ${pctl(m, v)} desde 1960`;
     return { freq: "Q", sinRecorte: true,
       titulo: `Margen de las empresas en ${nf(v)}%, ${nivel}` + (cy != null ? `; ganancias ${sg(cy)}% interanual` : ""),
-      sub: "Ganancias sobre valor agregado de las empresas no financieras. Una caída interanual de las ganancias antecedió a casi todas las recesiones. Desde 1960.",
-      series: [{ n: "Margen", d: cut(m, T(1960)), c: 2, w: 2.6 }], refs: [{ y: prom, l: `Promedio desde 1960: ${nf(prom)}%` }] };
+      sub: "Ganancias sobre valor agregado de las empresas no financieras. Una caída interanual de las ganancias antecedió a casi todas las recesiones.",
+      series: [{ n: "Margen", d: cut(m), c: 2, w: 2.6 }], refs: [{ y: prom, l: `Promedio desde 1960: ${nf(prom)}%` }] };
   } });
 def("pbiGdi", { slug: "pbi-vs-gdi", nombre: "PBI vs GDI: ¿se va a revisar el PBI?", sin: ["ingreso bruto", "gdi", "revisiones", "discrepancia estadística"],
   calc: "El producto se mide por el gasto (PBI) y por el ingreso (GDI); en teoría dan lo mismo. Barras: diferencia de crecimiento interanual GDI menos PBI. Línea punteada: promedio de PBI y GDI, que BEA publica y la Fed usa como mejor estimación del crecimiento real. El GDI sale un mes después que el PBI. Históricamente, cuando difieren, el PBI tiende a revisarse hacia el GDI.",
