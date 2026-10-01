@@ -169,6 +169,13 @@ FRED = {
     "exports":         ("BOPTEXP", "Exportaciones de bienes y servicios", "US$ millones", "M", "BEA y Census"),
     "imports":         ("BOPTIMP", "Importaciones de bienes y servicios", "US$ millones", "M", "BEA y Census"),
     "current_account": ("IEABC", "Cuenta corriente", "US$ millones por trimestre", "Q", "BEA"),
+    "trade_goods":     ("BOPGTB", "Balanza de bienes", "US$ millones", "M", "BEA y Census"),
+    "trade_services":  ("BOPSTB", "Balanza de servicios", "US$ millones", "M", "BEA y Census"),
+    "ca_gs":           ("IEABCGS", "Cuenta corriente: bienes y servicios", "US$ millones por trimestre", "Q", "BEA"),
+    "ca_primario":     ("IEABCPI", "Cuenta corriente: ingreso primario (rentas)", "US$ millones por trimestre", "Q", "BEA"),
+    "ca_secundario":   ("IEABCSI", "Cuenta corriente: ingreso secundario (transferencias)", "US$ millones por trimestre", "Q", "BEA"),
+    "dollar_real":     ("RTWEXBGS", "Dólar multilateral real", "índice ene-2006=100", "M", "Fed"),
+    "wti":             ("DCOILWTICO", "Petróleo WTI", "US$ por barril", "M", "EIA"),
     "imp_capital":     ("A650RC1Q027SBEA", "Importaciones de bienes de capital (sin autos)", "US$ miles de M", "Q", "BEA"),
     # Fiscal
     "deficit":         ("MTSDS133FMS", "Resultado fiscal federal mensual", "US$ millones", "M", "Tesoro"),
@@ -191,12 +198,12 @@ FRED = {
 # Series cuyo promedio mensual no tiene sentido (flujos ya mensuales)
 SIN_PROMEDIO = {"deficit"}
 # Series de mercado: cambian todos los días, no cuentan como "novedad" de un release
-ALTA_FRECUENCIA = {"fed_obj", "fed_obj_sup", "rrp", "tga", "anfci",  "fed_funds", "ust2", "ust10", "ust30", "tips10", "breakeven10", "breakeven5", "term_premium",
+ALTA_FRECUENCIA = {"fed_obj", "fed_obj_sup", "rrp", "tga", "anfci", "wti",  "fed_funds", "ust2", "ust10", "ust30", "tips10", "breakeven10", "breakeven5", "term_premium",
                    "mortgage30", "dollar", "infl_exp_5y5y", "spread_10y3m", "gdpnow", "nfci", "nfci_credit",
                    "baa_spread", "hy_oas", "hy_bb", "hy_ccc", "fed_assets", "reserves"}
 # Versión diaria (o semanal, tal como la publica la fuente) de las series de mercado, en docs/diarios.json.
 # La web la usa cuando el período elegido es corto; para períodos largos usa el promedio mensual.
-DIARIAS = ["fed_obj", "fed_obj_sup", "rrp", "tga", "anfci",  "fed_funds", "ust2", "ust10", "ust30", "tips10", "breakeven10", "breakeven5", "spread_10y3m", "term_premium", "infl_exp_5y5y",
+DIARIAS = ["fed_obj", "fed_obj_sup", "rrp", "tga", "anfci", "wti",  "fed_funds", "ust2", "ust10", "ust30", "tips10", "breakeven10", "breakeven5", "spread_10y3m", "term_premium", "infl_exp_5y5y",
            "baa_spread", "hy_oas", "hy_bb", "hy_ccc", "dollar", "mortgage30", "nfci", "nfci_credit", "fed_assets", "reserves"]
 DESDE_DIARIO = "2000-01-01"
 # Series escalonadas (la tasa objetivo): se guardan sólo los días en que cambian, desde 1982
