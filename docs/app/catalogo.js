@@ -976,7 +976,7 @@ function iniciosCiclo(signo) {
     }
     ult = s_;
   }
-  return out.filter(t => t >= T(1985));
+  return out.filter(t => t >= T(1988));
 }
 const ANCLA = { id: "ancla", nombre: "Ciclo", valores: [["c", "Desde el primer recorte"], ["s", "Desde la primera suba"]] };
 function ciclos(o, serie, modo) {
@@ -992,7 +992,7 @@ function ciclos(o, serie, modo) {
   return { meses, actual, filas, prom, da, ultK, anio: t => new Date(t).getUTCFullYear(), mesTxt: t => fm(t) };
 }
 function defCiclo(id, slug, nombre, sujeto, sin, ks, serieFn, modo, unidad, dec, explica) {
-  def(id, { slug, nombre, sin, ops: [ANCLA], ks, calc: `${explica} Los ciclos se alinean en el mes del primer movimiento de la tasa objetivo de la Fed (mes 0) y se detectan solos: el primer recorte después de una suba, o la primera suba después de un recorte. Desde 1985.`,
+  def(id, { slug, nombre, sin, ops: [ANCLA], ks, calc: `${explica} Los ciclos se alinean en el mes del primer movimiento de la tasa objetivo de la Fed (mes 0) y se detectan solos: el primer recorte después de una suba, o la primera suba después de un recorte. Desde 1988 (antes, la Fed movía su objetivo en pasos muy chicos y no hay ciclos claros).`,
     f: o => {
       const c = ciclos(o, serieFn(), modo); if (!c) return null;
       const dir = o.ancla === "s" ? "primera suba" : "primer recorte", deDir = o.ancla === "s" ? "de la primera suba" : "del primer recorte";
@@ -1011,7 +1011,7 @@ function defCiclo(id, slug, nombre, sujeto, sin, ks, serieFn, modo, unidad, dec,
       return { tipo: "cat", sinPuntos: true, signo: modo === "cambio", escala: true, unidad, dec, decEje: Math.min(dec, 1),
         titulo: va == null || vp == null ? `${nombre}: este ciclo contra los anteriores` : `A ${k} ${k === 1 ? "mes" : "meses"} ${deDir}, ${sujeto} ${modo === "cambio" ? "cambió" : "está en"} ${fmt(va)}, contra ${fmt(vp)} en el promedio de los ciclos anteriores`,
         yMin: rango[0], yMax: rango[1],
-        sub: `Meses desde la ${dir} de la Fed (0 = mes del movimiento).${rango[2] ? " Eje recortado para que un ciclo extremo (como la pandemia) no aplaste a los demás." : ""} ${modo === "cambio" ? "Cambio contra el mes 0." : "Nivel."} Líneas grises: cada ciclo desde 1985 (${c.filas.map(f => c.anio(f.t)).join(", ")}); al pasar el mouse se ve cuál es cuál. No depende del período elegido.`,
+        sub: `Meses desde la ${dir} de la Fed (0 = mes del movimiento).${rango[2] ? " Eje recortado para que un ciclo extremo (como la pandemia) no aplaste a los demás." : ""} ${modo === "cambio" ? "Cambio contra el mes 0." : "Nivel."} Líneas grises: cada ciclo desde 1988 (${c.filas.map(f => c.anio(f.t)).join(", ")}); al pasar el mouse se ve cuál es cuál. No depende del período elegido.`,
         cats: c.meses.map(x => (x > 0 ? "+" : "") + x), series };
     } });
 }
