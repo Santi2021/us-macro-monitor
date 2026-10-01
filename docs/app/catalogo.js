@@ -628,6 +628,9 @@ def("curvaTesoro", { slug: "curva-del-tesoro", nombre: "Curva del Tesoro", sin: 
       sub: "Rendimiento por plazo, datos diarios. Compara la forma de la curva hoy con hace 1, 6 y 12 meses." + (c1 != null && c6 != null ? ` El 10 años cambió ${sg(c1, 0)} pb en un mes y ${sg(c6, 0)} pb en 6 meses.` : "") + " No depende del período elegido.",
       fuenteTxt: "Tesoro de EE.UU. vía FRED", unidad: "%", dec: 2, decEje: 1, signo: false, escala: true, cats: plazos, series };
   } });
+// Serie diaria completa (sin importar el período elegido) para los títulos que hablan del último dato
+const diariaCompleta = k => ST.D && ST.D[k] && ST.T1 === Infinity ? ST.D[k] : SD(k);
+const ultimoDato = k => last(diariaCompleta(k));
 const txtFrec = k => { const f = freqD(k); return f === "D" ? "datos diarios" : f === "W" ? "datos semanales" : "promedios mensuales"; };
 function notaParcial() {
   if (usaDiario()) return "";
@@ -684,7 +687,7 @@ def("senda", { slug: "que-descuenta-el-mercado", nombre: "Qué descuenta el merc
   ks: ["fed_funds", "ust2", "sep_ff"],
   f: () => {
     const cv = ST.DATA.curva; if (!cv || !cv["1A"] || !cv["2A"]) return null;
-    const fd_ = SD("fed_funds"); if (!fd_) return null;
+    const fd_ = diariaCompleta("fed_funds"); if (!fd_) return null;
     const ff = last(fd_)[1];
     const plazos = [["1M", "1 mes"], ["3M", "3 meses"], ["6M", "6 meses"], ["1A", "1 año"], ["2A", "2 años"]].filter(([p]) => cv[p]);
     const ult = cv["1A"][cv["1A"].length - 1][0];
@@ -706,7 +709,7 @@ def("politica", { slug: "tasa-real-de-la-fed", nombre: "Tasa real de la Fed y ta
   ks: ["fed_funds", "pce_core", "sep_lr"],
   f: () => {
     const f = S("fed_funds"), c = yoy(S("pce_core")); if (!f || !c) return null;
-    const r = join(f, c, (a, b) => a - b), fu = last(SD("fed_funds")), v = fu[1] - last(c)[1];
+    const r = join(f, c, (a, b) => a - b), fu = ultimoDato("fed_funds"), v = fu[1] - last(c)[1];
     const lr = S("sep_lr");
     // escalón: cada valor vale desde su reunión hasta la siguiente, llevado a fin de mes para que coincida con la serie mensual
     const neutral = lr ? r.filter(p => p[0] >= lr[0][0]).map(p => { let x = null; for (const q of lr) if (q[0] <= p[0] + 31 * 864e5) x = q[1]; return [p[0], x - 2]; }).filter(p => p[1] != null) : null;
@@ -1230,7 +1233,7 @@ export function lineasLectura() {
     return `La economía suma ${nf(last(p)[1], 0)} mil puestos por mes en promedio de 3 meses, con desempleo en ${nf(u)}%` + (sh ? ` y la regla de Sahm en ${nf(last(sh)[1], 2)} pp (umbral 0,5).` : ".");
   });
   intento("tasas", () => {
-    const r = SD("tips10"), v = last(r)[1], f = last(SD("fed_funds"))[1], c = last(yoy(S("pce_core")))[1];
+    const r = SD("tips10"), v = ultimoDato("tips10")[1], f = ultimoDato("fed_funds")[1], c = last(yoy(S("pce_core")))[1];
     return `La tasa real a 10 años está en ${nf(v, 2)}% (percentil ${pctl(r, v)} desde 2003) y la tasa real de la Fed en ${nf(f - c)}%.`;
   });
   intento("externo", () => {
