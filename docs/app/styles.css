@@ -436,3 +436,7 @@ a.evento:hover { border-color: var(--axis); background: var(--hover); }
 .card.grande .sub { max-width: 980px; }
 .card.grande .selectores { flex-wrap: wrap; gap: 8px; }
 .seg.periodo button[aria-pressed="true"] { font-weight: 600; }
+/* logo y nombre llevan a la portada */
+.marca a.inicio { color: inherit; text-decoration: none; cursor: pointer; }
+.marca a.logo.inicio { display: grid; place-items: center; }
+.marca h1 a.inicio:hover { opacity: 0.8; }

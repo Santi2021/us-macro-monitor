@@ -32,8 +32,8 @@ configurarAcciones(acciones);
 // ───────── Cabecera ─────────
 function cabecera() {
   const top = $("#top");
-  top.innerHTML = `<div class="marca"><div class="logo">${ICONOS.logo}</div><div>
-      <h1>US Macro Monitor<small>v${VERSION}</small></h1>
+  top.innerHTML = `<div class="marca"><a class="logo inicio" href="#/portada" title="Ir al inicio" aria-label="Ir al inicio">${ICONOS.logo}</a><div>
+      <h1><a class="inicio" href="#/portada" title="Ir al inicio">US Macro Monitor</a><small>v${VERSION}</small></h1>
       <div class="fila"><p id="meta"></p><button type="button" class="vigia" id="vigia"><i></i><span></span></button></div></div></div>
     <div class="herr">
       <button type="button" class="buscar-btn" id="b-buscar" aria-label="Buscar (Ctrl+K)">${ICONOS.buscar}<span>Buscar</span><kbd>Ctrl K</kbd></button>
@@ -45,6 +45,14 @@ function cabecera() {
         <label>Hasta <input type="month" id="m-hasta" min="1947-01" required></label>
         <button type="submit">Aplicar</button></form>
     </div>`;
+  // logo y nombre: vuelven a la portada con el período por defecto, arriba de todo
+  $$(".marca .inicio").forEach(a => a.addEventListener("click", e => {
+    e.preventDefault();
+    cerrarPops(); cerrarModal();
+    ST.rango = { modo: "2022", desde: null, hasta: null }; guardarRango();
+    navegar("portada");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }));
   $("#b-buscar").addEventListener("click", abrirBuscador);
   $("#b-ajustes").addEventListener("click", e => menuAjustes(e.currentTarget));
   $$("#rango button").forEach(b => b.addEventListener("click", () => {
