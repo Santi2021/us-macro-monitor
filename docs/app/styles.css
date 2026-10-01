@@ -84,6 +84,11 @@ a { color: var(--s1); }
 .seg button:not([aria-pressed="true"]):hover { background: var(--hover); }
 .seg.chico button { padding: 3px 9px; font-size: var(--fs-xs); }
 .periodo { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.periodo #rango button { min-width: 52px; text-align: center; }
+.b-fechas { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); background: var(--surface); border-radius: 8px; padding: 6px 12px; font-size: var(--fs-s); color: var(--ink-2); cursor: pointer; white-space: nowrap; }
+.b-fechas svg { width: 15px; height: 15px; }
+.b-fechas:hover { color: var(--ink); }
+.b-fechas[aria-pressed="true"], .b-fechas[aria-expanded="true"] { background: var(--ink); color: var(--surface); border-color: var(--ink); }
 .manual { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: var(--fs-s); color: var(--ink-2); width: 100%; justify-content: flex-end; }
 .manual label { display: inline-flex; align-items: center; gap: 6px; }
 .manual input { border: 1px solid var(--line); border-radius: 6px; background: var(--surface); padding: 4px 8px; font-size: var(--fs-s); }
@@ -397,6 +402,10 @@ a.evento:hover { border-color: var(--axis); background: var(--hover); }
   .periodo { min-width: 0; flex: 1; }
   .periodo .seg { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; max-width: 100%; }
   .periodo .seg::-webkit-scrollbar { display: none; }
+  .periodo { flex-wrap: nowrap; gap: 6px; }
+  .periodo .seg { min-width: 0; }
+  .b-fechas { padding: 6px 9px; flex: none; }
+  .b-fechas span { display: none; }
 }
 @media (max-width: 560px) {
   .marca h1 { font-size: 19px; }

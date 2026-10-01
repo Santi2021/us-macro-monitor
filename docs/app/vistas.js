@@ -489,7 +489,7 @@ export function vistaMetodologia(main, sub) {
     doc.innerHTML = `<h2>Cómo leer el monitor</h2>
       <p>El US Macro Monitor reúne ${Object.keys(ST.DATA.series).length} series oficiales de BEA, BLS, Census, la Fed, el Tesoro y la Universidad de Michigan. Se actualiza solo tres veces por día hábil; ningún dato se carga a mano.</p>
       <h3>Títulos</h3><p>Cada título se calcula con el último dato cada vez que se abre la página. No hay textos escritos a mano que puedan quedar viejos: si el dato cambia, el título cambia.</p>
-      <h3>Período</h3><p>El selector de la cabecera aplica a todos los gráficos. "Elegir fechas" permite ver el monitor como estaba en un momento pasado: todo se calcula con los datos hasta esa fecha.</p>
+      <h3>Período</h3><p>El selector de la cabecera aplica a todos los gráficos. "Fechas" permite ver el monitor como estaba en un momento pasado: todo se calcula con los datos hasta esa fecha.</p>
       <h3>Vista y precios</h3><p>Los gráficos que lo admiten muestran la variación interanual, la mensual (barras, como se publica el dato) o la de 3 meses anualizada, y los montos en dólares corrientes o reales. Cada gráfico declara qué deflactor usa y por qué.</p>
       <h3>Rango normal y percentil</h3><p>La franja celeste marca lo habitual entre 2000 y 2019 (percentiles 10 a 90). El percentil histórico ubica el último dato en su historia desde 2000.</p>
       <h3>Recesiones</h3><p>En períodos de 10 años o más, las franjas grises marcan las recesiones oficiales del NBER. Se pueden apagar en Ajustes.</p>

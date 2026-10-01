@@ -38,7 +38,8 @@ function cabecera() {
     <div class="herr">
       <button type="button" class="buscar-btn" id="b-buscar" aria-label="Buscar (Ctrl+K)">${ICONOS.buscar}<span>Buscar</span><kbd>Ctrl K</kbd></button>
       <div class="periodo"><div class="seg" role="group" aria-label="Período" id="rango">
-        <button type="button" data-r="2022">Desde 2022</button><button type="button" data-r="5">5 años</button><button type="button" data-r="10">10 años</button><button type="button" data-r="2000">Desde 2000</button><button type="button" data-r="todo" title="Cada serie desde su inicio (desde 1947)">Todo</button><button type="button" data-r="manual" aria-expanded="false">Elegir fechas</button></div></div>
+        <button type="button" data-r="2022" title="Desde enero de 2022">2022</button><button type="button" data-r="5" title="Últimos 5 años">5 años</button><button type="button" data-r="10" title="Últimos 10 años">10 años</button><button type="button" data-r="2000" title="Desde enero de 2000">2000</button><button type="button" data-r="todo" title="Cada serie desde su inicio (desde 1947)">Todo</button></div>
+        <button type="button" class="b-fechas" data-r="manual" aria-expanded="false" aria-pressed="false" title="Elegir un período propio">${ICONOS.calendario}<span>Fechas</span></button></div>
       <button type="button" class="icono-btn" id="b-ajustes" aria-label="Ajustes" aria-haspopup="menu">${ICONOS.ajustes}</button>
       <form class="manual" id="manual" hidden>
         <label>Desde <input type="month" id="m-desde" min="1947-01" required></label>
@@ -55,7 +56,7 @@ function cabecera() {
   }));
   $("#b-buscar").addEventListener("click", abrirBuscador);
   $("#b-ajustes").addEventListener("click", e => menuAjustes(e.currentTarget));
-  $$("#rango button").forEach(b => b.addEventListener("click", () => {
+  $$(".periodo [data-r]").forEach(b => b.addEventListener("click", () => {
     if (b.dataset.r === "manual") {
       ST.rango.modo = "manual";
       const d = $("#m-desde"), h = $("#m-hasta");
@@ -97,10 +98,10 @@ function menuAjustes(boton) {
   colocar(pop, boton);
 }
 function marcarRango() {
-  $$("#rango button").forEach(x => x.setAttribute("aria-pressed", String(x.dataset.r === ST.rango.modo)));
+  $$(".periodo [data-r]").forEach(x => x.setAttribute("aria-pressed", String(x.dataset.r === ST.rango.modo)));
   const abierto = ST.rango.modo === "manual";
   $("#manual").hidden = !abierto;
-  $("#rango [data-r=manual]").setAttribute("aria-expanded", String(abierto));
+  $(".periodo [data-r=manual]").setAttribute("aria-expanded", String(abierto));
   if (ST.rango.modo === "manual" && ST.rango.desde) { $("#m-desde").value = ST.rango.desde; $("#m-hasta").value = ST.rango.hasta; }
 }
 const guardarRango = () => guardar("umm-rango2", ST.rango);
