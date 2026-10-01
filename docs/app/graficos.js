@@ -186,13 +186,17 @@ function opcionesHeat(sp, ancho, grande) {
   return {
     textStyle: { fontFamily: css("--font"), color: css("--ink-2") },
     grid: { left: izq, right: 8, top: 8, bottom: ancho < 900 || sp.cols.length > 20 ? 96 : 72 },
-    tooltip: Object.assign(tooltipBase(), { formatter: p => sp.tip ? sp.tip(p.value) : `<b>${esc(sp.filas[p.value[1]])}</b><br>${sp.cols[p.value[0]]}: ${nf(p.value[2], 1)}% anualizado 3m` }),
+    tooltip: Object.assign(tooltipBase(), { formatter: p => p.value[2] == null || p.value[2] < (sp.vmin ?? -4) - 1e-9 && sp.sinDato ? `<b>${esc(sp.filas[p.value[1]])}</b><br>${sp.cols[p.value[0]]}: sin dato` : sp.tip ? sp.tip(p.value) : `<b>${esc(sp.filas[p.value[1]])}</b><br>${sp.cols[p.value[0]]}: ${nf(p.value[2], 1)}% anualizado 3m` }),
     xAxis: { type: "category", data: sp.cols, axisTick: { show: false }, axisLine: { show: false }, axisLabel: { color: muted, fontSize: fs, interval: sp.cols.length > 20 ? (ancho < 900 ? 5 : 2) : 0, rotate: ancho < 900 ? 45 : 0 } },
     yAxis: { type: "category", data: sp.filas, inverse: true, axisTick: { show: false }, axisLine: { show: false },
-      axisLabel: { color: css("--ink-2"), fontSize: ancho < 600 ? 11.5 : fs + 0.5, width: izq - 12, overflow: "truncate" } },
+      axisLabel: { color: css("--ink-2"), fontSize: ancho < 600 ? 11.5 : fs + 0.5, width: izq - 12, overflow: "truncate",
+        // filas de encabezado (nombre de la sección) en versalitas grises
+        formatter: (v, i) => sp.encabezados && sp.encabezados.includes(i) ? `{h|${v.toUpperCase()}}` : v,
+        rich: { h: { color: muted, fontSize: (ancho < 600 ? 10 : fs - 1.5), fontWeight: 700, letterSpacing: 0.5 } } } },
     visualMap: { min: sp.vmin ?? -4, max: sp.vmax ?? 8, calculable: false, orient: "horizontal", left: "center", bottom: 0, itemWidth: 12, itemHeight: 180,
-      text: sp.vtxt || ["8%", "−4%"], textStyle: { color: muted, fontSize: 12 }, inRange: { color: [css("--div-lo"), css("--div-mid"), css("--div-hi")] } },
-    series: [{ type: "heatmap", data: sp.data, itemStyle: { borderColor: css("--surface"), borderWidth: 2, borderRadius: 3 },
+      text: sp.vtxt || ["8%", "−4%"], textStyle: { color: muted, fontSize: 12 }, inRange: { color: [css("--div-lo"), css("--div-mid"), css("--div-hi")] },
+      outOfRange: sp.sinDato ? { color: css("--surface") } : undefined },
+    series: [{ type: "heatmap", data: sp.sinDato ? sp.data.map(d => d[2] < (sp.vmin ?? -4) ? { value: d, itemStyle: { color: css("--surface"), borderColor: css("--line"), borderWidth: 1, borderType: "dashed" } } : d) : sp.data, itemStyle: { borderColor: css("--surface"), borderWidth: 2, borderRadius: 3 },
       label: { show: ancho >= 700 && sp.cols.length <= 20, fontSize: fs - 0.5, fontFamily: css("--font"), formatter: p => nf(p.value[2], 1), color: ink },
       emphasis: { itemStyle: { borderColor: ink, borderWidth: 1 } } }],
   };

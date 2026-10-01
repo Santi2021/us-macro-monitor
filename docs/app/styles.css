@@ -9,7 +9,7 @@
   --hover: rgba(17, 23, 34, 0.045); --scrim: rgba(12, 16, 24, 0.55); --hoy: #fff4d6;
   --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --ref: #52514e;
   --ok: #0c8a0c; --alerta: #b87400; --error: #c43a3a; --neutro: #8a93a3;
-  --div-lo: #2a78d6; --div-mid: #f0efec; --div-hi: #e34948;
+  --div-lo: #2a78d6; --div-mid: #dedcd6; --div-hi: #e34948;
   --font: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   --r: 10px;
   --fs: 15px;          /* texto base */

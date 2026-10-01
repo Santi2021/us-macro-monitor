@@ -253,18 +253,20 @@ def("ganancias", { slug: "margen-de-las-empresas", nombre: "Margen de las empres
       sub: "Ganancias sobre valor agregado de las empresas no financieras. Una caída interanual de las ganancias antecedió a casi todas las recesiones.",
       series: [{ n: "Margen", d: cut(m), c: 2, w: 2.6 }], refs: [{ y: prom, l: `Promedio desde 1960: ${nf(prom)}%` }] };
   } });
-def("pbiGdi", { slug: "pbi-vs-gdi", nombre: "PBI vs GDI: ¿se va a revisar el PBI?", sin: ["ingreso bruto", "gdi", "revisiones", "discrepancia estadística"],
-  calc: "El producto se mide por el gasto (PBI) y por el ingreso (GDI); en teoría dan lo mismo. Barras: diferencia de crecimiento interanual GDI menos PBI. Línea punteada: promedio de PBI y GDI, que BEA publica y la Fed usa como mejor estimación del crecimiento real. El GDI sale un mes después que el PBI. Históricamente, cuando difieren, el PBI tiende a revisarse hacia el GDI.",
+def("pbiGdi", { slug: "pbi-vs-gdi", nombre: "PBI vs GDI: gasto contra ingreso", sin: ["ingreso bruto", "gdi", "revisiones", "discrepancia estadística"],
+  calc: "El producto se mide por el gasto (PBI) y por el ingreso (GDI: salarios, ganancias, rentas); en teoría dan lo mismo y la diferencia es la discrepancia estadística. Barras: diferencia de crecimiento interanual GDI menos PBI. Línea punteada: promedio de PBI y GDI, que BEA publica y la Fed usa como mejor estimación del crecimiento real. El GDI sale un mes después que el PBI. Antecedente: un trabajo de la Fed (Nalewaik, 2010) encontró que el PBI tendía a revisarse hacia el GDI; investigaciones posteriores relativizaron ese resultado. La web no puede verificarlo, porque no tiene el GDI tal como se publicó en cada momento.",
   ks: ["gdp_real", "gdi_real", "gdp_gdi_prom"],
   f: () => {
     const a = yoy(S("gdp_real"), 4), b = yoy(S("gdi_real"), 4); if (!a || !b) return null;
     const dif = join(b, a, (x, y) => x - y), pr = yoy(S("gdp_gdi_prom"), 4), u = last(dif);
     const falta = last(a)[0] > last(b)[0];
+    let n = 0; for (let i = dif.length - 1; i >= 0 && Math.sign(dif[i][1]) === Math.sign(u[1]); i--) n++;
+    const niv = join(S("gdi_real"), S("gdp_real"), (x, y) => (x / y - 1) * 100), nv = niv ? valorEn(niv, u[0]) : null;
     const ss = [{ n: "GDI − PBI (pp)", d: cut(dif), t: "bar", c: 3, suave: true }, { n: "PBI real", d: cut(a), c: 0, w: 1.6 }, { n: "GDI real", d: cut(b), c: 1, w: 1.6 }];
     if (pr) ss.push({ n: "Promedio PBI-GDI", d: cut(pr), c: "ink", w: 2, punteada: true });
-    const va = valorEn(a, u[0])[1], vb = valorEn(b, u[0])[1];
-    return { freq: "Q", titulo: Math.abs(u[1]) < 0.3 ? `Gasto e ingreso coinciden en ${fq(u[0])}: el PBI publicado es consistente` : `El ingreso crece ${nf(vb)}% y el gasto ${nf(va)}% en ${fq(u[0])}: el PBI tiende a revisarse hacia el ingreso`,
-      sub: "Variación interanual real; barras: diferencia GDI menos PBI." + (falta ? ` El GDI de ${fq(last(a)[0])} todavía no se publicó.` : ""),
+    const va = valorEn(a, u[0])[1], vb = valorEn(b, u[0])[1], vp = pr ? valorEn(pr, u[0]) : null;
+    return { freq: "Q", titulo: `${fq(u[0])}: PBI ${nf(va)}% y GDI ${nf(vb)}% interanual` + (n >= 2 ? `; el ${u[1] > 0 ? "GDI" : "PBI"} crece más hace ${n} trimestres` : "") + (nv ? `; en nivel, GDI ${nf(Math.abs(nv[1]), 2)}% ${nv[1] >= 0 ? "sobre" : "bajo"} el PBI` : "") + (vp ? `; promedio de los dos: ${nf(vp[1])}%` : ""),
+      sub: "PBI (gasto) y GDI (ingreso) reales, BEA, variación interanual. Barras: diferencia. El GDI de cada trimestre sale un mes después que el PBI." + (falta ? ` El GDI de ${fq(last(a)[0])} todavía no se publicó.` : ""),
       series: ss, refs: [{ y: 0 }] };
   } });
 def("preciosPagados", { slug: "precios-pagados-industria", nombre: "Precios que pagan las fábricas", sin: ["precios pagados", "costos", "encuestas", "philly fed", "empire state", "aranceles", "cañería"],
@@ -1382,32 +1384,37 @@ const mensualDe = (ind, a) => {
 };
 function aMensualC(a) { const g = new Map(); for (const [t, v] of a) { const d = new Date(t), k = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1); if (!g.has(k)) g.set(k, []); g.get(k).push(v); } return [...g].map(([k, v]) => [k, v.reduce((x, y) => x + y, 0) / v.length]); }
 def("mapa", { slug: "mapa-del-ciclo", nombre: "Mapa del ciclo", sin: ["percentiles", "mapa de calor", "panorama", "ciclo", "termómetro"],
-  calc: "Para cada indicador y cada mes, el percentil del dato dentro de toda su historia desde 2000: 0 es el mínimo, 50 la mediana, 100 el máximo. Los datos trimestrales se repiten en los tres meses del trimestre; los semanales se promedian por mes.",
+  calc: "Para cada indicador y cada mes, el percentil del dato dentro de toda su historia desde 2000: 0 es el mínimo, 50 la mediana, 100 el máximo. Es la misma vara para todos los indicadores; en series que en 2000-07 vivieron en otro régimen (tasas, curva), el percentil depende de ese período. Los datos trimestrales se repiten en los tres meses del trimestre; los semanales se promedian por mes. Celdas con borde punteado: sin dato (por ejemplo, oct-25, por el cierre del gobierno). Zona extrema: percentil menor a 10 o mayor a 90 en alguno de los últimos 3 meses.",
   ks: ["gdp_growth"],
   f: () => {
-    const filas = [], data = [], vals = [];
+    const filas = [], data = [], vals = [], enc = [];
     let fin = 0;
     const series = MAPA.map(id => INDX[id]).filter(Boolean).map(ind => { let a = null; try { a = mensualDe(ind, ind.s()); } catch (e) {} return a && a.length ? { ind, a } : null; }).filter(Boolean);
     for (const { a } of series) fin = Math.max(fin, last(a)[0]);
     const cols = []; for (let k = 35; k >= 0; k--) { const d = new Date(fin); cols.push(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() - k, 1)); }
-    series.forEach(({ ind, a }, yi) => {
-      const hist = a.filter(p => p[0] >= T(2000)).map(p => p[1]).sort((x, y) => x - y); if (hist.length < 24) return;
-      const m = new Map(a);
-      filas.push(ind.n);
-      const fi = filas.length - 1;
-      cols.forEach((t, xi) => { const v = m.get(t); if (v == null) return;
-        let lo = 0; while (lo < hist.length && hist[lo] < v) lo++;
-        const pc = Math.round(lo / (hist.length - 1) * 100); data.push([xi, fi, Math.min(100, pc)]); vals.push([xi, fi, v, ind]); });
-    });
+    const ultimo = [];   // percentil del último dato de cada indicador
+    let frente = null;
+    for (const { ind, a } of series) {
+      const hist = a.filter(p => p[0] >= T(2000)).map(p => p[1]).sort((x, y) => x - y); if (hist.length < 24) continue;
+      if (ind.f !== frente) { frente = ind.f; enc.push(filas.length); filas.push(FRENTES[frente] || frente); }
+      const m = new Map(a), fi = filas.length; filas.push(ind.n);
+      const pctOf = v => { let lo = 0; while (lo < hist.length && hist[lo] < v) lo++; return Math.min(100, Math.round(lo / (hist.length - 1) * 100)); };
+      let ult = null;
+      cols.forEach((t, xi) => { const v = m.get(t);
+        if (v == null) { if (t >= a[0][0] && t <= last(a)[0]) data.push([xi, fi, -1]); return; }
+        const pc = pctOf(v); data.push([xi, fi, pc]); vals.push([xi, fi, v, ind]); if (xi >= cols.length - 3) ult = { n: ind.n, pc }; });
+      if (ult) ultimo.push(ult);
+    }
     if (filas.length < 10) return null;
-    const ultCol = cols.length - 1, ultimos = data.filter(d => d[0] === ultCol || d[0] === ultCol - 1);
-    const extremos = new Set(data.filter(d => d[0] >= ultCol - 2 && (d[2] >= 90 || d[2] <= 10)).map(d => d[1])).size;
+    const altos = ultimo.filter(u => u.pc >= 90).sort((x, y) => y.pc - x.pc), bajos = ultimo.filter(u => u.pc <= 10).sort((x, y) => x.pc - y.pc);
+    const nom = xs => xs.slice(0, 4).map(u => `${u.n} (${u.pc})`).join(", ") + (xs.length > 4 ? ` y ${xs.length - 4} más` : "");
     const vmap = new Map(vals.map(v => [v[0] + ":" + v[1], v]));
-    return { tipo: "heat", titulo: `${extremos} de ${filas.length} indicadores están hoy en zona extrema de su historia (percentil menor a 10 o mayor a 90)`,
-      sub: "Cada fila, un indicador; cada columna, un mes. Color: percentil del dato en su historia desde 2000 (azul, mínimo; gris, normal; rojo, máximo). Mide distancia a lo normal, no si es bueno o malo.",
+    return { tipo: "heat", sinDato: true, encabezados: enc,
+      titulo: `${altos.length + bajos.length} de ${ultimo.length} indicadores en zona extrema de su historia desde 2000` + (altos.length ? `; altos (percentil > 90): ${nom(altos)}` : "") + (bajos.length ? `; bajos (< 10): ${nom(bajos)}` : ""),
+      sub: "Cada fila, un indicador; cada columna, un mes. Color: percentil del dato en su historia desde 2000 (azul, mínimo; gris, mediana; rojo, máximo). Mide distancia a lo normal, no si es bueno o malo. Borde punteado: sin dato.",
       fuenteTxt: "BEA, BLS, Census, Fed, Tesoro y U. de Michigan vía FRED", cols: cols.map(fm), filas, data, series: [], vmin: 0, vmax: 100, vtxt: ["Percentil 100", "0"], izq: 210,
       tip: ([x, y, pc]) => { const v = vmap.get(x + ":" + y); return `<b>${esc(filas[y])}</b><br>${fm(cols[x])}: ${v ? nf(v[2], v[3].d) + (v[3].u === "%" ? "%" : v[3].u ? " " + v[3].u : "") : ""} · percentil ${pc}`; },
-      tabla: { cab: ["Indicador", ...cols.slice(-6).map(fm)], filas: filas.map((f, yi) => [f, ...cols.slice(-6).map((t, j) => { const v = vmap.get((cols.length - 6 + j) + ":" + yi); return v ? nf(v[2], v[3].d) : ""; })]) } };
+      tabla: { cab: ["Indicador", ...cols.slice(-6).map(fm)], filas: filas.map((f, yi) => enc.includes(yi) ? null : [f, ...cols.slice(-6).map((t, j) => { const v = vmap.get((cols.length - 6 + j) + ":" + yi); return v ? nf(v[2], v[3].d) : ""; })]).filter(Boolean) } };
   } });
 
 // Ciclos comparados: este ciclo de la Fed contra los anteriores, alineados al primer movimiento
@@ -1421,63 +1428,86 @@ function ciclos(o, serie, modo) {
   const fila = t0 => { const d0 = new Date(t0), base = m.get(t0); return meses.map(k => { const v = m.get(Date.UTC(d0.getUTCFullYear(), d0.getUTCMonth() + k, 1)); return v == null || (modo === "cambio" && base == null) ? null : modo === "cambio" ? v - base : v; }); };
   const actual = ini[ini.length - 1], previos = ini.slice(0, -1);
   const filas = previos.map(t => ({ t, d: fila(t) })).filter(x => x.d.some(v => v != null));
-  const prom = meses.map((_, i) => { const xs = filas.map(f => f.d[i]).filter(v => v != null); return xs.length >= 2 ? xs.reduce((a, b) => a + b, 0) / xs.length : null; });
+  // cada ciclo anterior se clasifica según haya empezado una recesión (NBER) entre 6 meses antes y 24 meses después del mes 0
+  filas.forEach(f => { f.rec = RECESIONES_NBER.some(([a]) => a >= f.t - 183 * DIA && a <= f.t + 731 * DIA); });
+  const promDe = fs => meses.map((_, i) => { const xs = fs.map(f => f.d[i]).filter(v => v != null); return xs.length >= 1 ? xs.reduce((a, b) => a + b, 0) / xs.length : null; });
+  const conR = filas.filter(f => f.rec), sinR = filas.filter(f => !f.rec);
+  const prom = promDe(filas), promR = conR.length ? promDe(conR) : null, promS = sinR.length ? promDe(sinR) : null;
   const da = fila(actual);
   let ultK = da.length - 1; while (ultK > 0 && da[ultK] == null) ultK--;
-  return { meses, actual, filas, prom, da, ultK, anio: t => new Date(t).getUTCFullYear(), mesTxt: t => fm(t) };
+  // si la Fed ya cambió de dirección después del inicio de este ciclo: en qué mes
+  const contra = iniciosCiclo(o.ancla === "s" ? -1 : 1) || [], giro = contra.find(t => t > actual);
+  const dA = new Date(actual), mesGiro = giro ? (new Date(giro).getUTCFullYear() - dA.getUTCFullYear()) * 12 + new Date(giro).getUTCMonth() - dA.getUTCMonth() : null;
+  return { meses, actual, filas, prom, promR, promS, conR, sinR, da, ultK, giro, mesGiro, anio: t => new Date(t).getUTCFullYear(), mesTxt: t => fm(t) };
 }
-function defCiclo(id, slug, nombre, sujeto, sin, ks, serieFn, modo, unidad, dec, explica) {
-  def(id, { slug, nombre, sin, ops: [ANCLA], ks, calc: `${explica} Cada línea gris es un ciclo anterior, con su año al final; al pasar el mouse por una se resalta. Los ciclos se alinean en el mes del primer movimiento de la tasa objetivo de la Fed (mes 0) y se detectan solos: el primer recorte después de una suba, o la primera suba después de un recorte. Desde 1988 (antes, la Fed movía su objetivo en pasos muy chicos y no hay ciclos claros).`,
+function defCiclo(id, slug, nombre, sujeto, sin, ks, serieFn, modo, unidad, dec, explica, refFn) {
+  def(id, { slug, nombre, sin, ops: [ANCLA], ks, historia: true, calc: `${explica} Cada línea gris es un ciclo anterior, con su año al final; al pasar el mouse por una se resalta. Los ciclos se alinean en el mes del primer movimiento de la tasa objetivo de la Fed (mes 0) y se detectan solos: el primer recorte después de una suba, o la primera suba después de un recorte. Desde 1988 (antes, la Fed movía su objetivo en pasos muy chicos y no hay ciclos claros). Los promedios se separan según haya empezado una recesión fechada por la NBER entre 6 meses antes y 24 meses después del mes 0; la regla se aplica sin excepciones (2019 cuenta como "con recesión" por la de 2020, aunque su causa fue la pandemia).`,
     f: o => {
       const c = ciclos(o, serieFn(), modo); if (!c) return null;
+      const refCiclo = refFn ? refFn() : null;
       const dir = o.ancla === "s" ? "primera suba" : "primer recorte", deDir = o.ancla === "s" ? "de la primera suba" : "del primer recorte";
       const series = c.filas.map(f => ({ n: `${c.anio(f.t)} (${c.mesTxt(f.t)})`, etiquetaFin: String(c.anio(f.t)), t: "line", c: "gris", fina: true, d: f.d, enLeyenda: false }));
-      series.push({ n: "Promedio de los ciclos anteriores", t: "line", c: "ink", w: 2, punteada: true, d: c.prom });
+      const anios = fs => fs.map(f => c.anio(f.t)).join(", ");
+      if (c.promR) series.push({ n: `Promedio con recesión (${anios(c.conR)})`, t: "line", c: "ink", w: 2, punteada: true, d: c.promR });
+      if (c.promS) series.push({ n: `Promedio sin recesión (${anios(c.sinR)})`, t: "line", c: 1, w: 2, punteada: true, d: c.promS });
+      if (refCiclo) series.push({ n: refCiclo[1], t: "line", c: "gris", w: 1.2, punteada: true, d: c.meses.map(() => refCiclo[0]), enLeyenda: true });
       series.push({ n: `Este ciclo (${c.mesTxt(c.actual)})`, t: "line", c: 0, w: 3.2, d: c.da });
-      const va = c.da[c.ultK], vp = c.prom[c.ultK], k = c.meses[c.ultK];
+      const va = c.da[c.ultK], vp = c.prom[c.ultK], k = c.meses[c.ultK], vR = c.promR ? c.promR[c.ultK] : null, vS = c.promS ? c.promS[c.ultK] : null;
       const fmt = v => (modo === "cambio" ? sg(v, dec) : nf(v, dec)) + unidadTxt(unidad);
       // eje: percentiles 2 y 98 de todos los ciclos, siempre incluyendo este ciclo y el promedio
-      const todos = c.filas.flatMap(f => f.d).filter(v => v != null).sort((a, b) => a - b), fijos = c.da.concat(c.prom).filter(v => v != null);
+      const todos = c.filas.flatMap(f => f.d).filter(v => v != null).sort((a, b) => a - b), fijos = c.da.concat(c.promR || [], c.promS || [], refCiclo ? [refCiclo[0]] : []).filter(v => v != null);
       const q = f => todos[Math.round(f * (todos.length - 1))];
       let lo = Math.min(q(0.02), ...fijos), hi = Math.max(q(0.98), ...fijos);
       const r0 = (hi - lo) / 5 || 1, e = Math.pow(10, Math.floor(Math.log10(r0))), paso = (r0 / e <= 1 ? 1 : r0 / e <= 2 ? 2 : r0 / e <= 5 ? 5 : 10) * e;
       lo = Math.floor(lo / paso) * paso; hi = Math.ceil(hi / paso) * paso;
       const rango = todos.length && (todos[0] < lo || todos[todos.length - 1] > hi) ? [lo, hi, true] : [null, null, false];
       return { tipo: "cat", sinPuntos: true, signo: modo === "cambio", escala: true, unidad, dec, decEje: Math.min(dec, 1),
-        titulo: va == null || vp == null ? `${nombre}: este ciclo contra los anteriores` : `A ${k} ${k === 1 ? "mes" : "meses"} ${deDir}, ${sujeto} ${modo === "cambio" ? "cambió" : "está en"} ${fmt(va)}; en los ciclos anteriores, ${fmt(vp)}`,
+        titulo: c.ultK <= c.meses.indexOf(0) + 2 ? `${nombre}: el ciclo de ${o.ancla === "s" ? "subas" : "recortes"} actual empezó en ${c.mesTxt(c.actual)} (${Math.max(0, k)} ${k === 1 ? "mes" : "meses"} de historia)`
+          : va == null ? `${nombre}: este ciclo contra los anteriores`
+          : `Mes ${k} desde el ${dir} (${c.mesTxt(c.actual)}): ${sujeto} ${modo === "cambio" ? "cambió" : "está en"} ${fmt(va)}` + (vS != null ? `; ciclos sin recesión (${anios(c.sinR)}): ${fmt(vS)}` : "") + (vR != null ? `; con recesión (${anios(c.conR)}): ${fmt(vR)}` : "") + (c.giro ? `; en el mes ${c.mesGiro} la Fed ${o.ancla === "s" ? "empezó a bajar" : "volvió a subir"}` : ""),
         yMin: rango[0], yMax: rango[1],
-        sub: `Meses ${o.ancla === "s" ? "desde la primera suba" : "desde el primer recorte"} de la Fed${modo === "cambio" ? "; cambio contra el mes 0" : ""}. En gris, los ciclos desde 1988.${rango[2] ? " Eje recortado." : ""}`,
+        sub: `Meses ${o.ancla === "s" ? "desde la primera suba" : "desde el primer recorte"} de la Fed${modo === "cambio" ? "; cambio contra el mes 0" : ""}. En gris, los ciclos desde 1988; promedios separados según haya empezado una recesión (NBER) en los 24 meses siguientes.${rango[2] ? " Eje recortado: algún ciclo sale de la escala." : ""}`,
         cats: c.meses.map(x => (x > 0 ? "+" : "") + x), series };
     } });
 }
 defCiclo("cicloTasa", "ciclos-tasa-de-la-fed", "Tasa de la Fed", "la tasa de la Fed", ["ciclos", "recortes", "subas", "ciclo de tasas"], ["fed_funds", "fed_obj_sup"], () => S("fed_funds"), "cambio", "pp", 2, "Cambio de la tasa efectiva de fondos federales (promedio mensual) contra el mes del primer movimiento.");
 defCiclo("cicloDesempleo", "ciclos-desempleo", "Desempleo", "el desempleo", ["ciclos", "desempleo", "aterrizaje suave"], ["unemployment", "fed_obj_sup"], () => S("unemployment"), "cambio", "pp", 1, "Cambio de la tasa de desempleo contra el mes del primer movimiento de la Fed.");
-defCiclo("cicloCore", "ciclos-inflacion", "Core PCE", "el core PCE", ["ciclos", "inflación"], ["pce_core", "fed_obj_sup"], () => yoy(S("pce_core")), "nivel", "%", 1, "Inflación core PCE interanual.");
-defCiclo("cicloSpread", "ciclos-spread", "Spread Baa", "el spread Baa", ["ciclos", "crédito", "spread"], ["baa_spread", "fed_obj_sup"], () => S("baa_spread"), "nivel", "pp", 2, "Spread de los bonos corporativos Baa sobre el Treasury a 10 años, promedio mensual.");
+defCiclo("cicloCore", "ciclos-inflacion", "Core PCE", "el core PCE", ["ciclos", "inflación"], ["pce_core", "fed_obj_sup"], () => yoy(S("pce_core")), "nivel", "%", 1, "Inflación core PCE interanual. La referencia es la meta de 2% de la Fed.", () => [2, "Meta Fed 2%"]);
+defCiclo("cicloSpread", "ciclos-spread", "Spread Baa", "el spread Baa", ["ciclos", "crédito", "spread"], ["baa_spread", "fed_obj_sup"], () => S("baa_spread"), "nivel", "pp", 2, "Spread de los bonos corporativos Baa sobre el Treasury a 10 años, promedio mensual. La referencia es su promedio 1986-2019, la misma de Tasas.", () => { const p = promEntre(S("baa_spread"), 1986, 2019); return p != null ? [p, `Promedio 1986-2019: ${nf(p, 2)} pp`] : null; });
 
 // Revisiones: cuánto cambió el dato desde su primera publicación
 def("revEmpleo", { slug: "revisiones-del-empleo", nombre: "Revisiones de las nóminas", sin: ["revisiones", "benchmark", "primera estimación", "nóminas", "confiabilidad"],
-  calc: "Diferencia entre el cambio mensual de las nóminas que se conoce hoy y el que se publicó por primera vez (ALFRED, el archivo de versiones de la Fed de St. Louis), en miles. Incluye las revisiones de los dos meses siguientes y la revisión anual de febrero.",
+  calc: "Diferencia entre el cambio mensual de las nóminas que se conoce hoy y el que se publicó por primera vez (ALFRED, el archivo de versiones de la Fed de St. Louis), en miles. Incluye las revisiones de los dos meses siguientes y la revisión anual de febrero. Negativo: el primer dato sobreestimó el empleo. Los 2 últimos meses siguen abiertos (en gris claro) y la suma de 12 meses usa sólo meses cerrados. La serie de primeras publicaciones arranca en 2015.",
   ks: ["payrolls", "payrolls_1ra"],
   f: () => {
     const p1 = S("payrolls_1ra"), p = S("payrolls"); if (!p1 || !p) return null;
-    const rev = join(diff(p), p1, (a, b) => a - b); if (!rev) return null;
-    const desde = Math.max(ST.T0, T(2021)), r12 = rev.slice(-12), tot = r12.reduce((x, y) => x + y[1], 0);
-    return { titulo: `En 12 meses, las nóminas se revisaron ${sg(tot, 0)} mil puestos contra su primera publicación (${sg(tot / 12, 0)} mil por mes)`,
-      sub: "Cambio de cada mes desde su primera publicación, en miles. Negativo: el primer dato sobreestimó el empleo. Los 2 últimos meses siguen abiertos." + (ST.T0 < T(2021) ? " Desde 2021." : ""),
-      unidad: "mil", dec: 0, cero: true, eventos: false, sinRecorte: true,
-      series: [{ n: "Revisión del mes", t: "bar", c: 1, d: cut(rev, desde) }, { n: "Suma de 12 meses", c: "ink", w: 2, d: cut(roll(rev, 12, true), desde) }], refs: [{ y: 0 }] };
+    const rev = join(diff(p), p1, (a, b) => a - b); if (!rev || rev.length < 15) return null;
+    const cerr = rev.slice(0, -2), abiertos = rev.slice(-2), s12 = roll(cerr, 12, true), tot = last(s12)[1];
+    // desde cuándo todas las sumas de 12 meses son del mismo signo
+    let i = s12.length - 1; while (i > 0 && Math.sign(s12[i - 1][1]) === Math.sign(tot)) i--;
+    const desdeSigno = s12.length - i >= 12 ? fm(s12[i][0]) : null;
+    const pk = s12.reduce((m, q) => (tot < 0 ? q[1] < m[1] : q[1] > m[1]) ? q : m);
+    return { titulo: `Revisiones de las nóminas en los 12 meses cerrados a ${fechaDe(cerr)}: ${sg(tot, 0)} mil (${sg(tot / 12, 0)} mil por mes)` + (desdeSigno ? `; ${tot < 0 ? "negativas" : "positivas"} en cada suma de 12 meses desde ${desdeSigno}` : "") + `; máximo ${tot < 0 ? "hacia abajo" : "hacia arriba"}: ${sg(pk[1], 0)} mil (${fm(pk[0])})`,
+      sub: "Cambio mensual de las nóminas que se conoce hoy menos el publicado por primera vez (ALFRED), en miles. Gris claro: los 2 últimos meses, todavía abiertos.",
+      unidad: "mil", dec: 0, cero: true, eventos: false, shock: [T(2020, 3), T(2021, 12)], shockVentana: [T(2020, 3), T(2021, 12)],
+      series: [{ n: "Revisión del mes", t: "bar", c: 1, d: cut(cerr) }, { n: "Meses abiertos", t: "bar", c: "gris", suave: true, d: cut(abiertos) }, { n: "Suma de 12 meses cerrados", c: "ink", w: 2.2, d: cut(s12) }], refs: [{ y: 0 }] };
   } });
 def("revPBI", { slug: "revisiones-del-pbi", nombre: "Revisiones del PBI", sin: ["revisiones", "primera estimación", "pbi", "advance", "confiabilidad"],
-  calc: "Crecimiento trimestral anualizado del PBI real tal como se publicó por primera vez (estimación anticipada, ALFRED) contra el dato vigente hoy (BEA).",
+  calc: "Crecimiento trimestral anualizado del PBI real tal como se publicó por primera vez (estimación anticipada, ALFRED) contra el dato vigente hoy (BEA). Barras: la revisión (hoy menos primera); positivo: la primera estimación subestimó. Las marcas señalan los trimestres que cambiaron de signo. Un trimestre que todavía no se revisó no entra en los promedios. La serie de primeras estimaciones arranca en 2014.",
   ks: ["gdp_growth", "gdp_1ra"],
   f: () => {
     const g1 = S("gdp_1ra"), g = S("gdp_growth"); if (!g1 || !g) return null;
-    const rev = join(g, g1, (a, b) => a - b); if (!rev) return null;
-    const u8 = rev.slice(-9, -1), m = u8.reduce((x, y) => x + y[1], 0) / u8.length, ma = u8.reduce((x, y) => x + Math.abs(y[1]), 0) / u8.length;
-    return { freq: "Q", titulo: `El PBI se revisó en promedio ${sg(m)} pp por trimestre en los últimos dos años (${nf(ma)} pp en valor absoluto)`,
-      sub: "% trimestral anualizado: primera estimación contra el dato de hoy (8 trimestres, sin el último). Positivo: el primer dato subestimó.",
-      series: [{ n: "Dato de hoy", d: cut(g), c: 0, w: 2.6 }, { n: "Primera estimación", d: cut(g1), c: 1, punteada: true }], refs: [{ y: 0 }], shock: [T(2020, 3), T(2020, 12)] };
+    const rev = join(g, g1, (a, b) => a - b); if (!rev || rev.length < 4) return null;
+    // el último trimestre está abierto sólo si todavía no se revisó (dato de hoy igual a la primera estimación)
+    const abierto = Math.abs(last(rev)[1]) < 1e-9, cer = abierto ? rev.slice(0, -1) : rev, m = cer.reduce((x, y) => x + y[1], 0) / cer.length, ma = cer.reduce((x, y) => x + Math.abs(y[1]), 0) / cer.length;
+    const mg = new Map(g), m1 = new Map(g1), signo = cer.filter(([t]) => Math.sign(mg.get(t)) !== Math.sign(m1.get(t)) && Math.abs(m1.get(t)) > 0.05);
+    const uc = cer[cer.length - 1][0];
+    const ss = [{ n: "Revisión (pp)", d: cut(rev), t: "bar", c: "gris", suave: true }, { n: "Dato de hoy", d: cut(g.filter(p => m1.has(p[0]) || p[0] > uc)), c: 0, w: 2.2 }, { n: "Primera estimación", d: cut(g1), c: 1, w: 1.6, punteada: true }];
+    const vis = signo.filter(([t]) => t >= ST.T0);
+    if (vis.length) ss.push({ n: "Cambió de signo", t: "nota", c: 1, d: vis.map(([t]) => [t, mg.get(t)]), textos: vis.map(([t]) => `${fq(t)}: ${sg(m1.get(t))} → ${sg(mg.get(t))}`), enLeyenda: false });
+    return { freq: "Q", titulo: `Revisión del PBI desde ${anio(rev[0][0])}: promedio ${sg(m, 2)} pp por trimestre (${nf(ma, 2)} pp en valor absoluto)` + (signo.length ? `; ${signo.length} ${signo.length === 1 ? "trimestre cambió" : "trimestres cambiaron"} de signo (${signo.map(([t]) => fq(t)).join(" y ")})` : "") + `; ${fq(uc)}: de ${nf(m1.get(uc))}% a ${nf(mg.get(uc))}%`,
+      sub: "% trimestral anualizado: estimación anticipada (ALFRED) contra el dato vigente (BEA). Barras: revisión.",
+      series: ss, refs: [{ y: 0 }], shock: [T(2020, 3), T(2020, 12)], shockVentana: [T(2020, 3), T(2020, 12)] };
   } });
 
 // ═════════════════════════ Organización por frente ═════════════════════════
