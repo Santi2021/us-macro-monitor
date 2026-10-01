@@ -734,149 +734,177 @@ def("energia", { slug: "energia", nombre: "Inflación de energía", sin: ["nafta
   } });
 
 // ═════════════════════════ Empleo ═════════════════════════
+// Recesiones fechadas por la NBER (las mismas que sombrea el gráfico)
+const RECESIONES_NBER = [["1948-11", "1949-10"], ["1953-07", "1954-05"], ["1957-08", "1958-04"], ["1960-04", "1961-02"], ["1969-12", "1970-11"], ["1973-11", "1975-03"], ["1980-01", "1980-07"],
+  ["1981-07", "1982-11"], ["1990-07", "1991-03"], ["2001-03", "2001-11"], ["2007-12", "2009-06"], ["2020-02", "2020-04"]].map(([a, b]) => [P(a + "-01"), P(b + "-01")]);
+const prom12 = a => a && a.length >= 12 ? a.slice(-12).reduce((s, p) => s + p[1], 0) / 12 : null;
+// Revisión de los dos meses previos contra su primera publicación (ALFRED)
+function revisionNominas(d) {
+  const prim = ST.DATA.primeras && ST.DATA.primeras.payrolls; if (!prim) return null;
+  let tot = 0, n = 0;
+  for (const i of [1, 2]) { const obs = new Date(d[d.length - 1 - i][0]).toISOString().slice(0, 10), r = prim[obs]; if (r) { tot += d[d.length - 1 - i][1] - (r[2] - r[1]); n++; } }
+  return n ? { tot, n } : null;
+}
 def("nominas", { slug: "nominas", nombre: "Nóminas no agrícolas", sin: ["payrolls", "nfp", "empleo", "puestos de trabajo"],
-  calc: "Variación mensual del empleo asalariado no agrícola (BLS, encuesta de establecimientos), en miles, y su promedio de 3 meses.",
+  calc: "Variación mensual del empleo asalariado no agrícola (BLS, encuesta de establecimientos), en miles: barras, el dato de cada mes; líneas, los promedios de 3 y de 12 meses. La referencia es el promedio mensual 2015-19. La revisión compara los dos meses previos con su primera publicación (archivo de versiones ALFRED).",
   ks: ["payrolls"],
   f: () => {
     const p = S("payrolls"); if (!p) return null;
-    const d = diff(p), m3 = roll(d, 3), desde = Math.max(ST.T0, T(2021));
-    // revisión de los dos meses previos contra su primera publicación
-    let rev = "";
-    const prim = ST.DATA.primeras && ST.DATA.primeras.payrolls;
-    if (prim) {
-      let tot = 0, n = 0;
-      for (const i of [1, 2]) {
-        const obs = new Date(d[d.length - 1 - i][0]).toISOString().slice(0, 10), r = prim[obs];
-        if (r) { tot += d[d.length - 1 - i][1] - (r[2] - r[1]); n++; }
-      }
-      if (n) rev = ` Revisión de los ${n === 2 ? "dos meses" : "mes"} previo${n === 2 ? "s" : ""}: ${sg(tot, 0)} mil.`;
-    }
-    return { titulo: `La economía suma ${nf(last(m3)[1], 0)} mil puestos por mes (promedio de 3 meses)`,
-      sub: `Variación mensual de las nóminas no agrícolas, en miles. Último mes: ${sg(last(d)[1], 0)} mil.${rev} Con el crecimiento actual de la población, unos 80 mil por mes mantienen estable el desempleo.` + (ST.T0 < T(2021) ? " Desde 2021, para que la pandemia no aplaste la escala." : ""),
-      unidad: "mil", dec: 0, eventos: false, sinRecorte: true,
-      series: [{ n: "Cambio mensual", d: cut(d, desde), t: "bar", c: 0 }, { n: "Promedio 3 meses", d: cut(m3, desde), c: 1, w: 2.4 }], refs: [{ y: 0 }, { y: 80, l: "Equilibrio aprox. (80 mil)" }] };
+    const d = diff(p), m3 = roll(d, 3), m12 = roll(d, 12), pr = promEntre(d, 2015, 2019), rv = revisionNominas(d);
+    return { titulo: `Nóminas ${sg(last(d)[1], 0)} mil en ${fechaDe(d)}; promedio 3 meses ${nf(last(m3)[1], 0)} mil, 12 meses ${nf(last(m12)[1], 0)} mil (2015-19: ${nf(pr, 0)} mil)` + (rv ? `; revisión de los ${rv.n === 2 ? "dos meses" : "mes"} previo${rv.n === 2 ? "s" : ""}: ${sg(rv.tot, 0)} mil` : ""),
+      sub: "Variación mensual del empleo asalariado no agrícola (BLS, encuesta de establecimientos), en miles.",
+      unidad: "mil", dec: 0, eventos: false, shock: [T(2020, 3), T(2021, 6)], shockVentana: [T(2020, 3), T(2021, 6)],
+      series: [{ n: "Cambio mensual", d: cut(d), t: "bar", c: 0, suave: true }, { n: "Promedio 3 meses", d: cut(m3), c: 0, w: 2.6 }, { n: "Promedio 12 meses", d: cut(m12), c: 1, w: 1.6 }],
+      refs: [{ y: 0 }].concat(pr != null ? [{ y: pr, l: `Promedio 2015-19: ${nf(pr, 0)} mil` }] : []) };
   } });
-def("desempleo", { slug: "desempleo", nombre: "Tasa de desempleo", sin: ["unemployment", "u3", "desocupación"],
-  calc: "Tasa de desempleo U-3 y desempleo ampliado U-6 (BLS, encuesta de hogares), % de la fuerza laboral. El U-6 suma a quienes dejaron de buscar y a quienes trabajan menos horas de las que quieren.",
-  ks: ["unemployment", "u6", "sep_unemp"],
-  f: () => {
-    const u = S("unemployment"); if (!u) return null;
-    const v = last(u)[1], min12 = Math.min(...u.slice(-12).map(p => p[1])), r = racha(u, fm);
-    return { titulo: `Desempleo en ${nf(v)}%, ${nf(v - min12)} pp sobre su mínimo de 12 meses${r ? " (" + r + ")" : ""}`, sub: "Tasa de desempleo (U-3) y desempleo ampliado (U-6), % de la fuerza laboral." + (S("u6") ? ` U-6: ${nf(last(S("u6"))[1])}%.` : "") + (sepPuntos("sep_unemp") ? ` La Fed proyecta ${sepTxt("sep_unemp")}.` : ""),
-      banda: rangoNormal(u), bandaTexto: "Rango normal del U-3 2000-19", series: [{ n: "Desempleo (U-3)", d: cut(u), c: 0, w: 2.8 }].concat(S("u6") ? [{ n: "Desempleo ampliado (U-6)", d: cut(S("u6")), c: 1 }] : [])
-        .concat(sepPuntos("sep_unemp") ? [{ n: "Proyección de la Fed (U-3)", t: "punto", c: 0, d: sepPuntos("sep_unemp") }] : []) };
-  } });
-def("sahm", { slug: "regla-de-sahm", nombre: "Regla de Sahm", sin: ["recesión", "sahm"],
-  calc: "Promedio de 3 meses de la tasa de desempleo menos su mínimo de los 12 meses previos, en tiempo real (Fed de St. Louis).",
-  ks: ["sahm"],
-  f: () => {
-    const s = S("sahm"); if (!s) return null;
-    const v = last(s)[1];
-    return { titulo: v >= 0.5 ? `Regla de Sahm activada: ${nf(v, 2)} pp, por encima del umbral de 0,5` : `Regla de Sahm en ${nf(v, 2)} pp: ${nf(0.5 - v, 2)} pp por debajo del umbral de recesión`,
-      sub: "Superar 0,5 pp marcó el inicio de cada recesión desde 1970.", dec: 2, decEje: 1, unidad: "pp",
-      series: [{ n: "Indicador de Sahm", d: cut(s), c: 1, area: true }], refs: [{ y: 0.5, l: "Umbral de recesión 0,5" }, { y: 0 }] };
-  } });
-def("tension", { slug: "vacantes-por-desocupado", nombre: "Vacantes por desocupado", sin: ["jolts", "vacantes", "tensión laboral"],
-  calc: "Vacantes (BLS, JOLTS) sobre desocupados (BLS).",
-  ks: ["openings", "unemployed"],
-  f: () => {
-    const o = S("openings"), u = S("unemployed"); if (!o || !u) return null;
-    const r = join(o, u, (a, b) => a / b);
-    return { titulo: `Hay ${nf(last(r)[1], 2)} vacantes por cada desocupado`,
-      sub: "Por encima de 1, el mercado laboral está más ajustado que equilibrado.", unidad: "", dec: 2, banda: rangoNormal(r),
-      series: [{ n: "Vacantes por desocupado", d: cut(r), c: 0 }], refs: [{ y: 1, l: "1 vacante por desocupado" }] };
-  } });
-def("rotacion", { slug: "contrataciones-renuncias-despidos", nombre: "Contrataciones, renuncias y despidos", sin: ["jolts", "hires", "quits", "layoffs", "renuncias", "despidos", "contrataciones", "rotación"],
-  calc: "Tasas de contrataciones, renuncias voluntarias y despidos, % del empleo por mes (BLS, JOLTS).",
-  ks: ["hires", "quits", "layoffs"],
-  f: () => {
-    const h = S("hires"), q = S("quits"), l = S("layoffs"); if (!q) return null;
-    const ss = [];
-    if (h) ss.push({ n: "Contrataciones", d: cut(h), c: 0, w: 2.6 });
-    ss.push({ n: "Renuncias", d: cut(q), c: 2 });
-    if (l) ss.push({ n: "Despidos", d: cut(l), c: 1 });
-    let titulo = `Tasa de renuncias en ${nf(last(q)[1])}%: percentil ${pctl(q, last(q)[1])} desde 2000`;
-    if (h && l) {
-      const ph = pctl(h, last(h)[1]), pl = pctl(l, last(l)[1]);
-      const lectura = ph < 25 && pl < 50 ? "se contrata poco y se despide poco" : ph < 25 ? "se contrata poco y los despidos suben" : pl > 75 ? "los despidos están altos" : "la rotación es normal";
-      titulo = `Contrataciones en ${nf(last(h)[1])}% (percentil ${ph}) y despidos en ${nf(last(l)[1])}% (percentil ${pl}): ${lectura}`;
-    }
-    return { titulo, sub: "% del empleo por mes. Las renuncias adelantan los salarios; los despidos, el desempleo. Percentiles desde 2000.",
-      series: ss };
-  } });
+
 def("composicion", { slug: "quien-crea-empleo", nombre: "¿Quién crea el empleo?", sin: ["salud", "gobierno", "empleo privado", "sectores", "composición", "nóminas por sector"],
-  calc: "Variación mensual del empleo, promedio de 3 meses, en miles (BLS): resto del sector privado (privado menos salud y asistencia social), salud y asistencia social, y gobierno. La línea es el total.",
+  calc: "Variación mensual del empleo, promedio de 3 meses, en miles (BLS): sector privado sin salud y asistencia social, salud y asistencia social, y gobierno. La línea es el total. El título suma los últimos 12 meses. En 2015-19, el privado sin salud explicó el 72% del empleo creado, salud el 21% y el gobierno el 7%.",
   ks: ["payrolls_priv", "payrolls_health", "payrolls_gov"],
   f: () => {
     const p = S("payrolls_priv"), h = S("payrolls_health"), g = S("payrolls_gov"); if (!p || !h || !g) return null;
-    const desde = Math.max(ST.T0, T(2021));
-    const partes = [["Privado sin salud", join(p, h, (a, b) => a - b), 0], ["Salud y asistencia social", h, 2], ["Gobierno", g, 1]]
-      .map(([n, a, c]) => ({ n, c, t: "bar", stack: "e", d: cut(roll(diff(a), 3), desde) }));
-    const tot = cut(roll(diff(join(p, g, (a, b) => a + b)), 3), desde);
-    const [r, s_, gv] = partes.map(x => last(x.d)[1]);
-    const titulo = r <= 0 ? `El sector privado sin salud ${r < 0 ? "pierde" : "no crea"} empleo: ${sg(r, 0)} mil por mes; salud y gobierno suman ${nf(s_ + gv, 0)} mil`
-      : `El sector privado sin salud suma ${nf(r, 0)} mil puestos por mes; salud y gobierno, ${nf(s_ + gv, 0)} mil`;
-    return { titulo, sub: "Miles de puestos por mes, promedio de 3 meses. El ciclo se lee en el privado sin salud; salud y gobierno crecen por razones propias." + (ST.T0 < T(2021) ? " Desde 2021." : ""),
-      unidad: "mil", dec: 0, cero: true, eventos: false, sinRecorte: true, series: partes.concat([{ n: "Total", d: tot, c: "ink", w: 2 }]), refs: [{ y: 0 }] };
+    const ps = join(p, h, (a, b) => a - b);
+    const partes = [["Privado sin salud", ps, 0], ["Salud y asistencia social", h, 2], ["Gobierno", g, 1]]
+      .map(([n, a, c]) => ({ n, c, t: "bar", stack: "e", d: cut(roll(diff(a), 3)), a }));
+    const tot = cut(roll(diff(join(p, g, (a, b) => a + b)), 3));
+    const d12 = a => a.length > 12 ? a[a.length - 1][1] - a[a.length - 13][1] : null;
+    const [r, s_, gv] = partes.map(x => d12(x.a)), t = r + s_ + gv;
+    const m = partes.map(x => last(x.d)[1]);
+    return { titulo: `Empleo creado en 12 meses a ${fechaDe(ps)}: ${sg(t, 0)} mil; salud ${sg(s_, 0)} mil, privado sin salud ${sg(r, 0)} mil, gobierno ${sg(gv, 0)} mil; último promedio de 3 meses: ${sg(m[1], 0)}, ${sg(m[0], 0)} y ${sg(m[2], 0)} mil por mes`,
+      sub: "Variación mensual del empleo por sector, promedio de 3 meses, en miles (BLS). Línea: total.",
+      unidad: "mil", dec: 0, cero: true, eventos: false, shock: [T(2020, 3), T(2021, 6)], shockVentana: [T(2020, 3), T(2021, 6)],
+      series: partes.map(({ a, ...x }) => x).concat([{ n: "Total", d: tot, c: "ink", w: 2 }]), refs: [{ y: 0 }] };
   } });
-def("salarioReal", { slug: "salario-real", nombre: "Salario horario y salario real", sin: ["salarios", "ahe", "salario real", "poder adquisitivo"], ops: [VISTA_M, REAL("cpi")],
-  calc: "Salario horario promedio del sector privado (BLS). En vista nominal se compara con el CPI general; en vista real se deflacta por el CPI.",
-  ks: ["ahe", "cpi"],
-  f: o => {
-    const w = S("ahe"), c = S("cpi"); if (!w || !c) return null;
-    if (o.real === "r") {
-      const r = deflactar(w, c), v = vista(r, o.vista);
-      return { titulo: `El salario real ${last(v)[1] >= 0 ? "sube" : "cae"} ${nf(Math.abs(last(v)[1]), decV(o))}% ${VT[o.vista]}`,
-        sub: "Salario horario deflactado por el CPI general: el poder de compra del salario.", dec: decV(o),
-        series: seriesVista([["Salario real", r, 0, { area: true }]], o), refs: [{ y: 0 }] };
-    }
-    const vw = vista(w, o.vista), vc = vista(c, o.vista);
-    return { titulo: `Los salarios suben ${nf(last(vw)[1], decV(o))}% ${VT[o.vista]}: ${sg(last(vw)[1] - last(join(vw, vc, (a, b) => b))[1], decV(o))} pp contra el CPI`,
-      sub: "Salario horario promedio del sector privado contra la inflación que enfrenta el trabajador (CPI general).", dec: decV(o),
-      series: seriesVista([["Salario horario", w, 0, { w: 2.8 }], ["CPI general", c, 1]], o), refs: [{ y: 0 }] };
-  } });
-def("eci", { slug: "costo-laboral-eci", nombre: "Índice de costo laboral (ECI) vs salario horario", sin: ["eci", "salarios", "costo laboral"], ops: [VISTA_Q],
-  calc: "Índice de costo laboral, salarios del sector privado (BLS, trimestral), contra el salario horario promedio llevado a trimestre. El ECI mantiene fija la composición del empleo.",
-  ks: ["eci", "ahe", "ulc"],
-  f: o => {
-    const e = S("eci"), w = toQ(S("ahe")); if (!e || !w) return null;
-    const ve = vista(e, o.vista, "Q"), vw = join(vista(w, o.vista, "Q"), ve, a => a), vu = S("ulc") ? vista(S("ulc"), o.vista, "Q") : null;
-    return { freq: "Q", titulo: `Los salarios medidos por el ECI suben ${nf(last(ve)[1])}% ${VT[o.vista]}`,
-      sub: "El ECI no cambia cuando cambia la composición del empleo (por ejemplo, si se pierden puestos de bajo salario): es la medida de salarios que mira la Fed.",
-      series: [{ n: "ECI salarios", d: cut(ve), c: 0, w: 2.8 }, { n: "Salario horario promedio", d: cut(vw), c: 1 }].concat(vu ? [{ n: "Costo laboral unitario", d: cut(vu), c: 2, w: 1.6 }] : []), refs: [{ y: 3.5, l: "Compatible con 2% de inflación (≈3,5%)" }] };
-  } });
-def("epop", { slug: "empleo-25-54", nombre: "Empleo 25-54 y participación", sin: ["epop", "participación", "prime age"],
-  calc: "Proporción de la población de 25 a 54 años con empleo y tasa de participación de toda la población (BLS).",
-  ks: ["epop_prime", "participation"],
+
+def("desempleo", { slug: "desempleo", nombre: "Tasa de desempleo", sin: ["unemployment", "u3", "desocupación", "tasa natural", "nairu"],
+  calc: "Tasa de desempleo U-3 y desempleo ampliado U-6 (BLS, encuesta de hogares), % de la fuerza laboral. El U-6 suma a quienes dejaron de buscar y a quienes trabajan menos horas de las que quieren. En gris, la tasa de desempleo no cíclica (natural) que estima la Oficina de Presupuesto del Congreso (CBO), trimestral. El rombo es la mediana de la proyección de la Fed para fin de año.",
+  ks: ["unemployment", "u6", "nrou", "sep_unemp"],
   f: () => {
-    const e = S("epop_prime"), p = S("participation"); if (!e) return null;
-    const v = last(e)[1];
-    const ss = [{ n: "Empleo 25-54", d: cut(e), c: 2 }];
-    if (p) ss.push({ n: "Participación (total)", d: cut(p), c: 0, w: 1.8 });
-    return { titulo: `Empleo 25-54 años en ${nf(v)}%: percentil ${pctl(e, v)} desde 2000`,
-      sub: "El empleo de 25 a 54 años no depende del envejecimiento ni de cuántos buscan trabajo; la participación total sí.",
-      banda: rangoNormal(e), bandaTexto: "Rango normal del empleo 25-54 2000-19", series: ss };
+    const u = S("unemployment"); if (!u) return null;
+    const v = last(u)[1], u12 = u.slice(-12), mn = Math.min(...u12.map(p => p[1])), mx = Math.max(...u12.map(p => p[1]));
+    const nat = S("nrou"), natV = nat ? valorEn(nat, last(u)[0]) : null;
+    const ciclo = u.filter(p => p[0] >= T(2021, 6)), pmin = ciclo.length ? ciclo.reduce((m, p) => p[1] < m[1] ? p : m) : null;
+    const u6 = S("u6"), sep = sepPuntos("sep_unemp");
+    const pos = v <= mn ? "mínimo de 12 meses" : v >= mx ? "máximo de 12 meses" : `rango de 12 meses ${nf(mn)}–${nf(mx)}%`;
+    const ss = [{ n: "Desempleo (U-3)", d: cut(u), c: 0, w: 2.8 }];
+    if (u6) ss.push({ n: "Desempleo ampliado (U-6)", d: cut(u6), c: 1, w: 1.6 });
+    if (nat) ss.push({ n: "Tasa natural (CBO)", d: cut(nat.filter(p => p[0] <= last(u)[0])), c: "gris", w: 1.6, punteada: true, escalon: true, fin: false });
+    if (sep) ss.push({ n: "Proyección de la Fed (U-3)", t: "punto", c: 0, d: sep });
+    return { titulo: `Desempleo ${nf(v)}% en ${fechaDe(u)}, ${pos}` + (v <= mn && mx > v ? ` (máximo: ${nf(mx)}%)` : "") + (natV ? `; tasa natural CBO ${nf(natV[1])}%` : "") + (pmin ? `; mínimo del ciclo ${nf(pmin[1])}% (${fm(pmin[0])})` : "") + (u6 ? `; U-6 ${nf(last(u6)[1])}%` : "") + (sep ? `; la Fed proyecta ${nf(sep[0][1])}% a fin de ${anio(sep[0][0])}` : ""),
+      sub: "U-3 y U-6 (BLS, encuesta de hogares), % de la fuerza laboral. Gris: tasa de desempleo no cíclica estimada por la CBO.", series: ss };
   } });
+
+def("sahm", { slug: "regla-de-sahm", nombre: "Regla de Sahm", sin: ["recesión", "sahm"], historia: true,
+  calc: "Promedio de 3 meses de la tasa de desempleo menos su mínimo de los 12 meses previos, en tiempo real (Fed de St. Louis). Las marcas señalan cada vez que cruzó 0,5 pp desde abajo, con su año; las bandas grises son las recesiones fechadas por la NBER.",
+  ks: ["sahm"],
+  f: () => {
+    const s = S("sahm"); if (!s) return null;
+    const v = last(s)[1], cr = [];
+    for (let i = 1; i < s.length; i++) if (s[i][1] >= 0.5 && s[i - 1][1] < 0.5 && (!cr.length || s[i][0] - cr[cr.length - 1][0] > 365 * DIA)) cr.push(s[i]);
+    const rec = s.filter(p => p[0] >= T(2023)).reduce((m, p) => p[1] > m[1] ? p : m, [0, -Infinity]);
+    const enRec = t => RECESIONES_NBER.some(([a, b]) => t >= a - 200 * DIA && t <= b + 60 * DIA);
+    const falsos = cr.filter(p => !enRec(p[0]) && p[0] >= T(1960));
+    const vis = cr.filter(p => p[0] >= ST.T0);
+    return { titulo: `Regla de Sahm ${sg(v, 2)} pp en ${fechaDe(s)} (umbral 0,5)` + (rec[1] > -Infinity && rec[1] >= 0.3 ? `; máximo reciente ${nf(rec[1], 2)} en ${fm(rec[0])}` + (rec[1] >= 0.5 && !enRec(rec[0]) ? ", cruce sin recesión hasta hoy" : "") : ""),
+      sub: `Promedio de 3 meses del desempleo menos su mínimo de los 12 meses previos (Fed de St. Louis). Desde 1960 cruzó 0,5 en el inicio de cada recesión` + (falsos.length ? ` y ${falsos.length} ${falsos.length === 1 ? "vez" : "veces"} sin recesión (${falsos.map(p => anio(p[0])).join(" y ")}).` : "."),
+      dec: 2, decEje: 1, unidad: "pp",
+      series: [{ n: "Indicador de Sahm", d: cut(s), c: 1, w: 2.4 }].concat(vis.length ? [{ n: "Cruces de 0,5", t: "nota", c: 1, d: vis, textos: vis.map(p => String(anio(p[0]))), enLeyenda: false }] : []),
+      refs: [{ y: 0.5, l: "Umbral 0,5 pp" }, { y: 0 }] };
+  } });
+
+def("tension", { slug: "vacantes-por-desocupado", nombre: "Vacantes por desocupado", sin: ["jolts", "vacantes", "tensión laboral"],
+  calc: "Vacantes (BLS, encuesta JOLTS) sobre desocupados (BLS, encuesta de hogares). La línea de 1 marca igual número de vacantes que de desocupados. JOLTS tiene baja tasa de respuesta y se revisa mucho: el cociente hereda ese ruido.",
+  ks: ["openings", "unemployed"],
+  f: () => {
+    const o = S("openings"), u = S("unemployed"); if (!o || !u) return null;
+    const r = join(o, u, (a, b) => a / b), v = last(r)[1];
+    const y19 = promEntre(r, 2019, 2019), p = promEntre(r, 2015, 2019), mx = maxEntre(r, 2021, 2023);
+    const refs = [{ y: 1, l: "1 vacante por desocupado" }];
+    if (y19 != null) refs.push({ y: y19, l: `2019: ${nf(y19, 2)}` }); if (p != null) refs.push({ y: p, l: `Promedio 2015-19: ${nf(p, 2)}` }); if (mx) refs.push({ y: mx[1], l: `Máximo ${fm(mx[0])}: ${nf(mx[1], 2)}` });
+    return { titulo: `${nf(v, 2)} vacantes por desocupado en ${fechaDe(r)}` + (y19 != null ? `; 2019: ${nf(y19, 2)}` : "") + (p != null ? `; promedio 2015-19: ${nf(p, 2)}` : "") + (mx ? `; máximo ${fm(mx[0])}: ${nf(mx[1], 2)}` : ""),
+      sub: "Vacantes (BLS, encuesta JOLTS) sobre desocupados (BLS, encuesta de hogares).", unidad: "", dec: 2,
+      series: [{ n: "Vacantes por desocupado", d: cut(r), c: 0, w: 2.6 }], refs };
+  } });
+
+def("rotacion", { slug: "contrataciones-renuncias-despidos", nombre: "Contrataciones, renuncias y despidos", sin: ["jolts", "hires", "quits", "layoffs", "renuncias", "despidos", "contrataciones", "rotación"],
+  calc: "Tasas de contrataciones, renuncias voluntarias y despidos, % del empleo por mes (BLS, JOLTS). Entre paréntesis, el promedio 2015-19. El título agrega hasta dónde hay que ir para encontrar un valor tan extremo, sin contar 2020.",
+  ks: ["hires", "quits", "layoffs"],
+  f: () => {
+    const h = S("hires"), q = S("quits"), l = S("layoffs"); if (!q) return null;
+    const sin20 = a => a.filter(p => p[0] < T(2020, 2) || p[0] >= T(2021));
+    const item = (a, n) => { const p = promEntre(a, 2015, 2019), e = extremoDesde(sin20(a), last(a)[1] < p); return { n, a, p, txt: `${n.toLowerCase()} ${nf(last(a)[1])}% (2015-19: ${nf(p)}%${e ? `; ${e.replace("mínimo", "el menor").replace("máximo", "el mayor")}` : ""})` }; };
+    const xs = [h && item(h, "Contrataciones"), item(q, "Renuncias"), l && item(l, "Despidos")].filter(Boolean);
+    const cs = { Contrataciones: 0, Renuncias: 2, Despidos: 1 };
+    return { titulo: `Tasas mensuales en ${fechaDe(q)}: ` + xs.map(x => x.txt).join(", "),
+      sub: "% del empleo por mes (BLS, encuesta JOLTS). Entre paréntesis en la leyenda, el promedio 2015-19.",
+      series: xs.map(x => ({ n: `${x.n} (2015-19: ${nf(x.p)}%)`, d: cut(x.a), c: cs[x.n], w: 2.2 })) };
+  } });
+
+def("epop", { slug: "empleo-25-54", nombre: "Empleo y participación 25-54 años", sin: ["epop", "participación", "prime age"],
+  calc: "Proporción de la población de 25 a 54 años con empleo y tasa de participación de ese grupo (BLS, encuesta de hogares), eje izquierdo. Eje derecho: tasa de participación de toda la población de 16 años y más, que incluye a los mayores de 55 y por eso baja con el envejecimiento.",
+  ks: ["epop_prime", "participation_prime", "participation"],
+  f: () => {
+    const e = S("epop_prime"), pp = S("participation_prime"), pt = S("participation"); if (!e) return null;
+    const v = last(e)[1], e19 = promEntre(e, 2019, 2019), mx = maxEntre(e, 2021, 2100), pt19 = pt ? promEntre(pt, 2019, 2019) : null;
+    const ss = [{ n: "Empleo 25-54", d: cut(e), c: 2, w: 2.8 }];
+    if (pp) ss.push({ n: "Participación 25-54", d: cut(pp), c: 0, w: 1.6 });
+    if (pt) ss.push({ n: "Participación total (eje derecho)", d: cut(pt), c: "gris", w: 1.6, der: true, u: "%" });
+    const refs = []; if (e19 != null) refs.push({ y: e19, l: `Empleo 25-54, 2019: ${nf(e19)}%` });
+    return { titulo: `Empleo 25-54 años ${nf(v)}% en ${fechaDe(e)} (2019: ${nf(e19)}%` + (mx && mx[1] > v ? `; máximo post-pandemia ${nf(mx[1])}% en ${fm(mx[0])}` : "") + ")" + (pp ? `; participación 25-54 ${nf(last(pp)[1])}%` : "") + (pt ? `; participación total ${nf(last(pt)[1])}% (2019: ${nf(pt19)}%)` : ""),
+      sub: "% de la población (BLS, encuesta de hogares). La participación total incluye a los mayores de 55, por eso baja con el envejecimiento.",
+      series: ss, refs };
+  } });
+
+def("salarioReal", { slug: "salario-real", nombre: "Salario horario y salario real", sin: ["salarios", "ahe", "salario real", "poder adquisitivo"],
+  calc: "Salario horario promedio del sector privado (BLS) y CPI general (BLS), variación interanual. Barras: salario real, la diferencia entre los dos, en puntos. El salario horario promedio cambia con la composición del empleo (si se pierden puestos de bajo salario, el promedio sube sin que nadie cobre más); el ECI no.",
+  ks: ["ahe", "cpi"],
+  f: () => {
+    const w = yoy(S("ahe")), c = yoy(S("cpi")); if (!w || !c) return null;
+    const r = join(w, c, (a, b) => a - b), v = last(r)[1], p = promEntre(w, 2015, 2019);
+    let n = 0; for (let i = r.length - 1; i >= 0 && Math.sign(r[i][1]) === Math.sign(v); i--) n++;
+    return { titulo: `Interanual en ${fechaDe(w)}: salario horario ${nf(last(w)[1])}% (2015-19: ${nf(p)}%), CPI ${nf(last(c)[1])}%; salario real ${sg(v)}%` + (n >= 3 ? `; ${v < 0 ? "cae" : "sube"} hace ${n} meses` : ""),
+      sub: "Salario horario promedio del sector privado (BLS) contra el CPI general. Cambia con la composición del empleo; el ECI (al lado) no.", dec: 1,
+      shock: [T(2020, 3), T(2021, 6)], shockVentana: [T(2020, 3), T(2021, 6)],
+      series: [{ n: "Salario real (pp)", d: cut(r), t: "bar", c: "gris", suave: true }, { n: "Salario horario", d: cut(w), c: 0, w: 2.8 }, { n: "CPI general", d: cut(c), c: 1, w: 1.6 }], refs: [{ y: 0 }] };
+  } });
+
+def("eci", { slug: "costo-laboral-eci", nombre: "Costo laboral: ECI y costo laboral unitario", sin: ["eci", "salarios", "costo laboral", "ulc", "costo laboral unitario"],
+  calc: "Índice de costo laboral, salarios del sector privado (BLS, trimestral), y costo laboral unitario de las empresas no agrícolas (BLS: remuneración por hora sobre productividad), variación interanual. El ECI mantiene fija la composición del empleo. Referencias calculadas: 2% más el crecimiento anual de la productividad en 5 años (la suba de salarios que, con esa productividad, deja el costo por unidad producida en 2%), y 2% para el costo laboral unitario.",
+  ks: ["eci", "ulc", "productivity"],
+  f: () => {
+    const e = yoy(S("eci"), 4), u = S("ulc") ? yoy(S("ulc"), 4) : null, pr = S("productivity"); if (!e) return null;
+    const p5 = pr && pr.length > 20 ? (Math.pow(last(pr)[1] / pr[pr.length - 21][1], 1 / 5) - 1) * 100 : null, ref = p5 != null ? 2 + p5 : null;
+    const pe = promEntre(e, 2015, 2019), pu = u ? promEntre(u, 2015, 2019) : null;
+    const ss = [{ n: "ECI salarios privados", d: cut(e), c: 0, w: 2.8 }];
+    if (u) ss.push({ n: "Costo laboral unitario", d: cut(u), c: 2, w: 1.8 });
+    const refs = [{ y: 2, l: "2%" }]; if (ref != null) refs.push({ y: ref, l: `2% + productividad a 5 años: ${nf(ref)}%` });
+    return { freq: "Q", titulo: `Interanual en ${fechaDe(e, "Q")}: ECI salarios ${nf(last(e)[1])}% (2% + productividad: ${nf(ref)}%; 2015-19: ${nf(pe)}%)` + (u ? `; costo laboral unitario ${nf(last(u)[1])}% (2015-19: ${nf(pu)}%)` : ""),
+      sub: "Índice de costo laboral, salarios del sector privado (BLS), y costo laboral unitario de las empresas no agrícolas (BLS). El ECI mantiene fija la composición del empleo.",
+      shock: [T(2020, 3), T(2021, 9)], shockVentana: [T(2020, 3), T(2021, 9)], series: ss, refs };
+  } });
+
 def("pedidos", { slug: "pedidos-iniciales", nombre: "Pedidos iniciales de desempleo", sin: ["claims", "initial claims", "seguro de desempleo"],
-  calc: "Pedidos iniciales semanales del seguro de desempleo (Dpto. de Trabajo), desestacionalizados, y su promedio de 4 semanas, en miles.",
+  calc: "Pedidos iniciales semanales del seguro de desempleo (Departamento de Trabajo), desestacionalizados, y su promedio de 4 semanas, en miles. Referencias: promedio 2019 y promedio 2015-19.",
   ks: ["claims"],
   f: () => {
     const c = escala(S("claims"), 1 / 1000); if (!c) return null;
-    const m4 = roll(c, 4), r = racha(m4, fw, "semanas");
-    return { freq: "W", titulo: `Pedidos iniciales de desempleo: ${nf(last(c)[1], 0)} mil en la semana, ${nf(last(m4)[1], 0)} mil en promedio de 4 semanas${r ? " (" + r + ")" : ""}`,
-      sub: `Dato semanal, semana al ${fw(last(c)[0])}. Es el dato de mayor frecuencia del mercado laboral.`,
-      unidad: "mil", dec: 0, banda: rangoNormal(m4), bandaTexto: "Rango normal 2000-19",
-      series: [{ n: "Semanal", d: cut(c), c: 1, fina: true }, { n: "Promedio 4 semanas", d: cut(m4), c: 1 }] };
+    const m4 = roll(c, 4), u52 = c.slice(-52).map(p => p[1]), y19 = promEntre(c, 2019, 2019), p = promEntre(c, 2015, 2019);
+    const refs = []; if (y19 != null) refs.push({ y: y19, l: `Promedio 2019: ${nf(y19, 0)} mil` }); if (p != null) refs.push({ y: p, l: `Promedio 2015-19: ${nf(p, 0)} mil` });
+    return { freq: "W", titulo: `Pedidos iniciales: ${nf(last(c)[1], 0)} mil en la semana al ${fw(last(c)[0])}, promedio 4 semanas ${nf(last(m4)[1], 0)} mil; rango de 52 semanas ${nf(Math.min(...u52), 0)}–${nf(Math.max(...u52), 0)} mil; promedio 2019: ${nf(y19, 0)} mil`,
+      sub: "Pedidos iniciales semanales del seguro de desempleo (Departamento de Trabajo), desestacionalizados, en miles.",
+      unidad: "mil", dec: 0, series: [{ n: "Semanal", d: cut(c), c: 1, fina: true }, { n: "Promedio 4 semanas", d: cut(m4), c: 1, w: 2.6 }], refs };
   } });
-def("continuos", { slug: "pedidos-continuos", nombre: "Pedidos continuos de desempleo", sin: ["continuing claims"],
-  calc: "Personas que siguen cobrando el seguro de desempleo (Dpto. de Trabajo), semanal, en millones.",
+
+def("continuos", { slug: "pedidos-continuos", nombre: "Pedidos continuos de desempleo", sin: ["continuing claims", "seguro de desempleo"],
+  calc: "Personas que siguen cobrando el seguro de desempleo (Departamento de Trabajo), semanal, desestacionalizado, en millones, y su promedio de 4 semanas. Si quien pierde el empleo tarda más en conseguir otro, sube aunque los despidos no aumenten. Referencias: promedio 2019 y máximo desde 2022.",
   ks: ["cont_claims"],
   f: () => {
     const c = escala(S("cont_claims"), 1 / 1e6); if (!c) return null;
-    const m4 = roll(c, 4);
-    return { freq: "W", titulo: `Pedidos continuos en ${nf(last(c)[1], 2)} millones`,
-      sub: `Semana al ${fw(last(c)[0])}. Mide cuánto tarda en reubicarse quien pierde el empleo.`,
-      unidad: "M", dec: 2, banda: rangoNormal(m4), series: [{ n: "Semanal", d: cut(c), c: 0, fina: true }, { n: "Promedio 4 semanas", d: cut(m4), c: 0 }] };
+    const m4 = roll(c, 4), y19 = promEntre(c, 2019, 2019), mx = maxEntre(c, 2022, 2100);
+    const refs = []; if (y19 != null) refs.push({ y: y19, l: `Promedio 2019: ${nf(y19, 2)} M` }); if (mx && mx[0] < last(c)[0]) refs.push({ y: mx[1], l: `Máximo ${fw(mx[0])}: ${nf(mx[1], 2)} M` });
+    return { freq: "W", titulo: `Pedidos continuos: ${nf(last(c)[1], 2)} millones en la semana al ${fw(last(c)[0])}` + (mx && mx[0] < last(c)[0] ? `; máximo desde 2022: ${nf(mx[1], 2)} millones (${fm(mx[0])})` : "") + `; promedio 2019: ${nf(y19, 2)} millones`,
+      sub: "Personas que siguen cobrando el seguro de desempleo (Departamento de Trabajo), semanal, desestacionalizado, en millones.",
+      unidad: "M", dec: 2, series: [{ n: "Semanal", d: cut(c), c: 0, fina: true }, { n: "Promedio 4 semanas", d: cut(m4), c: 0, w: 2.6 }], refs };
   } });
 
 // ═════════════════════════ Tasas ═════════════════════════

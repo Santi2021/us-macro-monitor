@@ -403,6 +403,7 @@ function spExplora(EXP, OP) {
 }
 // ───────── Metodología ─────────
 const CHANGELOG = [
+  ["5.0", "2026-10-01", ["Empleo revisado gráfico por gráfico: nóminas con promedios de 3 y 12 meses y su referencia 2015-19; quién crea el empleo con salud y gobierno por separado; desempleo contra la tasa natural de la CBO; regla de Sahm con sus cruces históricos, incluidos los que no fueron recesión; vacantes, rotación, empleo 25-54 y pedidos de desempleo contra referencias medibles; salario real en barras; ECI y costo laboral unitario contra 2% más la productividad."]],
   ["4.9", "2026-10-01", ["Precios revisado gráfico por gráfico: el core a 1, 3, 6 y 12 meses; la brecha entre el core y la media recortada; rubros del core con su peso y su aporte; difusión ponderada por gasto; bienes core del PCE; precios pagados de las fábricas junto al PPI (coinciden, no anticipan); PPI contra CPI; importación sin combustibles y arancel efectivo; brecha CPI-PCE; core sin vivienda; del core al general (aporte de alimentos y energía); expectativas por horizonte, con la meta de la Fed llevada a la escala del CPI. 21 series nuevas, 17 de ellas del gasto por rubro de BEA."]],
   ["4.8", "2026-10-01", ["Todos los gráficos obedecen al período elegido; el diagnóstico del título se calcula sobre toda la historia y las referencias largas (promedios, máximos) quedan siempre dentro del eje.",
     "Títulos sólo con hechos medibles: el dato y su comparación contra la historia, una referencia fija u otra serie, sin adjetivos ni causas.",

@@ -217,6 +217,7 @@ BLS = {
     "ahe":          ("CES0500000003", "CES0500000003", "Salario horario promedio (privado)", "US$"),
     "epop_prime":   ("LNS12300060", "LNS12300060", "Tasa de empleo 25-54 años", "%"),
     "participation":("LNS11300000", "CIVPART", "Tasa de participación", "%"),
+    "participation_prime": ("LNS11300060", "LNS11300060", "Tasa de participación 25-54 años", "%"),
     "openings":     ("JTS000000000000000JOL", "JTSJOL", "Vacantes (JOLTS)", "miles"),
     "quits":        ("JTS000000000000000QUR", "JTSQUR", "Tasa de renuncias (JOLTS)", "%"),
     "cpi":          ("CUSR0000SA0", "CPIAUCSL", "CPI general", "índice"),
