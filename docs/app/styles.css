@@ -209,6 +209,7 @@ h2.bloque { margin: 26px 0 12px; font-size: 13px; font-weight: 600; text-transfo
 .leyenda { display: flex; flex-wrap: nowrap; gap: 4px 14px; margin-top: 10px; font-size: 13px; color: var(--ink-2); min-height: 20px; align-items: flex-start; }
 .leyenda .items { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; flex: 1; min-width: 0; }
 .leyenda .items:empty { display: none; }
+.leyenda .fija.desde { margin-left: auto; font-size: 12px; font-style: italic; }
 :root[data-letra="grande"] .leyenda, :root[data-letra="grande"] .leyenda button { font-size: 14.5px; }
 .leyenda:empty { display: none; }
 .leyenda .fecha { font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; min-width: 52px; flex: none; padding: 1px 0; }

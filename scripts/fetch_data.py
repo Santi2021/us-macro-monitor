@@ -94,6 +94,11 @@ FRED = {
     "pce_dur":         ("PCEDGC96", "Consumo real: durables", "US$ miles de M de 2017", "M", "BEA"),
     "pce_ndur":        ("PCENDC96", "Consumo real: no durables", "US$ miles de M de 2017", "M", "BEA"),
     "pce_serv":        ("PCESC96", "Consumo real: servicios", "US$ miles de M de 2017", "M", "BEA"),
+    # índices de cantidad (tabla 2.8.3 de BEA): mismo consumo real que las series en dólares encadenados, pero desde 1959
+    "qi_serv":         ("DSERRA3M086SBEA", "Consumo real: servicios (índice de cantidad)", "índice 2017=100", "M", "BEA"),
+    "qi_ndur":         ("DNDGRA3M086SBEA", "Consumo real: no durables (índice de cantidad)", "índice 2017=100", "M", "BEA"),
+    "qi_dur":          ("DDURRA3M086SBEA", "Consumo real: durables (índice de cantidad)", "índice 2017=100", "M", "BEA"),
+    "qi_pce":          ("DPCERA3M086SBEA", "Consumo real total (índice de cantidad)", "índice 2017=100", "M", "BEA"),
     "comp":            ("W209RC1", "Remuneración a asalariados", "US$ miles de M", "M", "BEA"),
     "transfers":       ("PCTR", "Transferencias del gobierno", "US$ miles de M", "M", "BEA"),
     "sentiment":       ("UMCSENT", "Confianza del consumidor", "índice", "M", "U. de Michigan"),
@@ -423,6 +428,14 @@ def empaquetar(s, nombre, unidad, freq, fuente, codigo, org, grupo=None, release
             "rel": release, "d": [[d.strftime("%Y-%m-%d"), round(float(v), 4)] for d, v in s.items()]}
 
 
+# Series que la fuente rehízo con otra base o metodología: el tramo anterior se toma de la serie vieja y se
+# reescala por el cociente promedio de los primeros 12 datos en común (las variaciones del tramo viejo no cambian).
+EMPALMES = [
+    ("dollar", "TWEXBMTH", None, "índice broad anterior de la Fed (1973-2019)"),
+    ("dollar_real", "TWEXBPA", None, "índice broad real anterior de la Fed (1973-2019)"),
+    ("debt_service", "TDSP", "2024-01-02", "serie de la Fed con la metodología anterior (ALFRED, versión de ene-2024)"),
+]
+
 EXTRA = {}   # datos que no son series (el recorrido del GDPNow)
 
 
@@ -447,6 +460,30 @@ def bajar(anterior):
                 releases[rel[0]] = rel[1]
         except Exception as e:
             fallas[k] = f"no se pudo bajar ({str(e)[:80]})"; print(f"  [aviso] {k} ({sid}): {e}")
+
+    print("Empalmes con series anteriores…")
+    for k, sid_viejo, vintage, nota in EMPALMES:
+        if k not in data:
+            continue
+        try:
+            p = dict(series_id=sid_viejo, api_key=fred_key, file_type="json", observation_start=f"{DESDE}-01-01")
+            if vintage:
+                p.update(realtime_start=vintage, realtime_end=vintage)
+            elif data[k]["f"] == "M":
+                p.update(frequency="m", aggregation_method="avg")
+            obs = get("https://api.stlouisfed.org/fred/series/observations", **p)["observations"]
+            viejo = {o["date"]: float(o["value"]) for o in obs if o["value"] not in (".", "")}
+            nuevo = data[k]["d"]
+            comunes = [(viejo[f], v) for f, v in nuevo if f in viejo][:12]
+            antes = sorted(f for f in viejo if f < nuevo[0][0])
+            if len(comunes) < 4 or not antes:
+                print(f"  [empalme] {k}: sin tramo anterior útil en {sid_viejo}"); continue
+            r = sum(v / o for o, v in comunes) / len(comunes)
+            data[k]["d"] = [[f, round(viejo[f] * r, 4)] for f in antes] + nuevo
+            data[k]["emp"] = {"id": sid_viejo, "hasta": nuevo[0][0], "factor": round(r, 4), "nota": nota}
+            print(f"  [empalme] {k}: {antes[0]} a {antes[-1]} desde {sid_viejo} (factor {r:.4f})")
+        except Exception as e:
+            print(f"  [aviso] empalme {k} ({sid_viejo}): {e}")
 
     print("Primeras estimaciones (ALFRED)…")
     for k, fn, nombre, unidad, freq, org, sid in [

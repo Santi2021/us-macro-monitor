@@ -328,12 +328,14 @@ function desvioTendencia(a) {
   return { d: a.map(p => [p[0], (p[1] / Math.exp(c + b * p[0] / DIA) - 1) * 100]), ritmo: (Math.exp(b * 365.25) - 1) * 100 };
 }
 def("consumoTipo", { slug: "consumo-por-tipo", nombre: "Consumo real por tipo de gasto contra su tendencia", sin: ["durables", "servicios", "bienes", "tendencia", "prepandemia"],
-  calc: "Consumo real de servicios, bienes no durables y bienes durables (BEA), como desvío porcentual contra su propia tendencia 2015-19: una recta en logaritmos ajustada a esos cinco años (el último período sin pandemia) y extendida hasta hoy. Cada tipo se compara contra su propio ritmo porque crecen a velocidades distintas: los durables, por ejemplo, suben más rápido en términos reales porque la tecnología se abarata. En gris, el consumo total. Cero es estar en la tendencia.",
-  ks: ["pce_serv", "pce_ndur", "pce_dur", "pce_real"],
+  calc: "Consumo real de servicios, bienes no durables y bienes durables (BEA, índices de cantidad de la tabla 2.8.3, mensuales desde 1959), como desvío porcentual contra su propia tendencia 2015-19: una recta en logaritmos ajustada a esos cinco años (el último período sin pandemia) y extendida hasta hoy. Cada tipo se compara contra su propio ritmo porque crecen a velocidades distintas: los durables, por ejemplo, suben más rápido en términos reales porque la tecnología se abarata. En gris, el consumo total. Cero es estar en la tendencia.",
+  ks: ["qi_serv", "qi_ndur", "qi_dur", "qi_pce"],
   f: () => {
-    const ks = [["pce_serv", "Servicios", 0], ["pce_ndur", "No durables", 1], ["pce_dur", "Durables", 2]];
-    const ds = ks.map(([k, n, c]) => ({ n, c, t: desvioTendencia(S(k)) })); if (ds.some(x => !x.t)) return null;
-    const tot = desvioTendencia(S("pce_real"));
+    // índices de cantidad de BEA (desde 1959); si todavía no están, las series en dólares encadenados (desde 2007)
+    const q = (k, alt) => S(k) || S(alt);
+    const ks = [["qi_serv", "pce_serv", "Servicios", 0], ["qi_ndur", "pce_ndur", "No durables", 1], ["qi_dur", "pce_dur", "Durables", 2]];
+    const ds = ks.map(([k, alt, n, c]) => ({ n, c, t: desvioTendencia(q(k, alt)) })); if (ds.some(x => !x.t)) return null;
+    const tot = desvioTendencia(q("qi_pce", "pce_real"));
     const ss = ds.map(x => ({ n: `${x.n} (tendencia ${nf(x.t.ritmo)}% anual)`, d: cut(x.t.d), c: x.c, w: 2.4 }));
     if (tot) ss.push({ n: "Consumo total", ley: "Total", d: cut(tot.d), c: "gris", w: 1.4, punteada: true });
     const v = i => sg(last(ds[i].t.d)[1]);
@@ -473,7 +475,7 @@ def("riqueza", { slug: "patrimonio-de-los-hogares", nombre: "Patrimonio de los h
   } });
 
 def("servicioDeuda", { slug: "carga-de-la-deuda", nombre: "Carga de la deuda de los hogares", sin: ["debt service", "deuda de los hogares", "carga financiera", "cuotas"],
-  calc: "Pagos de capital e intereses de hipotecas y crédito al consumo como % del ingreso disponible (Fed). La Fed rehízo la serie con una metodología nueva que arranca en 2005. Referencias: máximo de 2006-08 y promedio 2010-19.",
+  calc: "Pagos de capital e intereses de hipotecas y crédito al consumo como % del ingreso disponible (Fed). La Fed rehízo la serie con una metodología nueva que arranca en 2005; antes de esa fecha se empalma la serie con la metodología anterior (desde 1980), reescalada por el cociente promedio de los primeros 12 trimestres en común. Referencias: máximo de 2006-08 y promedio 2010-19.",
   ks: ["debt_service"],
   f: () => {
     const s = S("debt_service"); if (!s) return null;
@@ -1042,7 +1044,7 @@ def("senda", { sinPeriodo: true, slug: "que-descuenta-el-mercado", nombre: "Curv
     const h1 = ffHace ? (val("1A", hace) - ffHace[1]) * 100 : null, h2 = ffHace ? (val("2A", hace) - ffHace[1]) * 100 : null;
     const ss = [{ n: `Hoy (${fdia(P(ult))})`, ley: "Hoy", d: hoy, c: 0, w: 3, dec: 2 }, { n: "Hace un mes", d: previo, c: 1, w: 1.8, punteada: true, dec: 2 }];
     if (sep) ss.push({ n: "Proyección de la Fed (fin de año)", t: "punto", c: 0, d: sep, dec: 2 });
-    return { freq: "D", eventos: false, recesiones: false, sinRecorte: true, sinFecha: true, fechaLey: fdia(P(ult)),
+    return { freq: "D", eventos: false, recesiones: false, sinRecorte: true, sinFecha: true, sinAvisoInicio: true, fechaLey: fdia(P(ult)),
       titulo: `Al ${fdia(P(ult))}: letra a 1 año ${nf(val("1A", ult), 2)}% y bono a 2 años ${nf(val("2A", ult), 2)}%, contra la Fed en ${nf(ff, 2)}% (${sg(d1, 0)} y ${sg(d2, 0)} pb)` + (h1 != null ? `; hace un mes: ${sg(h1, 0)} y ${sg(h2, 0)} pb` : "") + (sep ? `; la Fed proyecta ${sep.map(p => `${nf(p[1], 2)}% a fin de ${anio(p[0])}`).join(" y ")}` : ""),
       sub: "Rendimiento de letras y bonos cortos del Tesoro, ubicados en la fecha en que vence cada plazo, contra la tasa efectiva de fondos federales. Incluye la diferencia estructural entre letras y fondos federales, y prima por plazo.",
       fuenteTxt: "Fed y Tesoro de EE.UU. vía FRED", dec: 2, series: ss };
@@ -1210,7 +1212,7 @@ def("cuentaCorriente", { slug: "cuenta-corriente", nombre: "Cuenta corriente / P
   } });
 
 def("dolar", { slug: "dolar", nombre: "Dólar multilateral, nominal y real", sin: ["dxy", "tipo de cambio", "usd", "dólar amplio", "broad dollar", "multilateral", "dólar real"],
-  calc: "Índice del dólar contra las monedas de los 26 principales socios comerciales, ponderadas por comercio (Fed, índice broad), nominal (datos diarios con períodos de hasta 5 años) y real (ajustado por la inflación relativa con cada socio, mensual); los dos con base ene-2006 = 100. A diferencia del DXY, incluye China, México y Canadá. Referencias: máximo de la serie nominal y promedio 2015-19.",
+  calc: "Índice del dólar contra las monedas de los 26 principales socios comerciales, ponderadas por comercio (Fed, índice broad), nominal (datos diarios con períodos de hasta 5 años) y real (ajustado por la inflación relativa con cada socio, mensual); los dos con base ene-2006 = 100. Antes de 2006 se empalma el índice broad anterior de la Fed (1973-2019, nominal y real), reescalado por el cociente promedio de los primeros 12 meses en común: las variaciones de ese tramo son las originales. A diferencia del DXY, incluye China, México y Canadá. Referencias: máximo de la serie nominal y promedio 2015-19.",
   ks: ["dollar", "dollar_real"],
   f: () => {
     const d = SD("dollar"); if (!d) return null;

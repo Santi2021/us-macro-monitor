@@ -107,7 +107,7 @@ export function tarjeta(id, opts = {}) {
     const prev = ST.rango; ST.rango = { modo: r, desde: null, hasta: null }; calcularRango();
     try { return fn(); } finally { ST.rango = prev; calcularRango(); }
   };
-  const construir = () => opts.spFijo ? opts.spFijo() : conRango(rangoLocal, () => armar(id, o));
+  const construir = () => opts.spFijo ? opts.spFijo() : conRango(rangoLocal, () => { const x = armar(id, o); if (x) { x._T0 = ST.T0; x._modo = ST.rango.modo; } return x; });
   sp = construir();
   if (!sp || (sp.tipo !== "heat" && !sp.series.some(s => s.d && s.d.length))) {
     art.innerHTML = `<h3>Sin datos para este gráfico</h3><p class="sub">Falta alguna de sus series en el período elegido o en la última actualización.</p>`;

@@ -403,6 +403,7 @@ function spExplora(EXP, OP) {
 }
 // ───────── Metodología ─────────
 const CHANGELOG = [
+  ["5.8", "2026-10-01", ["Cuando un gráfico no llega al comienzo del período elegido, la leyenda lo dice (\"Serie desde 2007\"). Más historia: consumo por tipo desde 1959 (índices de cantidad de BEA), dólar multilateral nominal y real desde 1973 y carga de la deuda de los hogares desde 1980, empalmados con las series anteriores de la Fed. Selector de período con rótulos homogéneos y Fechas como botón aparte."]],
   ["5.7", "2026-10-01", ["Leyendas en una línea: nombre corto y último dato. Las referencias (promedios, máximos, metas) se rotulan sobre su propia línea; el eje derecho se marca con \"eje der.\"; los diferenciales se expresan en pp. Al ampliar, una segunda línea gris suma el detalle (tendencias, años de cada promedio, fuentes) y la recesión NBER. Los gráficos de ciclos y curvas ya no muestran un selector de período que no los afecta."]],
   ["5.6", "2026-10-01", ["Tarjetas más limpias: cada gráfico muestra sólo su nombre; el dato está en la leyenda. Al ampliar aparecen el contexto completo (referencias, máximos, fechas), la descripción y un selector de período propio del gráfico, que no cambia el período del resto de la web. Las imágenes descargadas llevan el nombre como título y el contexto debajo."]],
   ["5.5", "2026-10-01", ["Cada gráfico tiene un \"?\" junto al título: en dos frases, por qué importa y cómo leerlo."]],

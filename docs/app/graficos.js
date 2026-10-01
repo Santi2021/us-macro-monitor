@@ -310,6 +310,15 @@ export function leyenda(sp, getChart, redibujar, grande = false) {
     items.appendChild(b);
     if (conValor && !s.sinValor) valores.push([b.querySelector("b"), s]);
   });
+  // si la serie no llega al comienzo del período elegido, se avisa (en "Todo" no: ahí cada serie arranca donde puede)
+  {
+    const v0 = sp.tipo ? [] : sp.series.filter(s => s.d.length && s.t !== "punto" && s.t !== "nota");
+    const ini = v0.length ? Math.min(...v0.map(s => s.d[0][0])) : null, T0 = sp._T0 ?? ST.T0, modo = sp._modo ?? ST.rango.modo;
+    if (ini != null && modo !== "todo" && !sp.sinAvisoInicio && ini - T0 > 200 * DIA_MS) {
+      const d = new Date(ini), txt = d.getUTCMonth() === 0 ? String(d.getUTCFullYear()) : `${MES[d.getUTCMonth()]}-${String(d.getUTCFullYear()).slice(2)}`;
+      items.insertAdjacentHTML("beforeend", `<span class="fija desde" title="La serie no tiene datos antes de esta fecha">Serie desde ${txt}</span>`);
+    }
+  }
   // las referencias se rotulan sobre su propia línea; la banda no tiene rótulo en el gráfico, así que queda acá
   if (sp.banda) items.insertAdjacentHTML("beforeend", `<span class="fija"><i class="sw banda"></i>${esc(sp.bandaTexto || "Rango normal 2000-19")}</span>`);
   const vis = sp.tipo ? [] : sp.series.filter(s => s.d.length && s.t !== "punto");
