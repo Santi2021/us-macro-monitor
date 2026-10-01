@@ -401,13 +401,23 @@ def("motores", { slug: "fuentes-del-ingreso", nombre: "Fuentes del ingreso real"
     const nominal = t => (mdn.get(t) / mdn.get(t12(t)) - 1) * 100;
     const series = comps.map(x => ({ n: x.n, t: "bar", c: x.c, d: ts.map(t => contrib(x, t)) }));
     series.push({ n: "Inflación", t: "bar", c: "gris", d: ts.map(t => mr.get(t) - nominal(t)) });
-    series.push({ n: "Ingreso disponible real", t: "line", c: "ink", w: 2.2, etiquetas: true, d: ts.map(t => mr.get(t)) });
+    series.push({ n: "Ingreso disponible real", t: "line", c: "ink", w: 2.2, d: ts.map(t => mr.get(t)) });
+    // la base de los cheques de 2020-21 deja interanuales de ±20 pp hasta mediados de 2022: el eje se recorta a lo demás
+    const rango = i => { const b = series.filter(x => x.t === "bar").map(x => x.d[i]); return [b.filter(v => v < 0).reduce((a, v) => a + v, 0), b.filter(v => v > 0).reduce((a, v) => a + v, 0), series[series.length - 1].d[i]]; };
+    const idx = ts.map((t, i) => i), normal = idx.filter(i => ts[i] > T(2022, 6) || ts[i] < T(2020, 3));
+    let yMin, yMax, recorte = "";
+    if (normal.length && normal.length < ts.length) {
+      const vs = normal.flatMap(rango), todos = idx.flatMap(rango), lo = Math.min(...vs), hi = Math.max(...vs), r = hi - lo;
+      if (Math.min(...todos) < lo - 0.4 * r) yMin = Math.floor((lo - 0.1 * r) / 2) * 2;
+      if (Math.max(...todos) > hi + 0.4 * r) yMax = Math.ceil((hi + 0.1 * r) / 2) * 2;
+      if (yMin != null || yMax != null) recorte = " Eje recortado para que la base de la pandemia no aplaste la escala.";
+    }
     const u = ts.length - 1, val = n => series.find(s => s.n === n).d[u];
     const otros = val("Otros ingresos");
     return { tipo: "cat", freq: "M", recesiones: false,
       titulo: `Ingreso disponible real ${sg(mr.get(ts[u]))}% interanual en ${fm(ts[u])}: salarios ${sg(val("Salarios"))} pp, transferencias ${sg(val("Transferencias"))} pp, otros ingresos ${sg(otros)} pp, impuestos ${sg(val("Impuestos y aportes"))} pp, inflación ${sg(val("Inflación"))} pp`,
-      sub: "Aporte de cada fuente al crecimiento interanual del ingreso disponible real, en puntos." + (trim ? " Último mes de cada trimestre." : ""),
-      unidadLinea: "%", cats: ts.map(fm), series };
+      sub: "Aporte de cada fuente al crecimiento interanual del ingreso disponible real, en puntos." + (trim ? " Último mes de cada trimestre." : "") + recorte,
+      unidadLinea: "%", sinPuntos: true, yMin, yMax, cats: ts.map(fm), series };
   } });
 
 def("ahorro", { slug: "tasa-de-ahorro", nombre: "Tasa de ahorro", sin: ["saving rate", "ahorro"], historia: true,

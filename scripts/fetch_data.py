@@ -108,7 +108,7 @@ FRED = {
     "r_materiales":    ("RSBMGESD", "Ventas minoristas: materiales de construcción y jardín", "US$ millones", "M", "Census"),
     "r_restaurantes":  ("RSFSDP", "Ventas minoristas: restaurantes y bares", "US$ millones", "M", "Census"),
     "auto_tasa":       ("RIFLPBCIANM60NM", "Tasa de préstamos bancarios para auto nuevo, 60 meses", "%", "M", "Fed"),
-    "credit_revol":    ("REVOLSL", "Crédito al consumo rotativo (tarjetas)", "US$ miles de M", "M", "Fed"),
+    "credit_revol":    ("REVOLSL", "Crédito al consumo rotativo (tarjetas)", "US$ millones", "M", "Fed"),
     "pi_prop":         ("A041RC1", "Ingreso de cuentapropistas", "US$ miles de M", "M", "BEA"),
     "pi_rent":         ("A048RC1", "Ingreso por alquileres de personas", "US$ miles de M", "M", "BEA"),
     "pi_int":          ("PII", "Ingreso por intereses de personas", "US$ miles de M", "M", "BEA"),

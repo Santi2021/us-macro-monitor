@@ -402,6 +402,10 @@ function spExplora(EXP, OP) {
 }
 // ───────── Metodología ─────────
 const CHANGELOG = [
+  ["4.8", "2026-10-01", ["Todos los gráficos obedecen al período elegido; el diagnóstico del título se calcula sobre toda la historia y las referencias largas (promedios, máximos) quedan siempre dentro del eje.",
+    "Títulos sólo con hechos medibles: el dato y su comparación contra la historia, una referencia fija u otra serie, sin adjetivos ni causas.",
+    "GDPNow vuelve a barras contra el PBI publicado, con el movimiento del último mes y el dato que más lo movió en el título.",
+    "Consumidor revisado gráfico por gráfico: ventas del grupo de control a precios constantes; consumo por tipo contra su tendencia 2015-19; autos con la tasa de los préstamos; confianza contra consumo real; ingreso contra consumo con la brecha; fuentes del ingreso real; ahorro, crédito sobre ingreso, patrimonio, carga de la deuda y morosidad con referencias históricas. 12 series nuevas."]],
   ["4.7", "2026-10-01", ["Actividad revisada gráfico por gráfico: contribuciones con inversión fija e inventarios separados y tendencia de 4 trimestres; GDPNow con su recorrido en el trimestre y el dato que lo movió; demanda privada con momento y tendencia; brecha del producto y del desempleo desde 2000; productividad contra el boom 1995-2004; encuestas con nuevos pedidos; industria manufacturera contra su máximo de 2007 y uso de la capacidad; órdenes y envíos de capital reales; vivienda con permisos por tipo y stock sin vender; margen de las empresas desde 1960.",
     "Nuevo en Precios: precios que pagan las fábricas. PBI vs GDI pasa a Ciclo, junto a las revisiones."]],
   ["4.6", "2026-10-01", ["Títulos y subtítulos más cortos: la explicación larga pasa a la ficha de cada gráfico.",
