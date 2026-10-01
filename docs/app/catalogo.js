@@ -1156,71 +1156,98 @@ def("hipotecaria", { slug: "spread-hipotecario", nombre: "Tasa hipotecaria y spr
       refs: pr != null ? [{ y: pr, l: `Spread promedio 1990-2019: ${nf(pr, 2)} pp` }] : [] };
   } });
 
-// ═════════════════════════ Externo ═════════════════════════ ═════════════════════════
-def("balanza", { slug: "balanza-comercial", nombre: "Balanza comercial", sin: ["comercio exterior", "déficit comercial", "importaciones", "exportaciones", "aranceles"], ops: [ESCALA_PBI],
-  calc: "Balanza de bienes y servicios (BEA y Census), mensual. En % del PBI: saldo mensual anualizado (× 12) sobre el PBI nominal del trimestre.",
-  ks: ["trade_balance", "gdp_nom"],
+// ═════════════════════════ Externo ═════════════════════════
+def("balanza", { slug: "balanza-comercial", nombre: "Balanza comercial: bienes y servicios", sin: ["comercio exterior", "déficit comercial", "importaciones", "exportaciones", "aranceles", "bienes", "servicios"], ops: [ESCALA_PBI],
+  calc: "Balanza de bienes y de servicios (BEA y Census), base balanza de pagos, mensual. Barras apiladas: bienes (en general negativa) y servicios (en general positiva); línea: el saldo total y su promedio de 3 meses. En % del PBI: saldo mensual anualizado (× 12) sobre el PBI nominal del trimestre. Referencias en el título: promedio de 12 meses, promedio de 2019 y el récord de la serie.",
+  ks: ["trade_balance", "trade_goods", "trade_services", "gdp_nom"],
   f: o => {
     const b0 = S("trade_balance"); if (!b0) return null;
     const pbi = o.escala === "pbi";
-    const b = pbi ? joinQ(b0, S("gdp_nom"), (x, g) => x * 12 / 1000 / g * 100) : escala(b0, 1 / 1000); if (!b) return null;
-    const s = cut(b), m3 = cut(roll(b, 3));
-    const v = last(s)[1], m12 = s.slice(-13, -1).reduce((x, y) => x + y[1], 0) / Math.min(12, s.length - 1);
-    return { titulo: pbi ? `Déficit comercial de ${nf(-v, 1)}% del PBI en ${fechaDe(s)}, contra ${nf(-m12, 1)}% de promedio en 12 meses`
-        : `Déficit comercial de US$ ${nf(-v, 1)} mil M en ${fechaDe(s)}, contra ${nf(-m12, 1)} de promedio en 12 meses`,
-      sub: pbi ? "Saldo mensual anualizado como % del PBI nominal: permite comparar a lo largo del tiempo." : "Balanza de bienes y servicios, en miles de millones de US$ por mes.",
-      unidad: pbi ? "%" : "mil M", dec: 1, decEje: pbi ? 1 : 0, cero: true, eventos: false, sinRecorte: true,
-      series: [{ n: "Balanza del mes", d: s, t: "bar", c: 1 }, { n: "Promedio 3 meses", d: m3, c: 0, w: 2.2 }], refs: [{ y: 0 }] };
+    const conv = a => a ? (pbi ? joinQ(a, S("gdp_nom"), (x, g) => x * 12 / 1000 / g * 100) : escala(a, 1 / 1000)) : null;
+    const b = conv(b0), g = conv(S("trade_goods")), sv = conv(S("trade_services")); if (!b) return null;
+    const v = last(b)[1], m12 = b.slice(-13, -1).reduce((x, y) => x + y[1], 0) / 12, y19 = promEntre(b, 2019, 2019), rec = b.reduce((m, p) => p[1] < m[1] ? p : m);
+    const u = pbi ? "% del PBI" : "mil M", fmt = x => pbi ? `${nf(x, 1)}%` : nf(x, 1);
+    const ss = [];
+    if (g && sv) ss.push({ n: "Bienes", d: cut(g), t: "bar", c: 1, stack: "b", suave: true }, { n: "Servicios", d: cut(sv), t: "bar", c: 2, stack: "b", suave: true });
+    ss.push({ n: "Saldo total", d: cut(b), c: "ink", w: 1.4 }, { n: "Saldo, promedio 3 meses", d: cut(roll(b, 3)), c: 0, w: 2.6 });
+    return { titulo: `Déficit comercial ${pbi ? "" : "US$ "}${fmt(-v)}${pbi ? "" : " mil M"} en ${fechaDe(b)}` + (g && sv ? `: bienes ${fmt(last(g)[1])}, servicios ${sg(last(sv)[1], 1)}` : "") + `; promedio 12 meses ${fmt(-m12)}; 2019: ${fmt(-y19)}; récord ${fm(rec[0])}: ${fmt(-rec[1])}`,
+      sub: pbi ? "Saldo mensual anualizado como % del PBI nominal, bienes y servicios (BEA y Census)." : "Balanza de bienes y servicios (BEA y Census), base balanza de pagos, miles de millones de US$ por mes.",
+      unidad: pbi ? "%" : "mil M", dec: 1, decEje: pbi ? 1 : 0, cero: true, eventos: false, sinRecorte: true, series: ss, refs: [{ y: 0 }] };
   } });
-def("expoImpo", { slug: "exportaciones-e-importaciones", nombre: "Exportaciones e importaciones", sin: ["exportaciones", "importaciones", "comercio", "aranceles", "adelantamiento"], ops: [VISTA_M],
-  calc: "Exportaciones e importaciones de bienes y servicios (BEA y Census), base balanza de pagos, nominales y desestacionalizadas.",
-  ks: ["exports", "imports"],
+
+const REAL_EXT = { id: "real", nombre: "Precios", valores: [["n", "Nominal"], ["r", "Real (aprox.)"]] };
+def("expoImpo", { slug: "exportaciones-e-importaciones", nombre: "Exportaciones e importaciones", sin: ["exportaciones", "importaciones", "comercio", "aranceles", "adelantamiento"], ops: [REAL_EXT],
+  calc: "Exportaciones e importaciones de bienes y servicios (BEA y Census), base balanza de pagos, desestacionalizadas, en miles de millones de US$ por mes: el dato del mes (fino) y su promedio de 3 meses (grueso). Se muestran en nivel porque el adelantamiento de importaciones de principios de 2025 distorsiona las variaciones interanuales un año después. La vista real (aproximada) las deflacta por los índices de precios de exportación e importación del BLS, que cubren bienes y no servicios. Si las importaciones crecen más que las exportaciones, por contabilidad restan en el PBI.",
+  ks: ["exports", "imports", "export_prices", "import_prices"],
   f: o => {
-    const e = S("exports"), i = S("imports"); if (!e || !i) return null;
-    const ve = vista(e, o.vista), vi = vista(i, o.vista);
-    return { titulo: `Exportaciones ${sg(last(ve)[1], decV(o))}% e importaciones ${sg(last(vi)[1], decV(o))}% ${VT[o.vista]} en ${fechaDe(ve)}`,
-      sub: "Nominales. Las compras adelantadas a una suba de aranceles restan en exportaciones netas y suman en inventarios.",
-      dec: decV(o), series: seriesVista([["Exportaciones", e, 0], ["Importaciones", i, 1]], o), refs: [{ y: 0 }] };
+    const real = o.real === "r";
+    const e0 = escala(S("exports"), 1 / 1000), i0 = escala(S("imports"), 1 / 1000); if (!e0 || !i0) return null;
+    const e = real ? deflactar(e0, S("export_prices")) : e0, i = real ? deflactar(i0, S("import_prices")) : i0; if (!e || !i) return null;
+    const ye = yoy(e0), yi = yoy(i0), pe = yoy(S("export_prices")), pi = yoy(S("import_prices"));
+    const fe = fechaDe(e0);
+    return { titulo: `${fe.charAt(0).toUpperCase() + fe.slice(1)}: exportaciones US$ ${nf(last(e0)[1], 1)} mil M e importaciones ${nf(last(i0)[1], 1)} mil M por mes (promedio 3 meses: ${nf(last(roll(e0, 3))[1], 1)} y ${nf(last(roll(i0, 3))[1], 1)}); interanual nominal ${sg(last(ye)[1])}% y ${sg(last(yi)[1])}%` + (pe && pi ? `; precios de exportación ${sg(last(pe)[1])}% e importación ${sg(last(pi)[1])}%` : ""),
+      sub: "Bienes y servicios, base balanza de pagos (BEA y Census), desestacionalizados, miles de millones de US$ por mes" + (real ? ", a precios del último mes (deflactados por los índices de precios de bienes del BLS)." : "."),
+      unidad: "mil M", dec: 1, eventos: false,
+      series: [{ n: "Exportaciones, mensual", d: cut(e), c: 0, fina: true }, { n: "Exportaciones, promedio 3 meses", d: cut(roll(e, 3)), c: 0, w: 2.6 }, { n: "Importaciones, mensual", d: cut(i), c: 1, fina: true }, { n: "Importaciones, promedio 3 meses", d: cut(roll(i, 3)), c: 1, w: 2.6 }] };
   } });
-def("cuentaCorriente", { slug: "cuenta-corriente", nombre: "Cuenta corriente / PBI", sin: ["cuenta corriente", "current account", "balanza de pagos", "financiamiento externo"],
-  calc: "Saldo de la cuenta corriente de la balanza de pagos (BEA), trimestral, anualizado (× 4) sobre el PBI nominal.",
-  ks: ["current_account", "gdp_nom"],
+
+def("cuentaCorriente", { slug: "cuenta-corriente", nombre: "Cuenta corriente / PBI", sin: ["cuenta corriente", "current account", "balanza de pagos", "financiamiento externo", "rentas", "ingreso primario"],
+  calc: "Saldo de la cuenta corriente de la balanza de pagos (BEA) y sus componentes: bienes y servicios, ingreso primario (rentas: intereses, dividendos y utilidades que EE.UU. cobra del exterior menos los que paga) e ingreso secundario (transferencias). Trimestral, anualizado (× 4) sobre el PBI nominal. Por identidad, el déficit es lo que el resto del mundo le presta o invierte a EE.UU. en el período. Referencias: promedio 2015-19 y récord de la serie.",
+  ks: ["current_account", "ca_gs", "ca_primario", "ca_secundario", "gdp_nom"],
   f: () => {
-    const r = join(S("current_account"), S("gdp_nom"), (a, b) => a * 4 / 1000 / b * 100); if (!r) return null;
-    const v = last(r)[1];
-    return { freq: "Q", titulo: `${v < 0 ? "Déficit" : "Superávit"} de cuenta corriente de ${nf(Math.abs(v))}% del PBI en ${fq(last(r)[0])}`,
-      sub: "Bienes, servicios, rentas y transferencias con el resto del mundo. El déficit se financia con capital del exterior: es lo que el mundo le presta o invierte en EE.UU. cada año.",
-      banda: rangoNormal(r), series: [{ n: "Cuenta corriente / PBI", d: cut(r), c: 1, area: true }], refs: [{ y: 0 }] };
+    const g = S("gdp_nom"), pb = a => a ? join(a, g, (x, y) => x * 4 / 1000 / y * 100) : null;
+    const r = pb(S("current_account")); if (!r) return null;
+    const cs = [["Bienes y servicios", pb(S("ca_gs")), 1], ["Rentas (ingreso primario)", pb(S("ca_primario")), 2], ["Transferencias", pb(S("ca_secundario")), 3]];
+    const completos = cs.every(([, a]) => a);
+    const v = last(r)[1], p = promEntre(r, 2015, 2019), rec = r.reduce((m, q) => q[1] < m[1] ? q : m);
+    const ss = completos ? cs.map(([n, a, c]) => ({ n, d: cut(a), t: "bar", c, stack: "cc", suave: true })) : [];
+    ss.push({ n: "Cuenta corriente", d: cut(r), c: "ink", w: 2.4 });
+    const refs = [{ y: 0 }]; if (p != null) refs.push({ y: p, l: `Promedio 2015-19: ${nf(p)}%` }); refs.push({ y: rec[1], l: `Récord ${anio(rec[0])}: ${nf(rec[1])}%` });
+    return { freq: "Q", titulo: `Cuenta corriente ${nf(v)}% del PBI en ${fq(last(r)[0])}` + (completos ? `: bienes y servicios ${nf(last(cs[0][1])[1])}%, rentas ${sg(last(cs[1][1])[1])}%, transferencias ${nf(last(cs[2][1])[1])}%` : "") + (p != null ? `; promedio 2015-19: ${nf(p)}%` : "") + `; récord ${anio(rec[0])}: ${nf(rec[1])}%`,
+      sub: "Balanza de pagos (BEA), trimestral, anualizada sobre el PBI nominal.", cero: true, series: ss, refs };
   } });
-def("capexImport", { slug: "importaciones-de-capital", nombre: "Importaciones de capital vs inversión tecnológica", sin: ["importaciones", "equipos"],
-  calc: "Variación interanual de las importaciones de bienes de capital sin autos y de la inversión en equipos de información más software (BEA).",
+
+def("dolar", { slug: "dolar", nombre: "Dólar multilateral, nominal y real", sin: ["dxy", "tipo de cambio", "usd", "dólar amplio", "broad dollar", "multilateral", "dólar real"],
+  calc: "Índice del dólar contra las monedas de los 26 principales socios comerciales, ponderadas por comercio (Fed, índice broad), nominal (datos diarios con períodos de hasta 5 años) y real (ajustado por la inflación relativa con cada socio, mensual); los dos con base ene-2006 = 100. A diferencia del DXY, incluye China, México y Canadá. Referencias: máximo de la serie nominal y promedio 2015-19.",
+  ks: ["dollar", "dollar_real"],
+  f: () => {
+    const d = SD("dollar"); if (!d) return null;
+    const w = diariaCompleta("dollar"), v = last(w)[1], mx = w.reduce((m, p) => p[1] > m[1] ? p : m), m1 = valorEn(w, last(w)[0] - 30.4 * DIA), pr = promEntre(S("dollar"), 2015, 2019);
+    const re = S("dollar_real");
+    const ss = [{ n: "Nominal", d: cut(d), c: 0, w: 2.6 }];
+    if (re) ss.push({ n: "Real (mensual)", d: cut(re), c: 1, w: 1.8 });
+    const refs = [{ y: mx[1], l: `Máximo nominal ${fm(mx[0])}: ${nf(mx[1], 1)}` }]; if (pr != null) refs.push({ y: pr, l: `Promedio 2015-19: ${nf(pr, 1)}` });
+    return { freq: freqD("dollar"),
+      titulo: `Dólar multilateral ${nf(v, 1)} al ${fdia(last(w)[0])}: ${sg((v / mx[1] - 1) * 100)}% desde su máximo de ${fm(mx[0])} (${nf(mx[1], 1)})` + (m1 ? `; ${sg((v / m1[1] - 1) * 100)}% en un mes` : "") + (re ? `; real ${nf(last(re)[1], 1)} (${fm(last(re)[0])})` : "") + (pr != null ? `; promedio 2015-19: ${nf(pr, 1)}` : ""),
+      sub: `Contra 26 socios ponderados por comercio (índice broad de la Fed), ene-2006 = 100, ${txtFrec("dollar")}. Real: ajustado por la inflación relativa.` + notaParcial(),
+      unidad: "", dec: 1, series: ss, refs };
+  } });
+
+def("terminos", { slug: "terminos-de-intercambio", nombre: "Términos de intercambio y petróleo", sin: ["términos de intercambio", "precios de exportación", "precios de importación", "petróleo", "wti"],
+  calc: "Índice de precios de exportación sobre índice de precios de importación (BLS), 2000 = 100: sube cuando lo que EE.UU. vende al mundo se encarece respecto de lo que compra. Eje derecho: petróleo WTI (EIA vía FRED), US$ por barril; EE.UU. es exportador neto de energía desde la década pasada. Referencia: promedio 2015-19.",
+  ks: ["export_prices", "import_prices", "wti"],
+  f: () => {
+    const r = join(S("export_prices"), S("import_prices"), (a, b) => a / b * 100); if (!r) return null;
+    const v = last(r)[1], mx = r.reduce((m, p) => p[1] > m[1] ? p : m), pr = promEntre(r, 2015, 2019);
+    const o = SD("wti"), ow = o ? diariaCompleta("wti") : null, oy = ow ? valorEn(ow, last(ow)[0] - 365 * DIA) : null;
+    const ss = [{ n: "Términos de intercambio", d: cut(r), c: 0, w: 2.6 }];
+    if (o) ss.push({ n: "Petróleo WTI (eje derecho)", d: cut(o), c: 1, w: 1.4, der: true, u: "US$", dec: 2 });
+    return { titulo: `Términos de intercambio ${nf(v, 1)} en ${fechaDe(r)}` + (mx[0] < last(r)[0] ? ` (máximo de la serie: ${nf(mx[1], 1)} en ${fm(mx[0])}` : " (máximo de la serie") + (pr != null ? `; promedio 2015-19: ${nf(pr, 1)})` : ")") + (ow ? `; petróleo WTI US$ ${nf(last(ow)[1], 1)}` + (oy ? ` (${sg((last(ow)[1] / oy[1] - 1) * 100, 0)}% interanual)` : "") : ""),
+      sub: "Precios de exportación sobre precios de importación (BLS), 2000 = 100. Eje derecho: petróleo WTI, US$ por barril.",
+      unidad: "", dec: 1, series: ss, refs: pr != null ? [{ y: pr, l: `Promedio 2015-19: ${nf(pr, 1)}` }] : [] };
+  } });
+
+def("capexImport", { slug: "importaciones-de-capital", nombre: "Importaciones de capital vs inversión tecnológica", sin: ["importaciones", "equipos", "ia", "data centers", "semiconductores"],
+  calc: "Importaciones de bienes de capital sin autos (BEA) e inversión en equipos de procesamiento de información más software (BEA), nominales, tasa anual, en miles de millones de US$. Línea punteada (eje derecho): importaciones de capital por cada dólar de inversión tecnológica. Las importaciones de capital incluyen también equipos no tecnológicos (maquinaria industrial, aviones civiles): la serie de computadoras y semiconductores no está en FRED trimestral.",
   ks: ["imp_capital", "inv_info", "inv_software"],
   f: () => {
     const i = S("imp_capital"), e = S("inv_info"), s = S("inv_software"); if (!i || !e || !s) return null;
-    const iq = yoy(i, 4), cq = yoy(join(e, s, (a, b) => a + b), 4); if (!iq || !cq) return null;
-    return { freq: "Q", titulo: `Importaciones de capital ${sg(last(iq)[1])}% vs inversión tecnológica ${sg(last(cq)[1])}% interanual`,
-      sub: "Si crecen juntas, parte del boom de inversión se abastece afuera y resta en la balanza comercial.", fuenteTxt: "BEA vía FRED",
-      series: [{ n: "Inversión tecnológica", d: cut(cq), c: 0 }, { n: "Importaciones de bienes de capital", d: cut(iq), c: 1 }], refs: [{ y: 0 }] };
-  } });
-def("dolar", { slug: "dolar", nombre: "Dólar multilateral", sin: ["dxy", "tipo de cambio", "usd", "dólar amplio", "broad dollar", "multilateral"],
-  calc: "Índice del dólar contra las monedas de los 26 principales socios comerciales, ponderadas por comercio (Fed, índice broad nominal), promedio mensual.",
-  ks: ["dollar"],
-  f: () => {
-    const d = SD("dollar"); if (!d) return null;
-    const y = yoy(S("dollar")), v = last(d)[1];
-    return { titulo: `El dólar multilateral ${last(y)[1] >= 0 ? "sube" : "cae"} ${nf(Math.abs(last(y)[1]))}% interanual: percentil ${pctl(d, v)} desde 2006`,
-      sub: `Contra 26 socios comerciales ponderados por comercio (índice broad de la Fed), ${txtFrec("dollar")}. A diferencia del DXY, incluye China, México y Canadá.` + notaParcial(),
-      freq: freqD("dollar"), unidad: "", dec: 1, series: [{ n: "Dólar multilateral", d: cut(d), c: 0 }] };
-  } });
-def("terminos", { slug: "terminos-de-intercambio", nombre: "Términos de intercambio", sin: ["términos de intercambio", "precios de exportación", "precios de importación"],
-  calc: "Índice de precios de exportación sobre índice de precios de importación (BLS), base 2000 = 100. Sube cuando lo que EE.UU. vende al mundo se encarece respecto de lo que compra.",
-  ks: ["export_prices", "import_prices"],
-  f: () => {
-    const r = join(S("export_prices"), S("import_prices"), (a, b) => a / b * 100); if (!r) return null;
-    const y = yoy(r), v = last(y)[1];
-    return { titulo: `Los términos de intercambio ${Math.abs(v) < 0.5 ? "se mantienen estables" : v > 0 ? "mejoran" : "empeoran"}: ${sg(v)}% interanual`,
-      sub: "Precios de exportación sobre precios de importación, 2000 = 100. Sube cuando lo que vende se encarece más que lo que compra.",
-      unidad: "", dec: 1, series: [{ n: "Términos de intercambio", d: cut(r), c: 0 }], refs: [{ y: 100, l: "2000 = 100" }] };
+    const t = join(e, s, (a, b) => a + b), r = join(i, t, (a, b) => a / b);
+    const iy = yoy(i, 4), ty = yoy(t, 4), i3 = i.length > 3 ? last(i)[1] - i[i.length - 4][1] : null;
+    return { freq: "Q", titulo: `${fq(last(i)[0])}: importaciones de bienes de capital US$ ${nf(last(i)[1], 0)} mil M (${sg(last(iy)[1])}% interanual; ${sg(i3, 0)} mil M en 3 trimestres) e inversión tecnológica ${nf(last(t)[1], 0)} mil M (${sg(last(ty)[1])}%); cociente ${nf(last(r)[1], 2)}`,
+      sub: "Importaciones de bienes de capital sin autos e inversión en equipos de información más software (BEA), nominales, tasa anual. Punteada: importaciones por dólar de inversión tecnológica (eje derecho).", fuenteTxt: "BEA vía FRED",
+      unidad: "mil M", dec: 0, eventos: false,
+      series: [{ n: "Importaciones / inversión (eje derecho)", d: cut(r), c: "gris", w: 1.4, punteada: true, der: true, u: "", dec: 2 }, { n: "Importaciones de bienes de capital", d: cut(i), c: 1, w: 2.6 }, { n: "Inversión tecnológica", d: cut(t), c: 0, w: 2.6 }] };
   } });
 
 // ═════════════════════════ Fiscal ═════════════════════════
