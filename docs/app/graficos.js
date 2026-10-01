@@ -12,7 +12,7 @@ const COVID = [Date.UTC(2020, 2, 1), Date.UTC(2022, 5, 1)];
 const COVID_SHOCK = [Date.UTC(2020, 2, 1), Date.UTC(2021, 5, 1)];
 
 export const paleta = () => [css("--s1"), css("--s2"), css("--s3"), css("--s4")];
-export const colorSerie = (sp, s, i) => s.c === "ink" ? css("--ink") : s.c != null ? paleta()[s.c] : (sp.tipo === "cat" && s.t === "line" ? css("--ink") : paleta()[i % 4]);
+export const colorSerie = (sp, s, i) => s.c === "gris" ? css("--muted") : s.c === "ink" ? css("--ink") : s.c != null ? paleta()[s.c] : (sp.tipo === "cat" && s.t === "line" ? css("--ink") : paleta()[i % 4]);
 const FS = () => ST.prefs.letra === "grande" ? 1.14 : 1;
 function redondo(v, paso, arriba) { return (arriba ? Math.ceil(v / paso) : Math.floor(v / paso)) * paso; }
 function pasoLindo(r) { const e = Math.pow(10, Math.floor(Math.log10(r))); const f = r / e; return (f <= 2 ? 0.25 : f <= 5 ? 0.5 : 1) * e; }
@@ -72,6 +72,8 @@ function opcionesLinea(sp, ancho, grande) {
     const c = colorSerie(sp, s, i);
     const base = { name: s.n, data: s.d, z: 3, itemStyle: { color: c }, yAxisIndex: conDer && s.der ? 1 : 0 };
     if (s.t === "bar") { series.push(Object.assign(base, { type: "bar", stack: s.stack, barMaxWidth: 22, itemStyle: { color: c, borderRadius: [2, 2, 0, 0] } })); return; }
+    // proyecciones: rombos sin línea
+    if (s.t === "punto") { series.push(Object.assign(base, { type: "scatter", symbol: "diamond", symbolSize: grande ? 15 : 12, z: 7, itemStyle: { color: css("--surface"), borderColor: c, borderWidth: 2.5 } })); return; }
     series.push(Object.assign(base, {
       type: "line", stack: s.stack, showSymbol: false, symbol: "circle", symbolSize: 6,
       lineStyle: { width: s.w ?? (s.fina ? 1.2 : 2.2), color: c, type: s.punteada ? [6, 4] : "solid", opacity: s.fina ? 0.55 : 1 },
@@ -149,18 +151,18 @@ export const mostrarRecesiones = (sp, x0, x1) => ST.prefs.recesiones !== false &
 
 function opcionesHeat(sp, ancho, grande) {
   const ink = css("--ink"), muted = css("--muted");
-  const izq = ancho < 600 ? 128 : 182, fs = (grande ? 13 : 12) * FS();
+  const izq = ancho < 600 ? 128 : (sp.izq || 182), fs = (grande ? 13 : 12) * FS();
   return {
     textStyle: { fontFamily: css("--font"), color: css("--ink-2") },
-    grid: { left: izq, right: 8, top: 8, bottom: ancho < 900 ? 96 : 72 },
-    tooltip: Object.assign(tooltipBase(), { formatter: p => `<b>${esc(sp.filas[p.value[1]])}</b><br>${sp.cols[p.value[0]]}: ${nf(p.value[2], 1)}% anualizado 3m` }),
-    xAxis: { type: "category", data: sp.cols, axisTick: { show: false }, axisLine: { show: false }, axisLabel: { color: muted, fontSize: fs, interval: 0, rotate: ancho < 900 ? 45 : 0 } },
+    grid: { left: izq, right: 8, top: 8, bottom: ancho < 900 || sp.cols.length > 20 ? 96 : 72 },
+    tooltip: Object.assign(tooltipBase(), { formatter: p => sp.tip ? sp.tip(p.value) : `<b>${esc(sp.filas[p.value[1]])}</b><br>${sp.cols[p.value[0]]}: ${nf(p.value[2], 1)}% anualizado 3m` }),
+    xAxis: { type: "category", data: sp.cols, axisTick: { show: false }, axisLine: { show: false }, axisLabel: { color: muted, fontSize: fs, interval: sp.cols.length > 20 ? (ancho < 900 ? 5 : 2) : 0, rotate: ancho < 900 ? 45 : 0 } },
     yAxis: { type: "category", data: sp.filas, inverse: true, axisTick: { show: false }, axisLine: { show: false },
       axisLabel: { color: css("--ink-2"), fontSize: ancho < 600 ? 11.5 : fs + 0.5, width: izq - 12, overflow: "truncate" } },
-    visualMap: { min: -4, max: 8, calculable: false, orient: "horizontal", left: "center", bottom: 0, itemWidth: 12, itemHeight: 180,
-      text: ["8%", "−4%"], textStyle: { color: muted, fontSize: 12 }, inRange: { color: [css("--div-lo"), css("--div-mid"), css("--div-hi")] } },
+    visualMap: { min: sp.vmin ?? -4, max: sp.vmax ?? 8, calculable: false, orient: "horizontal", left: "center", bottom: 0, itemWidth: 12, itemHeight: 180,
+      text: sp.vtxt || ["8%", "−4%"], textStyle: { color: muted, fontSize: 12 }, inRange: { color: [css("--div-lo"), css("--div-mid"), css("--div-hi")] } },
     series: [{ type: "heatmap", data: sp.data, itemStyle: { borderColor: css("--surface"), borderWidth: 2, borderRadius: 3 },
-      label: { show: ancho >= 700, fontSize: fs - 0.5, fontFamily: css("--font"), formatter: p => nf(p.value[2], 1), color: ink },
+      label: { show: ancho >= 700 && sp.cols.length <= 20, fontSize: fs - 0.5, fontFamily: css("--font"), formatter: p => nf(p.value[2], 1), color: ink },
       emphasis: { itemStyle: { borderColor: ink, borderWidth: 1 } } }],
   };
 }
@@ -173,8 +175,8 @@ function opcionesCategoria(sp, ancho, grande) {
       const vals = s.d.filter(v => v != null), mx = Math.max(...vals), mn = Math.min(...vals);
       let ult = s.d.length - 1; while (ult > 0 && s.d[ult] == null) ult--;
       const c = colorSerie(sp, s, i);
-      return { type: "line", name: s.n, data: s.d, z: 5, symbol: "circle", symbolSize: 7, connectNulls: true,
-        lineStyle: { color: c, width: s.w ?? 2, type: s.punteada ? [6, 4] : "solid" },
+      return { type: "line", name: s.n, data: s.d, z: s.fina ? 3 : 5, symbol: sp.sinPuntos ? "none" : "circle", symbolSize: 7, connectNulls: true,
+        lineStyle: { color: c, width: s.w ?? (s.fina ? 1.1 : 2), type: s.punteada ? [6, 4] : "solid", opacity: s.fina ? 0.5 : 1 },
         itemStyle: { color: c, borderColor: css("--surface"), borderWidth: 2 },
         label: s.etiquetas ? { show: true, position: "top", color: ink, fontSize: fs - 0.5, fontWeight: 600, distance: 8,
           formatter: p => p.value == null ? "" : (s.etiquetas === "todas" || p.dataIndex === ult || p.value === mx || p.value === mn) ? nf(p.value, dec) : "" } : undefined };
@@ -190,7 +192,7 @@ function opcionesCategoria(sp, ancho, grande) {
       formatter: ps => `<div style="font-weight:600;margin-bottom:4px">${ps[0].axisValue}</div>` + ps.filter(p => p.value != null).map(p =>
         `<div style="display:flex;gap:12px;justify-content:space-between"><span>${p.marker}${esc(p.seriesName)}</span><b>${sp.signo === false ? nf(p.value, dec) : sg(p.value, dec)}${p.seriesType === "line" && sp.unidadLinea ? sp.unidadLinea : unidadTxt(u)}</b></div>`).join("") }),
     xAxis: { type: "category", data: sp.cats, axisTick: { show: false }, axisLine: { lineStyle: { color: css("--axis") } }, axisLabel: { color: muted, fontSize: fs, hideOverlap: true } },
-    yAxis: { type: "value", scale: !!sp.escala, axisLabel: { color: muted, fontSize: fs, formatter: v => nf(v, sp.decEje ?? 0) + (u === "%" ? "%" : "") }, splitLine: { lineStyle: { color: css("--grid") } } },
+    yAxis: { type: "value", scale: !!sp.escala, min: sp.yMin ?? undefined, max: sp.yMax ?? undefined, axisLabel: { color: muted, fontSize: fs, formatter: v => nf(v, sp.decEje ?? 0) + (u === "%" ? "%" : "") }, splitLine: { lineStyle: { color: css("--grid") } } },
     series,
   };
 }
@@ -213,7 +215,7 @@ export function leyenda(sp, getChart, redibujar) {
   sp.series.forEach((s, i) => {
     if (s.enLeyenda === false) return;
     const b = el("button", { type: "button", "aria-pressed": "true", title: "Mostrar u ocultar" });
-    const clase = s.t === "bar" ? "barra" : s.area ? "area" : s.punteada ? "punteada" : s.fina ? "fina" : "";
+    const clase = s.t === "bar" ? "barra" : s.t === "punto" ? "punto" : s.area ? "area" : s.punteada ? "punteada" : s.fina ? "fina" : "";
     b.innerHTML = `<i class="sw ${clase}" style="color:${colorSerie(sp, s, i)}"></i><span>${esc(s.n)}${conValor ? " <b></b>" : ""}</span>`;
     b.addEventListener("click", () => {
       const ch = getChart(); if (!ch) return;
@@ -231,7 +233,7 @@ export function leyenda(sp, getChart, redibujar) {
   });
   for (const r of sp.refs || []) if (r.l) box.insertAdjacentHTML("beforeend", `<span class="fija"><i class="sw ref"></i>${esc(r.l)}</span>`);
   if (sp.banda) box.insertAdjacentHTML("beforeend", `<span class="fija"><i class="sw banda"></i>${esc(sp.bandaTexto || "Rango normal 2000-19")}</span>`);
-  const vis = sp.tipo ? [] : sp.series.filter(s => s.d.length);
+  const vis = sp.tipo ? [] : sp.series.filter(s => s.d.length && s.t !== "punto");
   if (vis.length && mostrarRecesiones(sp, Math.min(...vis.map(s => s.d[0][0])), Math.max(...vis.map(s => s.d[s.d.length - 1][0]))))
     box.insertAdjacentHTML("beforeend", `<span class="fija"><i class="sw rec"></i>Recesión (NBER)</span>`);
   api.actualizar = t => {
@@ -239,7 +241,7 @@ export function leyenda(sp, getChart, redibujar) {
     for (const [b, s] of valores) {
       const p = t == null ? (s.d.length ? [s.d[s.d.length - 1][0], s.finValor ?? s.d[s.d.length - 1][1]] : null) : valorEn(s.d, t);
       b.textContent = p ? nf(p[1], s.dec ?? dec) + unidadTxt(u) : "–";
-      if (p && (fUlt == null || p[0] > fUlt)) fUlt = p[0];
+      if (p && s.t !== "punto" && (fUlt == null || p[0] > fUlt)) fUlt = p[0];
     }
     if (fecha) fecha.textContent = t == null ? (fUlt ? fx(fUlt) : "") : fx(valorEn(vis[0]?.d, t)?.[0] ?? t);
     box.classList.toggle("cursor", t != null);

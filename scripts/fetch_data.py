@@ -110,6 +110,8 @@ FRED = {
     "eci":             ("ECIWAG", "Índice de costo laboral: salarios, sector privado", "índice", "Q", "BLS"),
     # Tasas y mercados (promedio mensual)
     "fed_funds":       ("DFF", "Tasa de fondos federales", "%", "M", "Fed"),
+    "fed_obj":         ("DFEDTAR", "Tasa objetivo de la Fed (hasta dic-2008)", "%", "M", "Fed"),
+    "fed_obj_sup":     ("DFEDTARU", "Tasa objetivo de la Fed, límite superior (desde dic-2008)", "%", "M", "Fed"),
     "ust2":            ("DGS2", "Treasury 2 años", "%", "M", "Tesoro"),
     "ust10":           ("DGS10", "Treasury 10 años", "%", "M", "Tesoro"),
     "ust30":           ("DGS30", "Treasury 30 años", "%", "M", "Tesoro"),
@@ -142,21 +144,31 @@ FRED = {
     "fed_expend":      ("FGEXPND", "Gastos corrientes del gobierno federal", "US$ miles de M, tasa anual", "Q", "BEA"),
     "customs":         ("B235RC1Q027SBEA", "Recaudación por aranceles", "US$ miles de M, tasa anual", "Q", "BEA"),
     "imp_goods":       ("A255RC1Q027SBEA", "Importaciones de bienes (cuentas nacionales)", "US$ miles de M, tasa anual", "Q", "BEA"),
+    # Proyecciones de la Fed (mediana del SEP): un dato por año proyectado; el de largo plazo, uno por reunión
+    "sep_ff":          ("FEDTARMD", "Proyección de la Fed: tasa de fondos federales a fin de año (mediana)", "%", "A", "Fed"),
+    "sep_core":        ("JCXFEMD", "Proyección de la Fed: core PCE, cuarto trimestre (mediana)", "%", "A", "Fed"),
+    "sep_unemp":       ("UNRATEMD", "Proyección de la Fed: desempleo, cuarto trimestre (mediana)", "%", "A", "Fed"),
+    "sep_gdp":         ("GDPC1MD", "Proyección de la Fed: crecimiento del PBI, cuarto trimestre contra cuarto trimestre (mediana)", "%", "A", "Fed"),
+    "sep_lr":          ("FEDTARMDLR", "Proyección de la Fed: tasa de largo plazo (mediana)", "%", "Q", "Fed"),
     # Ciclo
     "usrec":           ("USREC", "Recesión según el NBER (1 = sí)", "0/1", "M", "NBER"),
 }
 # Series cuyo promedio mensual no tiene sentido (flujos ya mensuales)
 SIN_PROMEDIO = {"deficit"}
 # Series de mercado: cambian todos los días, no cuentan como "novedad" de un release
-ALTA_FRECUENCIA = {"fed_funds", "ust2", "ust10", "ust30", "tips10", "breakeven10", "term_premium",
+ALTA_FRECUENCIA = {"fed_obj", "fed_obj_sup", "fed_funds", "ust2", "ust10", "ust30", "tips10", "breakeven10", "term_premium",
                    "mortgage30", "dollar", "infl_exp_5y5y", "spread_10y3m", "gdpnow", "nfci", "nfci_credit",
                    "baa_spread", "hy_oas", "hy_bb", "hy_ccc", "fed_assets", "reserves"}
 # Versión diaria (o semanal, tal como la publica la fuente) de las series de mercado, en docs/diarios.json.
 # La web la usa cuando el período elegido es corto; para períodos largos usa el promedio mensual.
-DIARIAS = ["fed_funds", "ust2", "ust10", "ust30", "tips10", "breakeven10", "spread_10y3m", "term_premium", "infl_exp_5y5y",
+DIARIAS = ["fed_obj", "fed_obj_sup", "fed_funds", "ust2", "ust10", "ust30", "tips10", "breakeven10", "spread_10y3m", "term_premium", "infl_exp_5y5y",
            "baa_spread", "hy_oas", "hy_bb", "hy_ccc", "dollar", "mortgage30", "nfci", "nfci_credit", "fed_assets", "reserves"]
 DESDE_DIARIO = "2000-01-01"
+# Series escalonadas (la tasa objetivo): se guardan sólo los días en que cambian, desde 1982
+ESCALONES = {"fed_obj", "fed_obj_sup"}
 DIARIOS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "docs", "diarios.json")
+# Series con pocos datos que cambian de forma por diseño (proyecciones): no se les aplica la regla de historia acortada
+SIN_REGLA_HISTORIA = {"sep_ff", "sep_core", "sep_unemp", "sep_gdp", "hy_oas", "hy_bb", "hy_ccc"}
 # Series que traen proyecciones a futuro (el PBI potencial de la CBO llega a 10 años): se cortan en hoy
 HASTA_HOY = {"gdp_pot"}
 # Series cuya primera publicación se guarda para mostrar revisiones
@@ -247,6 +259,39 @@ def fred_release(key_, sid):
         return None
 
 
+def primera_nominas(key_):
+    """Cambio mensual de las nóminas tal como se publicó por primera vez (ALFRED: todas las versiones de PAYEMS).
+
+    Para cada mes se toma la primera versión publicada de su nivel y el nivel del mes anterior vigente ese mismo día."""
+    obs = get("https://api.stlouisfed.org/fred/series/observations", series_id="PAYEMS", api_key=key_, file_type="json",
+              observation_start="2014-12-01", realtime_start="2014-12-01", realtime_end="9999-12-31")["observations"]
+    vers = {}
+    for o in obs:
+        if o["value"] in (".", ""):
+            continue
+        vers.setdefault(o["date"], []).append((o["realtime_start"], o["realtime_end"], float(o["value"])))
+    fechas = sorted(vers)
+    out = {}
+    for ant, f in zip(fechas, fechas[1:]):
+        v0, _, nivel = min(vers[f])
+        previo = next((v for rs, re_, v in vers[ant] if rs <= v0 <= re_), None)
+        if previo is not None:
+            out[pd.Timestamp(f)] = nivel - previo
+    if len(out) < 24:
+        raise RuntimeError(f"pocas primeras estimaciones ({len(out)})")
+    return pd.Series(out, dtype=float).sort_index()
+
+
+def primera_pbi(key_):
+    """Crecimiento trimestral anualizado del PBI real tal como se publicó por primera vez (ALFRED, output_type=4)."""
+    obs = get("https://api.stlouisfed.org/fred/series/observations", series_id="A191RL1Q225SBEA", api_key=key_, file_type="json",
+              observation_start="2010-01-01", realtime_start="1776-07-04", realtime_end="9999-12-31", output_type=4)["observations"]
+    s = pd.Series({pd.Timestamp(o["date"]): float(o["value"]) for o in obs if o["value"] not in (".", "")}, dtype=float).sort_index()
+    if len(s) < 24:
+        raise RuntimeError(f"pocas primeras estimaciones ({len(s)})")
+    return s
+
+
 def bls(key_, ids):
     out = {i: {} for i in ids}
     ventanas = [(a, min(a + 19, HOY.year)) for a in range(DESDE, HOY.year + 1, 20)]
@@ -325,6 +370,15 @@ def bajar(anterior):
                 releases[rel[0]] = rel[1]
         except Exception as e:
             fallas[k] = f"no se pudo bajar ({str(e)[:80]})"; print(f"  [aviso] {k} ({sid}): {e}")
+
+    print("Primeras estimaciones (ALFRED)…")
+    for k, fn, nombre, unidad, freq, org, sid in [
+            ("payrolls_1ra", primera_nominas, "Nóminas: cambio mensual en su primera publicación", "miles de puestos", "M", "BLS", "PAYEMS"),
+            ("gdp_1ra", primera_pbi, "PBI real: crecimiento en su primera publicación", "%", "Q", "BEA", "A191RL1Q225SBEA")]:
+        try:
+            data[k] = empaquetar(fn(fred_key), nombre, unidad, freq, "ALFRED", sid, org)
+        except Exception as e:
+            fallas[k] = f"no se pudo bajar ({str(e)[:80]})"; print(f"  [aviso] {k}: {e}")
 
     print("BLS…")
     series_bls = {}
@@ -417,11 +471,11 @@ def validar(k, nueva, vieja):
     if all(v == 0 for v in vals):
         return "todos los valores son cero"
     limite = (HOY + dt.timedelta(days=7)).isoformat()
-    if nueva["f"] in ("M", "Q") and d[-1][0] > HOY.isoformat() and k != "gdpnow":
+    if nueva["f"] in ("M", "Q") and d[-1][0] > HOY.isoformat() and k != "gdpnow" and not k.startswith("sep_"):
         return f"trae una fecha futura ({d[-1][0]})"
     if nueva["f"] == "W" and d[-1][0] > limite:
         return f"trae una fecha futura ({d[-1][0]})"
-    if vieja and vieja.get("d"):
+    if vieja and vieja.get("d") and k not in SIN_REGLA_HISTORIA:
         vd = vieja["d"]
         if len(d) < 0.9 * len(vd):
             return f"la historia se acortó de {len(vd)} a {len(d)} datos"
@@ -579,7 +633,9 @@ def diarios(fred_key):
     for k in DIARIAS:
         sid = FRED[k][0]
         try:
-            s = fred(fred_key, sid, "D", promedio=False, desde=DESDE_DIARIO)
+            s = fred(fred_key, sid, "D", promedio=False, desde="1982-01-01" if k in ESCALONES else DESDE_DIARIO)
+            if k in ESCALONES:
+                s = s[s.diff().fillna(1) != 0]
             if s.empty or s.index[-1].date() > HOY + dt.timedelta(days=7):
                 raise ValueError("vacía o con fechas futuras")
             t0 = s.index[0]

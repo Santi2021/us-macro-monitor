@@ -2,7 +2,7 @@
 import { T, P, DIA_MS, hoyUTC, fm, fq, fw, fd, nf, sg, unidadTxt, leer, guardar, horaBA } from "./util.js";
 import { last, prev, diff, pct, yoy, escala } from "./calc.js";
 
-export const VERSION = "4.3";
+export const VERSION = "4.4";
 export const ST = {
   DATA: null,
   rango: { modo: "2022", desde: null, hasta: null },
@@ -115,6 +115,8 @@ export const RELEASES_ES = {
   "Z.1 Financial Accounts of the United States": "Cuentas financieras (Z.1)",
   "Household Debt Service Ratios": "Carga de la deuda de los hogares",
   "Supplemental Estimates, Motor Vehicles": "Ventas de vehículos",
+  "Summary of Economic Projections": "Proyecciones de la Fed",
+  "FOMC Press Release": "Decisión de tasa de la Fed",
 };
 // Organismo, hora de Nueva York e importancia (3 alta, 2 media, 1 baja)
 const RELEASE_INFO = [
@@ -125,7 +127,7 @@ const RELEASE_INFO = [
   [/G\.17/, "Fed", "9:15", 2], [/Residential Construction/, "Census", "8:30", 2], [/\(M3\)/, "Census", "10:00", 2],
   [/International Trade/, "BEA y Census", "8:30", 2], [/Producer Price/, "BLS", "8:30", 2], [/Monthly Treasury/, "Tesoro", "14:00", 1],
   [/Sahm/, "Fed de St. Louis", "", 1], [/Employment Cost/, "BLS", "8:30", 2], [/Consumer Credit/, "Fed", "15:00", 1],
-  [/Charge-Off/, "Fed", "", 1], [/Productivity and Costs/, "BLS", "8:30", 2], [/Business Outlook/, "Fed de Filadelfia", "8:30", 2],
+  [/Charge-Off/, "Fed", "", 1], [/Summary of Economic Projections/, "Fed", "14:00", 3], [/FOMC|Target Range/, "Fed", "14:00", 3], [/Productivity and Costs/, "BLS", "8:30", 2], [/Business Outlook/, "Fed de Filadelfia", "8:30", 2],
   [/Empire State/, "Fed de Nueva York", "8:30", 2], [/Import and Export Price|Import Price/, "BLS", "8:30", 1], [/International Transactions/, "BEA", "8:30", 1],
   [/Z\.1|Financial Accounts/, "Fed", "12:00", 1], [/Debt Service/, "Fed", "", 1], [/Motor Vehicle/, "BEA", "", 1],
 ];
@@ -248,6 +250,8 @@ export function resultadoRelease(nombre) {
     else if (/Empire State/.test(nombre)) addSerie("Condiciones generales (difusión)", "empire", S("empire"), 1, "", true);
     else if (/Import and Export Price|Import Price/.test(nombre)) addSerie("Precios de importación a/a", "import_prices", yoy(S("import_prices")), 1);
     else if (/International Transactions/.test(nombre)) addSerie("Cuenta corriente", "current_account", escala(S("current_account"), 1 / 1000), 0, "mil M");
+    else if (/Summary of Economic Projections/.test(nombre)) { const p = S("sep_ff"); if (p) r.push({ n: `Tasa proyectada fin ${new Date(p[0][0]).getUTCFullYear()}`, v: nf(p[0][1], 2) + "%", k: "sep_ff" }); }
+    else if (/FOMC|Target Range/.test(nombre)) { const a = ST.D && ST.D.fed_obj_sup; if (a && a.length > 1) r.push({ n: "Tasa objetivo (techo)", v: nf(a[a.length - 1][1], 2) + "%", p: nf(a[a.length - 2][1], 2) + "%", k: "fed_obj_sup" }); }
     else if (/Motor Vehicle/.test(nombre)) addSerie("Ventas, millones por año", "autos", S("autos"), 1, "");
     else if (/Debt Service/.test(nombre)) addSerie("Servicio de la deuda / ingreso", "debt_service", S("debt_service"), 1);
     else if (/Monthly Treasury/.test(nombre)) addSerie("Resultado del mes", "deficit", escala(S("deficit"), 1 / 1000), 0, "mil M");
@@ -264,7 +268,7 @@ export function vigia() {
   const D = ST.DATA, hoy = hoyUTC(), items = [];
   const gen = P(D.generado), horas = (Date.now() - gen) / 36e5;
   for (const [k, s] of Object.entries(D.series)) {
-    if (!s.d.length) continue;
+    if (!s.d.length || k === "fed_obj") continue;   // la tasa objetivo vieja terminó en 2008
     const ult = P(s.d[s.d.length - 1][0]);
     const limite = s.f === "Q" ? 300 : s.f === "W" ? 20 : 95;   // días desde el período del último dato
     const dias = Math.round((hoy - ult) / DIA_MS);

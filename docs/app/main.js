@@ -5,7 +5,7 @@ import { FRENTES, CAT, porSlug } from "./catalogo.js";
 import { SECCIONES, leerRuta, construir, navegar, aplicarPeriodoDeRuta } from "./rutas.js";
 import { limpiarGraficos, abrirGrafico, abrirPanel, cerrarModal, hayModal, colocar, cerrarPops, redimensionar } from "./tarjeta.js";
 import { limpiarGrupos } from "./graficos.js";
-import { estadoPrueba, vistaPortada, vistaMi, vistaFrente, vistaTablero, vistaCalendario, vistaExplorador, vistaMetodologia, leerExplora, moverSemana } from "./vistas.js";
+import { estadoPrueba, vistaPortada, vistaMi, vistaFrente, vistaCiclo, vistaTablero, vistaCalendario, vistaExplorador, vistaMetodologia, leerExplora, moverSemana } from "./vistas.js";
 import { abrirBuscador, atajos, configurarAcciones } from "./buscador.js";
 
 // Datos para la prueba automática (scripts/smoke.mjs)
@@ -133,7 +133,7 @@ let cargandoHistoria = false;
 function render() {
   cerrarPops();
   calcularRango();
-  if (necesitaHistoria()) {
+  if (necesitaHistoria() || (SEC === "ciclo" && !ST.historia)) {
     if (!cargandoHistoria) {
       cargandoHistoria = true;
       $("#main").innerHTML = `<p class="vacio-txt" style="margin-top:32px">Cargando la historia completa (desde 1947)…</p>`;
@@ -154,6 +154,7 @@ function render() {
     else if (SEC === "calendario") vistaCalendario(main, render);
     else if (SEC === "explorador") vistaExplorador(main, render);
     else if (SEC === "metodologia") vistaMetodologia(main, r.sub);
+    else if (SEC === "ciclo") vistaCiclo(main);
     else vistaFrente(main, SEC);
   } catch (e) {
     console.error(e); window.__monitor.errores.push(String(e));

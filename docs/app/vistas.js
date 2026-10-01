@@ -1,7 +1,7 @@
 // Vistas: portada, Mi monitor, tablero, calendario, frentes, explorador y metodología.
 import { el, esc, nf, sg, fm, fq, fw, fd, fLargo, P, T, DIA_MS, DIA_LARGO, MES, hoyUTC, unidadTxt, horaBA, nyABA, ICONOS, descargar, csvCelda, csvNum, toast, copiar, fPor } from "./util.js";
 import { last, yoy, ann, pct, diff, deflactar, aMensual, indice, join } from "./calc.js";
-import { ST, S, cut, meta, fuente, orgDe, enlaceSerie, FREC_TXT, VERSION, agenda, estadoRelease, infoRelease, nombreRelease, proximoRelease, resultadoRelease, vigia, releaseDe } from "./datos.js";
+import { ST, S, SD, usaDiario, cut, meta, fuente, orgDe, enlaceSerie, FREC_TXT, VERSION, agenda, estadoRelease, infoRelease, nombreRelease, proximoRelease, resultadoRelease, vigia, releaseDe } from "./datos.js";
 import { CAT, FRENTES, BLOQUES, PREGUNTAS_CICLO, IND, INDX, RESUMEN_TILES, CABECERA_TILES, valorInd, fechaInd, lineasLectura, armar } from "./catalogo.js";
 import { tarjeta, abrirGrafico, abrirPanel, botonEstrella, esEstrella } from "./tarjeta.js";
 import { construir, navegar } from "./rutas.js";
@@ -120,9 +120,9 @@ export function vistaMi(main) {
   const propuesto = !est.length;
   const lista = propuesto ? SET_PROPUESTO : est;
   const inds = lista.filter(x => x.startsWith("ind:")).map(x => x.slice(4)).filter(x => INDX[x]);
-  const gs = lista.filter(x => CAT[x]);
+  const gs = lista.filter(x => CAT[x]), exps = lista.filter(x => x.startsWith("exp:"));
   const cab = el("section", { class: "cabecera" });
-  cab.innerHTML = `<div><h2>Mi monitor</h2><p>${propuesto ? "Todavía no marcaste nada: este es un set propuesto. Tocá la estrella de cualquier indicador o gráfico para armar el tuyo." : `Tus ${inds.length} indicadores y ${gs.length} gráficos. Se guardan en este navegador; con el enlace los abrís en otro dispositivo.`}</p></div>`;
+  cab.innerHTML = `<div><h2>Mi monitor</h2><p>${propuesto ? "Todavía no marcaste nada: este es un set propuesto. Tocá la estrella de cualquier indicador o gráfico para armar el tuyo." : `Tus ${inds.length} indicador${inds.length === 1 ? "" : "es"} y ${gs.length + exps.length} gráfico${gs.length + exps.length === 1 ? "" : "s"}. Se guardan en este navegador; con el enlace los abrís en otro dispositivo.`}</p></div>`;
   const bar = el("div", { class: "filtros", style: "margin:0" });
   const b1 = el("button", { type: "button", class: "btn" }, `${ICONOS.enlace}Enlace de mi monitor`);
   b1.addEventListener("click", async () => { const url = location.origin + location.pathname + construir("mi", null, { set: lista.join(",") }); toast(await copiar(url) ? "Enlace copiado: guardalo como favorito" : "No se pudo copiar"); });
@@ -136,7 +136,17 @@ export function vistaMi(main) {
   if (inds.length) cab.appendChild(tiraTiles(inds));
   main.appendChild(cab);
   if (gs.length) grilla(main, gs.map(id => [id, ""]), "mi");
-  else if (!propuesto) main.appendChild(el("p", { class: "vacio-mi" }, "Todavía no marcaste gráficos. Tocá la estrella al lado del título de cualquier gráfico."));
+  if (exps.length) {
+    const gr = el("div", { class: "grid", style: gs.length ? "margin-top:16px" : "" });
+    for (const x of exps) {
+      const { lista: L, op } = decExplora(x); if (!L.length) continue;
+      const t = tarjeta("explorador", { clase: "ancha", spFijo: () => spExplora(L, op), estrella: x, grupo: "mi" });
+      estadoPrueba.graficos++; if (t._vacio) estadoPrueba.vacios++;
+      gr.appendChild(t);
+    }
+    main.appendChild(gr);
+  }
+  if (!gs.length && !exps.length && !propuesto) main.appendChild(el("p", { class: "vacio-mi" }, "Todavía no marcaste gráficos. Tocá la estrella al lado del título de cualquier gráfico."));
 }
 function ordenarMi() {
   const lista = ST.prefs.estrellas.slice();
@@ -144,7 +154,7 @@ function ordenarMi() {
   const pintar = () => {
     box.innerHTML = "";
     lista.forEach((x, i) => {
-      const nombre = x.startsWith("ind:") ? INDX[x.slice(4)]?.n + " (indicador)" : CAT[x]?.nombre;
+      const nombre = x.startsWith("ind:") ? INDX[x.slice(4)]?.n + " (indicador)" : x.startsWith("exp:") ? "Explorador: " + decExplora(x).lista.map(e => ST.DATA.series[e.k].n).join(" vs ") : CAT[x]?.nombre;
       const f = el("div", { style: "display:flex;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid var(--grid)" }, `<span style="flex:1">${esc(nombre || x)}</span>`);
       const sube = el("button", { type: "button", class: "btn", "aria-label": "Subir", disabled: i === 0 || null }, "↑");
       const baja = el("button", { type: "button", class: "btn", "aria-label": "Bajar", disabled: i === lista.length - 1 || null }, "↓");
@@ -168,6 +178,14 @@ export function vistaFrente(main, sec) {
   cab.appendChild(tiraTiles(CABECERA_TILES[sec] || []));
   main.appendChild(cab);
   for (const [titulo, lista] of BLOQUES[sec]) bloque(main, titulo, lista, sec);
+}
+
+// ───────── Ciclo ─────────
+export function vistaCiclo(main) {
+  const cab = el("section", { class: "cabecera" });
+  cab.innerHTML = `<div><h2>Ciclo</h2><p>La economía completa en una pantalla, el ciclo actual de la Fed contra los anteriores y cuánto cambian los datos después de su primera publicación. Estos gráficos usan la historia completa y no dependen del período elegido, salvo las revisiones.</p></div>`;
+  main.appendChild(cab);
+  for (const [titulo, lista] of BLOQUES.ciclo) bloque(main, titulo, lista, "ciclo");
 }
 
 // ───────── Tablero ─────────
@@ -289,6 +307,13 @@ function grupoSerie(k) {
   const m = g.find(([, re]) => re.test(k)); return m ? FRENTES[m[0]] : "Otras";
 }
 function aplicarTransf(k, tr) {
+  // nivel, diferencia e índice no dependen de la frecuencia: con períodos cortos usan el dato diario si existe
+  if (["nivel", "dif", "idx"].includes(tr) && usaDiario() && ST.D[k]) {
+    const d = SD(k); if (!d) return null;
+    if (tr === "dif") return diff(d);
+    if (tr === "idx") { const c = cut(d); return c && c.length ? indice(c, c[0][0]) : null; }
+    return d;
+  }
   let s = S(k); if (!s) return null;
   const f = ST.DATA.series[k].f;
   if (f === "W" && ["rcpi", "rpce", "yoy", "ann3"].includes(tr)) s = aMensual(s);
@@ -335,36 +360,50 @@ export function vistaExplorador(main, rerender) {
   selector.querySelector(".copiar").addEventListener("click", async () => toast(await copiar(location.href) ? "Enlace copiado" : "No se pudo copiar: usá la barra de direcciones"));
   const box = el("div", { class: "explorador" });
   box.appendChild(selector);
+  const g = el("div", { class: "grid" });
+  const t = tarjeta("explorador", { clase: "ancha alta", spFijo: () => spExplora(EXPLORA, OPERA), estrella: codExplora(EXPLORA, OPERA) });
+  estadoPrueba.graficos++; if (t._vacio) estadoPrueba.vacios++;
+  g.appendChild(t); box.appendChild(g); main.appendChild(box);
+}
+// Combinación del explorador como texto (para Mi monitor) y de vuelta
+const codExplora = (lista, op) => "exp:" + lista.map(e => `${e.k}:${e.t}`).join("|") + (op && op.op ? `~${op.op}~${op.a}~${op.b}` : "");
+function decExplora(txt) {
+  const [ss, op, a, b] = txt.slice(4).split("~");
+  const lista = ss.split("|").map(x => { const i = x.lastIndexOf(":"); return { k: x.slice(0, i), t: x.slice(i + 1) }; }).filter(e => ST.DATA.series[e.k]);
+  return { lista, op: op ? { op, a: Number(a), b: Number(b) } : { op: "", a: 0, b: 1 } };
+}
+function spExplora(EXP, OP) {
   const unidadDe = e => e.t === "idx" ? "índice" : ["yoy", "ann3", "pct"].includes(e.t) ? "%" : ST.DATA.series[e.k].u;
-  const spFijo = () => {
-    const series = EXPLORA.map((e, i) => {
+  const diaria = e => ["nivel", "dif", "idx"].includes(e.t) && usaDiario() && ST.D && ST.D[e.k];
+  {
+    const series = EXP.map((e, i) => {
       const d = aplicarTransf(e.k, e.t); if (!d) return null;
       const tn = TRANSF.find(([id]) => id === e.t)[1].toLowerCase();
       return { n: `${ST.DATA.series[e.k].n}${e.t === "nivel" ? "" : ", " + tn}`, d: cut(d), c: i, k: e.k, t: e.t, raw: d };
     });
     const ok = series.filter(s => s && s.d.length);
     if (!ok.length) return null;
-    const fs = ok.map(s => ST.DATA.series[s.k].f);
+    const fs = ok.map(s => diaria(s) ? "D" : ST.DATA.series[s.k].f);
     let lista = ok.map(({ raw, ...s }) => s);
-    if (OPERA.op && series[OPERA.a] && series[OPERA.b] && OPERA.a !== OPERA.b) {
-      const A = series[OPERA.a], B = series[OPERA.b];
-      const a = ST.DATA.series[A.k].f === "W" ? aMensual(A.raw) : A.raw, b = ST.DATA.series[B.k].f === "W" ? aMensual(B.raw) : B.raw;
-      const r = join(a, b, OPERA.op === "dif" ? (x, y) => x - y : (x, y) => x / y);
-      if (r) lista = [{ n: `${A.n} ${OPERA.op === "dif" ? "−" : "÷"} ${B.n}`, d: cut(r), c: "ink", w: 2.6 }, ...lista.map(s => Object.assign(s, { w: 1.4 }))];
+    if (OP.op && series[OP.a] && series[OP.b] && OP.a !== OP.b) {
+      const A = series[OP.a], B = series[OP.b];
+      const mes = x => ST.DATA.series[x.k].f === "W" || diaria(x) ? aMensual(x.raw) : x.raw;
+      const a = mes(A), b = mes(B);
+      const r = join(a, b, OP.op === "dif" ? (x, y) => x - y : (x, y) => x / y);
+      if (r) lista = [{ n: `${A.n} ${OP.op === "dif" ? "−" : "÷"} ${B.n}`, d: cut(r), c: "ink", w: 2.6 }, ...lista.map(s => Object.assign(s, { w: 1.4 }))];
     }
-    const unidades = [...new Set(EXPLORA.map(unidadDe))];
-    return { id: "explorador", o: {}, titulo: lista.map(s => s.n).join(" vs "), freq: fs.every(f => f === "W") ? "W" : fs.every(f => f === "Q") ? "Q" : "M",
-      sub: unidades.length > 1 ? `Atención: las series tienen unidades distintas (${unidades.join(", ")}) y comparten el mismo eje.` : `Unidad: ${unidades[0] || "–"}.`,
-      ks: ok.map(s => s.k), fuente: fuente(...ok.map(s => s.k)), unidad: unidades.length === 1 && unidades[0] === "%" && !OPERA.op ? "%" : "", dec: 2, series: lista };
-  };
-  const g = el("div", { class: "grid" });
-  const t = tarjeta("explorador", { clase: "ancha alta", spFijo });
-  estadoPrueba.graficos++; if (t._vacio) estadoPrueba.vacios++;
-  g.appendChild(t); box.appendChild(g); main.appendChild(box);
+    const unidades = [...new Set(EXP.map(unidadDe))];
+    return { id: "explorador", o: {}, titulo: lista.map(s => s.n).join(" vs "), freq: fs.every(f => f === "D") ? "D" : fs.every(f => f === "W") ? "W" : fs.every(f => f === "Q") ? "Q" : "M",
+      sub: (unidades.length > 1 ? `Atención: las series tienen unidades distintas (${unidades.join(", ")}) y comparten el mismo eje.` : `Unidad: ${unidades[0] || "–"}.`) + (fs.includes("D") ? " Las series de mercado se muestran con dato diario." : ""),
+      ks: ok.map(s => s.k), fuente: fuente(...ok.map(s => s.k)), unidad: unidades.length === 1 && unidades[0] === "%" && !OP.op ? "%" : "", dec: 2, series: lista };
+  }
 }
-
 // ───────── Metodología ─────────
 const CHANGELOG = [
+  ["4.4", "2026-09-30", ["Nueva sección Ciclo: mapa del ciclo (cada indicador en su percentil histórico, mes a mes), este ciclo de la Fed contra los anteriores (tasa, desempleo, core y spread, alineados al primer recorte o a la primera suba) y revisiones de las nóminas y del PBI respecto de su primera publicación.",
+    "Proyecciones de la Fed como rombos en el core PCE, el desempleo, el PBI y la tasa; la tasa neutral pasa a ser la que estima la propia Fed y se actualiza en cada reunión.",
+    "Qué descuenta el mercado: la senda implícita con las letras de 1, 3 y 6 meses, 1 y 2 años contra la tasa de la Fed, hoy y hace un mes.",
+    "Explorador con dato diario para las series de mercado, y cada combinación se puede guardar en Mi monitor con la estrella."]],
   ["4.3", "2026-09-30", ["Datos diarios en tasas, spreads, dólar, expectativas de mercado y NFCI: con períodos de hasta 5 años los gráficos muestran el dato diario (o semanal, como la hipotecaria de Freddie Mac); con períodos más largos, el promedio mensual. Los indicadores muestran el último cierre.",
     "Curva del Tesoro con el corte de hace 1 mes; tasa real a 10 años con la inflación esperada en eje derecho; tasa real de la Fed con el rango de estimaciones de la tasa neutral (0,5% a 1,3%) en lugar de un número fijo.",
     "Nuevo: high yield por calidad (BB contra CCC), para ver dónde aparece primero el estrés de crédito.",
@@ -384,6 +423,9 @@ const CHANGELOG = [
 ];
 const GLOSARIO = [
   ["Core", "Inflación sin alimentos ni energía, que son los componentes más volátiles."],
+  ["Proyecciones de la Fed (SEP)", "Mediana de lo que proyectan los miembros de la Fed para tasa, inflación, desempleo y crecimiento, publicada cuatro veces por año. La tasa de largo plazo es su estimación de la tasa nominal neutral."],
+  ["Senda implícita", "Lo que el mercado espera para la tasa de la Fed, leído en los rendimientos de las letras y bonos cortos del Tesoro."],
+  ["Revisión", "Diferencia entre el dato que se conoce hoy y el que se publicó por primera vez. Las nóminas se revisan los dos meses siguientes y una vez por año, en febrero."],
   ["Brecha del producto", "Diferencia entre el PBI real y el PBI potencial (lo que la economía puede producir sin acelerar la inflación), en % del potencial. El potencial lo estima la Oficina de Presupuesto del Congreso (CBO)."],
   ["Media recortada y mediana", "Medidas del núcleo de la inflación que descartan cada mes los rubros con subas y bajas más extremas (media recortada, Fed de Dallas) o toman el rubro del medio (mediana, Fed de Cleveland)."],
   ["Costo laboral unitario", "Remuneración por hora dividida la productividad: cuánto cuesta en salarios producir una unidad."],

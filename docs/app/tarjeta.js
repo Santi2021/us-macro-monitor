@@ -118,6 +118,7 @@ export function tarjeta(id, opts = {}) {
       ${opts.grande ? "" : `<button type="button" class="b-ampliar">${ICONOS.ampliar}Ampliar</button>`}
     </div></footer>`;
   if (c) art.querySelector(".card-h").appendChild(botonEstrella(id, nombre));
+  else if (opts.estrella) art.querySelector(".card-h").appendChild(botonEstrella(opts.estrella, "Esta combinación del explorador"));
   const cuerpo = art.querySelector(".cuerpo");
 
   // selectores (vista, real, escala) declarados por el gráfico
