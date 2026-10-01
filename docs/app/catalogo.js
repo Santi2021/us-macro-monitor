@@ -49,6 +49,12 @@ function def(id, m) { CAT[id] = Object.assign({ id, ops: [] }, m); }
 
 // ═════════════════════════ Actividad ═════════════════════════
 const DIA = 864e5;
+// Nombre corto de cada publicación, para anotar sobre un gráfico
+const CORTOS = [[/Employment Situation/, "Empleo"], [/Retail/, "Ventas"], [/Producer Price/, "PPI"], [/Consumer Price/, "CPI"], [/Job Openings/, "JOLTS"],
+  [/^Gross Domestic/, "PBI"], [/Personal Income/, "Ingresos y gastos"], [/G\.17/, "Industria"], [/Residential Construction/, "Viviendas"], [/\(M3\)/, "Órdenes"],
+  [/International Trade/, "Comercio"], [/Weekly Claims/, "Pedidos de desempleo"], [/Surveys of Consumers/, "Michigan"], [/Construction Spending/, "Construcción"],
+  [/Business Outlook/, "Filadelfia"], [/Empire State/, "Empire"], [/Motor Vehicle/, "Autos"], [/Import and Export/, "Precios de importación"]];
+const nombreCorto = n => (CORTOS.find(([re]) => re.test(n)) || [null, nombreRelease(n)])[1];
 // Proyección de crecimiento de la Fed como texto (el rombo no va en un gráfico de tasa trimestral)
 const sepPBI = () => { const p = sepPuntos("sep_gdp", 9, 1); return p ? ` La Fed proyecta ${p.map(x => `${nf(x[1])}% para ${new Date(x[0]).getUTCFullYear()}`).join(" y ")} (cuarto trimestre contra cuarto trimestre).` : ""; };
 def("contribuciones", { slug: "contribuciones-al-pbi", nombre: "Contribuciones al crecimiento del PBI", sin: ["pbi", "gdp", "crecimiento", "motores del pbi", "inventarios"],
@@ -97,9 +103,11 @@ def("gdpnow", { slug: "gdpnow", nombre: "GDPNow: el PBI del trimestre en tiempo 
       const f = new Date(actual[i][0]).toISOString().slice(0, 10), f0 = new Date(actual[i][0] - 3 * DIA).toISOString().slice(0, 10);
       const rel = (ST.DATA.calendario || []).filter(c => c.fecha <= f && c.fecha >= f0 && infoRelease(c.nombre).imp >= 2 && !/GDPNow|FOMC|Summary of Economic|Target Range/.test(c.nombre))
         .sort((x, y) => infoRelease(y.nombre).imp - infoRelease(x.nombre).imp || y.fecha.localeCompare(x.fecha))[0];
-      movs.push({ p: actual[i], d, rel: rel ? nombreRelease(rel.nombre) : null });
+      movs.push({ p: actual[i], d, rel: rel ? nombreCorto(rel.nombre) : null });
     }
-    const notas = movs.map(m => m.p), textos = movs.map(m => (m.rel ? m.rel + " " : "") + sg(m.d));
+    // se anotan los 5 movimientos más grandes
+    const anotados = movs.slice().sort((x, y) => Math.abs(y.d) - Math.abs(x.d)).slice(0, 5).sort((x, y) => x.p[0] - y.p[0]);
+    const notas = anotados.map(m => m.p), textos = anotados.map(m => (m.rel ? m.rel + " " : "") + sg(m.d));
     const recientes = movs.filter(m => m.rel && m.p[0] >= last(actual)[0] - 30 * DIA);
     const motor = recientes.length ? recientes.reduce((x, y) => Math.abs(y.d) > Math.abs(x.d) ? y : x).rel : "";
     // error de los últimos 8 trimestres contra la primera publicación del PBI
@@ -112,7 +120,7 @@ def("gdpnow", { slug: "gdpnow", nombre: "GDPNow: el PBI del trimestre en tiempo 
     series.push({ n: `GDPNow ${fq(P(qa))}`, d: actual, c: 0, w: 2.8, escalon: true });
     if (notas.length) series.push({ n: "Dato que la movió", t: "nota", c: 0, d: notas, textos, enLeyenda: false });
     return { freq: "D", eventos: false, recesiones: false, sinRecorte: true,
-      titulo: `GDPNow estima ${nf(v)}% para ${fq(P(qa))}: ${Math.abs(dm) < 0.1 ? "sin cambios en el último mes" : `${dm > 0 ? "subió" : "bajó"} ${nf(Math.abs(dm))} pp en el último mes`}` + (motor && Math.abs(dm) >= 0.1 ? `, sobre todo por ${motor.toLowerCase()}` : ""),
+      titulo: `GDPNow estima ${nf(v)}% para ${fq(P(qa))}: ${Math.abs(dm) < 0.1 ? "sin cambios en el último mes" : `${dm > 0 ? "subió" : "bajó"} ${nf(Math.abs(dm))} pp en el último mes`}` + (motor && Math.abs(dm) >= 0.1 ? `, sobre todo por el dato de ${motor}` : ""),
       sub: "Cada escalón es un dato nuevo; en gris, el trimestre anterior y su PBI." + (em != null ? ` Error promedio (${e8.length} trimestres): ${nf(em)} pp.` : ""),
       series, refs: [{ y: 0 }] };
   } });
@@ -216,7 +224,7 @@ def("viviendas", { slug: "vivienda", nombre: "Vivienda: permisos y casas nuevas 
     const u = S("permits1"), e = S("permits5"), st = S("meses_stock"); if (!u) return null;
     const u3 = roll(u, 3), cr = u3.length > 3 ? (Math.pow(last(u3)[1] / u3[u3.length - 4][1], 4) - 1) * 100 : null;
     const ss = [{ n: "Casas unifamiliares", d: cut(u3), c: 0, w: 2.8 }];
-    if (e) ss.push({ n: "Edificios (5 o más unidades)", d: cut(roll(e, 3)), c: 3, w: 1.6 });
+    if (e) ss.push({ n: "Edificios (5 o más unidades)", d: cut(roll(e, 3)), c: "gris", w: 1.6 });
     if (st) ss.push({ n: "Meses de stock (eje derecho)", d: cut(st), c: 1, w: 1.6, der: true, dec: 1, u: "meses" });
     const vs = st ? last(st)[1] : null;
     return { titulo: `Permisos de casas unifamiliares ${sg(cr, 0)}% anualizado en 3 meses` + (vs != null ? `; ${nf(vs)} meses de stock sin vender, ${vs > 6.5 ? "sobre" : vs < 5.5 ? "bajo" : "cerca de"} el equilibrio de 6` : ""),

@@ -138,9 +138,10 @@ function opcionesLinea(sp, ancho, grande) {
       },
     }),
     xAxis: {
-      type: "time", boundaryGap: hayBarras ? ["1%", "1%"] : false, minInterval: largo ? 365 * DIA_MS : undefined,
+      type: "time", boundaryGap: hayBarras ? ["1%", "1%"] : false, minInterval: largo ? ((x1 - x0) > 40 * 365 * DIA_MS ? 3652 * DIA_MS : 365 * DIA_MS) : undefined,
+      maxInterval: (x1 - x0) > 40 * 365 * DIA_MS ? 3653 * DIA_MS : undefined,
       axisLine: { lineStyle: { color: axis } }, axisTick: { show: false },
-      axisLabel: { color: muted, fontSize: fs, hideOverlap: true, formatter: (x1 - x0) < 200 * DIA_MS ? v => { const d = new Date(v); return `${d.getUTCDate()} ${MES[d.getUTCMonth()]}`; } : v => { const d = new Date(v); return d.getUTCMonth() === 0 ? String(d.getUTCFullYear()) : MES[d.getUTCMonth()]; } },
+      axisLabel: { color: muted, fontSize: fs, hideOverlap: true, formatter: (x1 - x0) < 200 * DIA_MS ? v => { const d = new Date(v), n = d.getUTCDate(); return (x1 - x0) > 60 * DIA_MS && n !== 1 && n !== 15 ? "" : `${n} ${MES[d.getUTCMonth()]}`; } : v => { const d = new Date(v); return d.getUTCMonth() === 0 ? String(d.getUTCFullYear()) : MES[d.getUTCMonth()]; } },
       splitLine: { show: false },
     },
     yAxis: [{
