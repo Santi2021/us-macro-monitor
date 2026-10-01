@@ -2,7 +2,7 @@
 import { T, P, DIA_MS, hoyUTC, fm, fq, fw, fd, nf, sg, unidadTxt, leer, guardar, horaBA } from "./util.js";
 import { last, prev, diff, pct, yoy, escala } from "./calc.js";
 
-export const VERSION = "4.5";
+export const VERSION = "4.6";
 export const ST = {
   DATA: null,
   rango: { modo: "2022", desde: null, hasta: null },
@@ -26,13 +26,22 @@ export function calcularRango() {
   } else if (r.modo === "manual") ST.T0 = T(2022);
   else ST.T0 = T(y - Number(r.modo), m);
 }
+// Series en formato compacto {t0, dt: días entre datos, v: valores} → [[fecha, valor], ...]. Acepta también el formato viejo.
+export function expandir(x) {
+  if (Array.isArray(x)) return x;
+  if (!x || !x.t0) return [];
+  let t = P(x.t0); const out = new Array(x.v.length);
+  for (let i = 0; i < x.v.length; i++) { t += x.dt[i] * DIA_MS; out[i] = [new Date(t).toISOString().slice(0, 10), x.v[i]]; }
+  return out;
+}
+export function prepararDatos(D) { for (const s of Object.values(D.series || {})) s.d = expandir(s.d); return D; }
 // La historia completa (desde 1947) vive en un archivo aparte que se carga sólo cuando el período lo pide
 export const necesitaHistoria = () => ST.T0 < Date.UTC(1999, 5, 1) && !ST.historia;
 export async function cargarHistoria() {
   const r = await fetch("historia.json", { cache: "no-cache" });
   if (!r.ok) throw new Error("HTTP " + r.status);
   const h = await r.json();
-  for (const [k, d] of Object.entries(h.series || {})) if (ST.DATA.series[k] && d.length > ST.DATA.series[k].d.length) ST.DATA.series[k].d = d;
+  for (const [k, x] of Object.entries(h.series || {})) { const d = expandir(x); if (ST.DATA.series[k] && d.length > ST.DATA.series[k].d.length) ST.DATA.series[k].d = d; }
   ST.historia = true;
   cache.clear();
 }
@@ -57,7 +66,11 @@ export async function cargarDiarios() {
     const r = await fetch("diarios.json", { cache: "no-cache" });
     if (!r.ok) return;
     const j = await r.json(), out = {};
-    for (const [k, v] of Object.entries(j.series || {})) { const t0 = P(v.t0); out[k] = v.d.map(([n, x]) => [t0 + n * DIA_MS, x]); }
+    for (const [k, v] of Object.entries(j.series || {})) {
+      const t0 = P(v.t0);
+      if (v.d) out[k] = v.d.map(([n, x]) => [t0 + n * DIA_MS, x]);   // formato anterior
+      else { let t = t0; out[k] = v.v.map((x, i) => [t += v.dt[i] * DIA_MS, x]); }
+    }
     ST.D = out;
   } catch (e) { ST.D = null; }
 }

@@ -402,6 +402,12 @@ function spExplora(EXP, OP) {
 }
 // ───────── Metodología ─────────
 const CHANGELOG = [
+  ["4.6", "2026-10-01", ["Títulos y subtítulos más cortos: la explicación larga pasa a la ficha de cada gráfico.",
+    "Proyecciones de la Fed: en el gráfico va la de fin de este año (el eje ya no se estira un año al vacío); el subtítulo menciona también la del próximo.",
+    "Ciclos comparados con el año al final de cada línea gris; al pasar el mouse se resalta el ciclo.",
+    "Tasa de fondos federales diaria sin los saltos de fin de mes (mediana de 5 días).",
+    "Imágenes descargadas: leyenda con la forma de cada serie (barra, rombo, línea) y el mapa del ciclo en alto completo.",
+    "Archivos de datos compactos: la página baja menos de la mitad que antes al abrir."]],
   ["4.5", "2026-10-01", ["Revisión de diseño: en cada fila los gráficos y los indicadores quedan alineados aunque los títulos tengan distinto largo; todas las secciones con 6 indicadores en la cabecera.",
     "Ejes con los decimales justos según la escala, fechas por año en períodos largos, sin rellenos superpuestos con el rango normal y sin \"-0,0\".",
     "Las marcas de suba y baja de la Fed salen solas de su tasa objetivo (aparece la suba de septiembre de 2026)."]],

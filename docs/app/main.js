@@ -1,6 +1,6 @@
 // Arranque: cabecera, navegación, período, ajustes, vigía y ruteo.
 import { el, esc, $, $$, P, fm, fLargo, ICONOS, horaBA, fd, guardar, leer, toast } from "./util.js";
-import { ST, VERSION, calcularRango, guardarPrefs, releasesDiarios, vigia, limpiarCache, necesitaHistoria, cargarHistoria, cargarDiarios } from "./datos.js";
+import { ST, VERSION, calcularRango, guardarPrefs, releasesDiarios, vigia, limpiarCache, necesitaHistoria, cargarHistoria, cargarDiarios, prepararDatos } from "./datos.js";
 import { FRENTES, CAT, porSlug } from "./catalogo.js";
 import { SECCIONES, leerRuta, construir, navegar, aplicarPeriodoDeRuta } from "./rutas.js";
 import { limpiarGraficos, abrirGrafico, abrirPanel, cerrarModal, hayModal, colocar, cerrarPops, redimensionar } from "./tarjeta.js";
@@ -184,7 +184,7 @@ function alCambiarRuta() {
 
 // ───────── Inicio ─────────
 function iniciar(json) {
-  ST.DATA = json;
+  ST.DATA = prepararDatos(json);
   ST.diarios = releasesDiarios();
   const fin = Object.values(json.series).map(s => s.d.length ? s.d[s.d.length - 1][0] : "").filter(f => f <= new Date().toISOString().slice(0, 10)).sort().pop();
   ST.ULT = P(fin);

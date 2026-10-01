@@ -274,15 +274,17 @@ function csvOriginal(sp) {
   const filas = [["fecha", ...ks.map(k => `${meta(k).n} (${meta(k).id}, ${meta(k).u})`)], ...ts.map(t => [t, ...ms.map(m => csvNum(m.get(t)))]), [], [cita(sp)]];
   descargar(nombreArchivo(sp, "csv").replace(".csv", "-original.csv"), filas.map(f => f.map(csvCelda).join(";")).join("\n"));
 }
+// un mapa de calor con muchas filas necesita más alto para que se lean todos los nombres
+const altoPara = (sp, H) => sp.tipo === "heat" && sp.filas && sp.filas.length > 16 ? Math.max(H, 330 + sp.filas.length * 26) : H;
 async function copiarImagen(sp) {
   try {
-    const blob = await componerPNG(sp, 1200, 675);
+    const blob = await componerPNG(sp, 1200, altoPara(sp, 675));
     await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
     toast("Imagen copiada: pegala en el chat o en X");
   } catch (e) { exportarPNG(sp, 1200, 675, "x"); toast("El navegador no permite copiar imágenes: se descargó el PNG"); }
 }
 async function exportarPNG(sp, W, H, tipo) {
-  const blob = await componerPNG(sp, W, H);
+  const blob = await componerPNG(sp, W, altoPara(sp, H));
   descargar(nombreArchivo(sp, "png").replace(".png", `-${tipo}.png`), blob);
 }
 function envolver(ctx, texto, ancho) {
@@ -306,16 +308,20 @@ export function componerPNG(sp, W, H) {
     y += 4; ctx.fillStyle = css("--muted"); ctx.font = `400 16px ${fnt}`; for (const l of ls) { ctx.fillText(l, pad, y); y += 22; }
     // leyenda
     const u = sp.unidad ?? (sp.tipo === "cat" ? "pp" : "%"), dec = sp.dec ?? 1;
-    const items = sp.tipo === "heat" ? [] : sp.series.filter(s => s.enLeyenda !== false).map((s, i) => ({ c: colorSerie(sp, s, sp.series.indexOf(s)),
+    const items = sp.tipo === "heat" ? [] : sp.series.filter(s => s.enLeyenda !== false).map((s, i) => ({ c: colorSerie(sp, s, sp.series.indexOf(s)), forma: s.t === "bar" || s.area ? "cuadro" : s.t === "punto" ? "rombo" : s.punteada ? "punteada" : "linea",
       t: s.n + (sp.tipo !== "cat" && s.d.length ? "  " + nf(s.finValor ?? s.d[s.d.length - 1][1], s.dec ?? dec) + unidadTxt(u) : "") }))
-      .concat((sp.refs || []).filter(r => r.l).map(r => ({ c: css("--ref"), t: r.l, ref: true })));
+      .concat((sp.refs || []).filter(r => r.l).map(r => ({ c: css("--ref"), t: r.l, forma: "punteada" })))
+      .concat(sp.banda ? [{ c: css("--band"), t: sp.bandaTexto || "Rango normal 2000-19", forma: "cuadro" }] : []);
     y += 10; ctx.font = `500 15px ${fnt}`;
     let x = pad;
     for (const it of items) {
       const w = ctx.measureText(it.t).width + 34;
       if (x + w > W - pad && x > pad) { x = pad; y += 24; }
-      ctx.strokeStyle = it.c; ctx.lineWidth = 3; ctx.setLineDash(it.ref ? [5, 4] : []);
-      ctx.beginPath(); ctx.moveTo(x, y + 9); ctx.lineTo(x + 18, y + 9); ctx.stroke(); ctx.setLineDash([]);
+      ctx.strokeStyle = it.c; ctx.fillStyle = it.c; ctx.lineWidth = 3; ctx.setLineDash(it.forma === "punteada" ? [5, 4] : []);
+      if (it.forma === "cuadro") { ctx.fillRect(x + 3, y + 3, 12, 12); }
+      else if (it.forma === "rombo") { ctx.lineWidth = 2.5; ctx.beginPath(); ctx.moveTo(x + 9, y + 2); ctx.lineTo(x + 16, y + 9); ctx.lineTo(x + 9, y + 16); ctx.lineTo(x + 2, y + 9); ctx.closePath(); ctx.stroke(); }
+      else { ctx.beginPath(); ctx.moveTo(x, y + 9); ctx.lineTo(x + 18, y + 9); ctx.stroke(); }
+      ctx.setLineDash([]);
       ctx.fillStyle = css("--ink-2"); ctx.fillText(it.t, x + 24, y); x += w;
     }
     if (items.length) y += 28;

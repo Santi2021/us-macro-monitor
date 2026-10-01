@@ -619,14 +619,44 @@ def alerta(corridas):
 
 
 # -----------------------------------------------------------------------------
+# Formato compacto de las series en los archivos: {"t0": fecha inicial, "dt": días entre datos, "v": valores}.
+# Las fechas dejan de repetirse como texto en cada punto (los archivos pesan cerca de la mitad).
+# Se leen los dos formatos, así una corrida nunca depende de cómo se escribió la anterior.
+def compactar(pares):
+    if not pares:
+        return {"t0": None, "dt": [], "v": []}
+    fechas = [dt.date.fromisoformat(f) for f, _ in pares]
+    return {"t0": pares[0][0], "dt": [0] + [(b - a).days for a, b in zip(fechas, fechas[1:])], "v": [v for _, v in pares]}
+
+
+def expandir(x):
+    if isinstance(x, list):
+        return x
+    if not x or not x.get("t0"):
+        return []
+    f, out = dt.date.fromisoformat(x["t0"]), []
+    for d, v in zip(x["dt"], x["v"]):
+        f = f + dt.timedelta(days=d)
+        out.append([f.isoformat(), v])
+    return out
+
+
+def diaria_a_pares(x):
+    """Serie diaria guardada (formato viejo {t0, d: [[días desde t0, v]]} o compacto) como [[fecha, valor], ...]."""
+    if "d" in x:
+        t0 = dt.date.fromisoformat(x["t0"])
+        return [[(t0 + dt.timedelta(days=n)).isoformat(), v] for n, v in x["d"]]
+    return expandir(x)
+
+
 def diarios(fred_key):
     """Baja las series de mercado sin promediar y escribe docs/diarios.json.
 
-    Formato compacto: {k: {"t0": "AAAA-MM-DD", "d": [[días desde t0, valor], ...]}}. Si una serie falla, viene vacía o
-    pierde más de 10% de su historia, se conserva la versión anterior de esa serie."""
+    Formato compacto (ver `compactar`). Si una serie falla, viene vacía o pierde más de 10% de su historia, se conserva
+    la versión anterior de esa serie."""
     try:
         with open(DIARIOS, encoding="utf-8") as f:
-            previo = json.load(f).get("series", {})
+            previo = {k: compactar(diaria_a_pares(v)) for k, v in json.load(f).get("series", {}).items()}
     except (FileNotFoundError, json.JSONDecodeError):
         previo = {}
     out, fallas = {}, []
@@ -638,10 +668,9 @@ def diarios(fred_key):
                 s = s[s.diff().fillna(1) != 0]
             if s.empty or s.index[-1].date() > HOY + dt.timedelta(days=7):
                 raise ValueError("vacía o con fechas futuras")
-            t0 = s.index[0]
-            nueva = {"t0": t0.strftime("%Y-%m-%d"), "d": [[int((d - t0).days), round(float(v), 4)] for d, v in s.items()]}
-            if k in previo and len(nueva["d"]) < 0.9 * len(previo[k]["d"]):
-                raise ValueError(f"la historia se acortó de {len(previo[k]['d'])} a {len(nueva['d'])}")
+            nueva = compactar([[d.strftime("%Y-%m-%d"), round(float(v), 4)] for d, v in s.items()])
+            if k in previo and len(nueva["v"]) < 0.9 * len(previo[k]["v"]):
+                raise ValueError(f"la historia se acortó de {len(previo[k]['v'])} a {len(nueva['v'])}")
             out[k] = nueva
         except Exception as e:
             fallas.append(k)
@@ -658,13 +687,15 @@ def main():
     try:
         with open(SALIDA, encoding="utf-8") as f:
             anterior = json.load(f)
+        for v in anterior.get("series", {}).values():
+            v["d"] = expandir(v.get("d"))
     except (FileNotFoundError, json.JSONDecodeError):
         pass
 
     # la historia completa de la corrida anterior es la base para validar y para el respaldo
     try:
         with open(HISTORIA, encoding="utf-8") as f:
-            hist = json.load(f).get("series", {})
+            hist = {k: expandir(v) for k, v in json.load(f).get("series", {}).items()}
     except (FileNotFoundError, json.JSONDecodeError):
         hist = {}
     base = dict(anterior)
@@ -726,9 +757,9 @@ def main():
                "releases": {str(k): v for k, v in releases.items()} or anterior.get("releases", {}),
                "vistos": vistos, "primeras": primeras, "gdpnow_hist": gdpnow_hist, "novedades": novedades, "corridas": corridas, "avisos": avisos}
     with open(SALIDA, "w", encoding="utf-8") as f:
-        json.dump(paquete, f, ensure_ascii=False, separators=(",", ":"))
+        json.dump(dict(paquete, series={k: dict(v, d=compactar(v["d"])) for k, v in data.items()}), f, ensure_ascii=False, separators=(",", ":"))
     with open(HISTORIA, "w", encoding="utf-8") as f:
-        json.dump({"generado": AHORA, "series": {k: v["d"] for k, v in completa.items()}}, f, ensure_ascii=False, separators=(",", ":"))
+        json.dump({"generado": AHORA, "series": {k: compactar(v["d"]) for k, v in completa.items()}}, f, ensure_ascii=False, separators=(",", ":"))
 
     n_cat = sum(1 for k in data if k.startswith("cat:"))
     print(f"Historia completa: {os.path.getsize(HISTORIA) / 1024:,.0f} KB")

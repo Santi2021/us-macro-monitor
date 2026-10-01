@@ -198,6 +198,9 @@ function opcionesCategoria(sp, ancho, grande) {
       let ult = s.d.length - 1; while (ult > 0 && s.d[ult] == null) ult--;
       const c = colorSerie(sp, s, i);
       return { type: "line", name: s.n, data: s.d, z: s.fina ? 3 : 5, symbol: sp.sinPuntos ? "none" : "circle", symbolSize: 7, connectNulls: true,
+        endLabel: s.etiquetaFin ? { show: true, formatter: s.etiquetaFin, color: muted, fontSize: fs - 2, distance: 4 } : undefined,
+        labelLayout: s.etiquetaFin ? { moveOverlap: "shiftY" } : undefined,
+        emphasis: s.fina ? { focus: "series", lineStyle: { width: 2.2, opacity: 1 } } : undefined,
         lineStyle: { color: c, width: s.w ?? (s.fina ? 1.1 : 2), type: s.punteada ? [6, 4] : "solid", opacity: s.fina ? 0.5 : 1 },
         itemStyle: { color: c, borderColor: css("--surface"), borderWidth: 2 },
         label: s.etiquetas ? { show: true, position: "top", color: ink, fontSize: fs - 0.5, fontWeight: 600, distance: 8,
@@ -208,7 +211,7 @@ function opcionesCategoria(sp, ancho, grande) {
   });
   return {
     textStyle: { fontFamily: css("--font"), color: css("--ink-2") },
-    grid: { left: 8, right: 16, top: 26, bottom: 6, containLabel: true },
+    grid: { left: 8, right: sp.series.some(s => s.etiquetaFin) ? 40 : 16, top: 26, bottom: 6, containLabel: true },
     legend: { show: false, data: sp.series.map(s => s.n) },
     tooltip: Object.assign(tooltipBase(), { trigger: "axis", axisPointer: { type: "shadow", shadowStyle: { color: css("--hover") } },
       formatter: ps => `<div style="font-weight:600;margin-bottom:4px">${ps[0].axisValue}</div>` + ps.filter(p => p.value != null).map(p =>

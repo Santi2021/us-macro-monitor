@@ -37,13 +37,14 @@ const fechaDe = (a, f = "M") => a && a.length ? (f === "Q" ? fq : f === "W" ? fw
 
 export const CAT = {};
 // Proyecciones de la Fed (mediana del SEP) como puntos a fin de cada año (año en curso y el siguiente)
-function sepPuntos(k, mes = 11) {
+// En el gráfico va sólo la de este año (la del próximo estiraría el eje un año al vacío); el texto menciona las dos
+function sepPuntos(k, mes = 11, hasta = 0) {
   const a = S(k); if (!a) return null;
   const y = new Date().getUTCFullYear();
-  const pts = a.filter(p => { const yy = new Date(p[0]).getUTCFullYear(); return yy >= y && yy <= y + 1; }).map(p => [Date.UTC(new Date(p[0]).getUTCFullYear(), mes, 1), p[1]]);
+  const pts = a.filter(p => { const yy = new Date(p[0]).getUTCFullYear(); return yy >= y && yy <= y + hasta; }).map(p => [Date.UTC(new Date(p[0]).getUTCFullYear(), mes, 1), p[1]]);
   return pts.length ? pts : null;
 }
-const sepTxt = (k, dec = 1) => { const p = sepPuntos(k); return p ? p.map(x => `${nf(x[1], dec)}% a fin de ${new Date(x[0]).getUTCFullYear()}`).join(" y ") : ""; };
+const sepTxt = (k, dec = 1) => { const p = sepPuntos(k, 11, 1); return p ? p.map(x => `${nf(x[1], dec)}% a fin de ${new Date(x[0]).getUTCFullYear()}`).join(" y ") : ""; };
 function def(id, m) { CAT[id] = Object.assign({ id, ops: [] }, m); }
 
 // ═════════════════════════ Actividad ═════════════════════════
@@ -83,7 +84,7 @@ def("demandaPrivada", { slug: "demanda-privada", nombre: "Demanda privada final 
     const f = vista(S("final_sales_priv"), o.vista, "Q"), g = vista(S("gdp_real"), o.vista, "Q"); if (!f || !g) return null;
     const d = last(f)[1] - last(g)[1];
     return { freq: "Q", titulo: `La demanda privada crece ${nf(last(f)[1])}% ${VT[o.vista]}, ${nf(Math.abs(d))} pp ${d >= 0 ? "por encima" : "por debajo"} del PBI`,
-      sub: "Consumo más inversión fija privada, en términos reales: el pulso de la demanda sin inventarios, gobierno ni comercio exterior." + (o.vista === "a" && sepPuntos("sep_gdp", 9) ? ` La Fed proyecta un crecimiento del PBI de ${sepTxt("sep_gdp")} (cuarto trimestre contra cuarto trimestre).` : ""),
+      sub: "Consumo más inversión fija privada, real." + (o.vista === "a" && sepPuntos("sep_gdp", 9) ? ` Rombo: PBI que proyecta la Fed, ${sepTxt("sep_gdp")}.` : " La demanda sin inventarios, gobierno ni comercio exterior."),
       series: [{ n: "Demanda privada final", d: cut(f), c: 0, w: 2.8 }, { n: "PBI real", d: cut(g), c: 1 }]
         .concat(o.vista === "a" && sepPuntos("sep_gdp", 9) ? [{ n: "Proyección de la Fed para el PBI", t: "punto", c: 1, d: sepPuntos("sep_gdp", 9) }] : []), refs: [{ y: 0 }] };
   } });
@@ -108,11 +109,11 @@ def("brecha", { slug: "brecha-del-producto", nombre: "Brecha del producto y uso 
       const base = t.filter(x => x[0] >= T(2000) && x[0] < T(2020)).map(x => x[1]), m = base.reduce((a, c) => a + c, 0) / base.length;
       const tq = toQ(t.map(([x, v]) => [x, v - m]));
       if (tq) ss.push({ n: `Uso de la capacidad vs. promedio 2000-19 (${nf(m)}%)`, d: cut(tq), c: 1 });
-      extra = ` La industria usa ${nf(last(t)[1])}% de su capacidad (${fm(last(t)[0])}), ${sg(last(t)[1] - m)} pp contra su promedio.`;
+      extra = ` Uso de la capacidad: ${nf(last(t)[1])}%.`;
     }
     const v = last(b)[1];
     return { freq: "Q", titulo: Math.abs(v) < 0.3 ? `La economía produce en línea con su potencial (brecha de ${nf(Math.abs(v))}%)` : `La economía produce ${nf(Math.abs(v))}% ${v > 0 ? "por encima" : "por debajo"} de su potencial`,
-      sub: "Positivo: la economía usa más recursos de los que puede sostener y eso presiona sobre la inflación. Negativo: hay capacidad ociosa." + extra,
+      sub: "Positivo: usa más recursos de los que puede sostener y presiona sobre la inflación; negativo: hay capacidad ociosa." + extra,
       series: ss, refs: [{ y: 0, l: "Potencial" }] };
   } });
 def("productividad", { slug: "productividad-y-costo-laboral", nombre: "Productividad y costo laboral unitario", sin: ["productividad", "ulc", "costo laboral unitario", "ia", "inteligencia artificial"], ops: [VISTA_Q],
@@ -121,7 +122,7 @@ def("productividad", { slug: "productividad-y-costo-laboral", nombre: "Productiv
   f: o => {
     const p = vista(S("productivity"), o.vista, "Q"), u = vista(S("ulc"), o.vista, "Q"); if (!p || !u) return null;
     return { freq: "Q", titulo: `La productividad crece ${nf(last(p)[1])}% ${VT[o.vista]} y el costo laboral unitario ${nf(last(u)[1])}%`,
-      sub: "Sector empresas no agrícolas. Si la productividad sube, las empresas pueden pagar salarios más altos sin subir precios: un costo laboral unitario cerca de 2% es compatible con la meta de inflación.",
+      sub: "Empresas no agrícolas. Un costo laboral unitario cerca de 2% es compatible con la meta: los salarios suben sin presionar precios.",
       series: [{ n: "Productividad", d: cut(p), c: 0, w: 2.8 }, { n: "Costo laboral unitario", d: cut(u), c: 1 }], refs: [{ y: 0 }, { y: 2, l: "2%" }] };
   } });
 def("encuestas", { slug: "encuestas-manufactureras", nombre: "Encuestas manufactureras de la Fed", sin: ["philly fed", "empire state", "pmi", "ism", "encuestas", "manufactura", "filadelfia", "nueva york"],
@@ -136,7 +137,7 @@ def("encuestas", { slug: "encuestas-manufactureras", nombre: "Encuestas manufact
     if (prom) ss.push({ n: "Promedio, 3 meses", d: cut(prom), c: "ink", w: 2.6 });
     const v = prom ? last(prom)[1] : last(a || b)[1];
     return { titulo: `Las encuestas de la Fed ${v >= 0 ? "muestran expansión" : "muestran contracción"} en la industria: promedio de 3 meses en ${sg(v)}`,
-      sub: `Por encima de cero, más empresas ven mejora que deterioro. En ${fechaDe(a || b)}: Filadelfia ${a ? sg(last(a)[1]) : "–"}, Nueva York ${b ? sg(last(b)[1]) : "–"}. Son los primeros datos de cada mes, dos semanas antes que la producción industrial.`,
+      sub: `Sobre cero, más empresas ven mejora que deterioro. ${fechaDe(a || b)}: Filadelfia ${a ? sg(last(a)[1]) : "–"}, Nueva York ${b ? sg(last(b)[1]) : "–"}. Es el primer dato industrial del mes.`,
       unidad: "", dec: 1, series: ss, refs: [{ y: 0 }] };
   } });
 def("industria", { slug: "produccion-industrial", nombre: "Producción industrial", sin: ["industria", "indpro", "manufactura"], ops: [VISTA_M],
@@ -284,7 +285,7 @@ def("riqueza", { slug: "patrimonio-de-los-hogares", nombre: "Patrimonio de los h
     const r = join(S("net_worth"), toQ(S("dpi_nom")), (a, b) => a / 1000 / b); if (!r) return null;
     const v = last(r)[1];
     return { freq: "Q", titulo: `El patrimonio de los hogares equivale a ${nf(v, 1)} veces su ingreso anual: percentil ${pctl(r, v)} desde 2000`,
-      sub: "Cuando suben las acciones y las viviendas, los hogares gastan más y ahorran menos aunque el ingreso no acompañe: es el efecto riqueza. Se publica unos 70 días después del cierre del trimestre.",
+      sub: "Efecto riqueza: con acciones y viviendas en alza, los hogares gastan más y ahorran menos aunque el ingreso no acompañe.",
       unidad: "veces", dec: 2, decEje: 1, banda: rangoNormal(r), series: [{ n: "Patrimonio / ingreso disponible", d: cut(r), c: 2 }] };
   } });
 def("servicioDeuda", { slug: "carga-de-la-deuda", nombre: "Carga de la deuda de los hogares", sin: ["debt service", "deuda de los hogares", "carga financiera", "cuotas"],
@@ -294,7 +295,7 @@ def("servicioDeuda", { slug: "carga-de-la-deuda", nombre: "Carga de la deuda de 
     const s = S("debt_service"); if (!s) return null;
     const v = last(s)[1], rn = rangoNormal(s);
     return { freq: "Q", titulo: `Los hogares destinan ${nf(v)}% de su ingreso a pagar deudas: ${rn ? (v > rn[1] ? "por encima de" : v < rn[0] ? "por debajo de" : "dentro de") : "respecto de"} su rango normal`,
-      sub: "Cuotas de hipotecas y crédito al consumo, % del ingreso disponible. Mide el margen que tienen los hogares antes de tener que recortar gasto; con hipotecas a tasa fija, sube despacio aunque suban las tasas.",
+      sub: "Cuotas de hipotecas y crédito al consumo, % del ingreso disponible: el margen antes de tener que recortar gasto.",
       banda: rn, bandaTexto: "Rango normal 2005-19", series: [{ n: "Servicio de la deuda / ingreso", d: cut(s), c: 1 }] };
   } });
 def("sentimiento", { slug: "confianza-del-consumidor", nombre: "Confianza del consumidor", sin: ["michigan", "sentiment", "umich"],
@@ -319,7 +320,7 @@ def("pce", { slug: "pce", nombre: "Inflación PCE general y core", sin: ["inflac
       : `Core PCE en ${nf(v)}% ${VT[o.vista]}: ${nf(Math.abs(v - 2))} pp ${v >= 2 ? "por encima" : "por debajo"} de la meta`;
     const ss = seriesVista([["PCE core", c, 0, { w: 2.8 }], ["PCE general", h, 1]], o), sep = o.vista === "a" ? sepPuntos("sep_core") : null;
     if (sep) ss.push({ n: "Proyección de la Fed para el core", t: "punto", c: 0, d: sep });
-    return { titulo, sub: "La diferencia entre general y core es energía y alimentos." + (sep ? ` Los rombos son la proyección de la Fed para el core (mediana de su última reunión con proyecciones): ${sepTxt("sep_core")}.` : ""), dec: decV(o),
+    return { titulo, sub: "La diferencia entre general y core es energía y alimentos." + (sep ? ` Rombos: core que proyecta la Fed, ${sepTxt("sep_core")}.` : ""), dec: decV(o),
       banda: o.vista === "a" ? rangoNormal(vc) : null, bandaTexto: "Rango normal del core 2000-19",
       series: ss, refs: [metaRef(o)] };
   } });
@@ -359,7 +360,7 @@ def("ppi", { slug: "ppi", nombre: "Precios al productor (PPI)", sin: ["ppi", "ma
       series: ss, refs: [{ y: 0 }, { y: 2, l: "2%" }] };
   } });
 def("bienesCore", { slug: "bienes-core-y-aranceles", nombre: "Bienes core y precios de importación", sin: ["aranceles", "tariffs", "bienes core", "importación", "core goods", "traslado"], ops: [VISTA_M],
-  calc: "CPI de bienes sin alimentos ni energía (BLS) y precios de importación de todos los productos (BLS). El precio de importación se mide sin el arancel.",
+  calc: "CPI de bienes sin alimentos ni energía (BLS) y precios de importación de todos los productos (BLS). El precio de importación se mide sin el arancel. Incluye combustibles y no está desestacionalizado: en vista mensual, mirar la tendencia.",
   ks: ["cpi_core_goods", "import_prices"],
   f: o => {
     const g = S("cpi_core_goods"), i = S("import_prices"); if (!g) return null;
@@ -367,7 +368,7 @@ def("bienesCore", { slug: "bienes-core-y-aranceles", nombre: "Bienes core y prec
     if (i) lista.push(["Precios de importación", i, 0]);
     const vg = vista(g, o.vista), vi = i ? vista(i, o.vista) : null;
     return { titulo: `Los bienes core del CPI ${last(vg)[1] >= 0 ? "suben" : "bajan"} ${nf(Math.abs(last(vg)[1]), decV(o))}% ${VT[o.vista]}` + (vi ? `; los importados, antes del arancel, ${sg(last(vi)[1], decV(o))}%` : ""),
-      sub: "Si los bienes al consumidor suben y los precios de importación no, el arancel lo absorbe el comprador local y se traslada a precios. Los precios de importación incluyen combustibles y no están desestacionalizados: en vista mensual, mirar la tendencia.",
+      sub: "Si los bienes al consumidor suben más que los importados (medidos sin arancel), el arancel se traslada a precios.",
       dec: decV(o), series: seriesVista(lista, o), refs: [{ y: 0 }] };
   } });
 export function rubros() { return Object.keys(ST.DATA.series).filter(k => k.startsWith("cat:")).map(k => ({ k, n: ST.DATA.series[k].n, a3: ann(S(k), 3) })).filter(r => r.a3); }
@@ -529,7 +530,7 @@ def("rotacion", { slug: "contrataciones-renuncias-despidos", nombre: "Contrataci
       const lectura = ph < 25 && pl < 50 ? "se contrata poco y se despide poco" : ph < 25 ? "se contrata poco y los despidos suben" : pl > 75 ? "los despidos están altos" : "la rotación es normal";
       titulo = `Contrataciones en ${nf(last(h)[1])}% (percentil ${ph}) y despidos en ${nf(last(l)[1])}% (percentil ${pl}): ${lectura}`;
     }
-    return { titulo, sub: "% del empleo por mes; percentiles desde 2000. Las renuncias adelantan los salarios (renuncia quien consigue algo mejor); los despidos adelantan el desempleo. Con pocas contrataciones, quien pierde el empleo tarda más en reubicarse.",
+    return { titulo, sub: "% del empleo por mes. Las renuncias adelantan los salarios; los despidos, el desempleo. Percentiles desde 2000.",
       series: ss };
   } });
 def("composicion", { slug: "quien-crea-empleo", nombre: "¿Quién crea el empleo?", sin: ["salud", "gobierno", "empleo privado", "sectores", "composición", "nóminas por sector"],
@@ -544,7 +545,7 @@ def("composicion", { slug: "quien-crea-empleo", nombre: "¿Quién crea el empleo
     const [r, s_, gv] = partes.map(x => last(x.d)[1]);
     const titulo = r <= 0 ? `El sector privado sin salud ${r < 0 ? "pierde" : "no crea"} empleo: ${sg(r, 0)} mil por mes; salud y gobierno suman ${nf(s_ + gv, 0)} mil`
       : `El sector privado sin salud suma ${nf(r, 0)} mil puestos por mes; salud y gobierno, ${nf(s_ + gv, 0)} mil`;
-    return { titulo, sub: "Promedio de 3 meses, miles de puestos por mes. Salud y gobierno crecen por razones propias (envejecimiento, presupuesto); el resto del sector privado es el que refleja el ciclo." + (ST.T0 < T(2021) ? " Desde 2021." : ""),
+    return { titulo, sub: "Miles de puestos por mes, promedio de 3 meses. El ciclo se lee en el privado sin salud; salud y gobierno crecen por razones propias." + (ST.T0 < T(2021) ? " Desde 2021." : ""),
       unidad: "mil", dec: 0, cero: true, eventos: false, sinRecorte: true, series: partes.concat([{ n: "Total", d: tot, c: "ink", w: 2 }]), refs: [{ y: 0 }] };
   } });
 def("salarioReal", { slug: "salario-real", nombre: "Salario horario y salario real", sin: ["salarios", "ahe", "salario real", "poder adquisitivo"], ops: [VISTA_M, REAL("cpi")],
@@ -628,6 +629,8 @@ def("curvaTesoro", { slug: "curva-del-tesoro", nombre: "Curva del Tesoro", sin: 
       sub: "Rendimiento por plazo, datos diarios. Compara la forma de la curva hoy con hace 1, 6 y 12 meses." + (c1 != null && c6 != null ? ` El 10 años cambió ${sg(c1, 0)} pb en un mes y ${sg(c6, 0)} pb en 6 meses.` : "") + " No depende del período elegido.",
       fuenteTxt: "Tesoro de EE.UU. vía FRED", unidad: "%", dec: 2, decEje: 1, signo: false, escala: true, cats: plazos, series };
   } });
+// Mediana móvil de 5 datos: saca los saltos de fin de mes de la tasa de fondos federales diaria sin correr los cambios de la Fed
+const mediana5 = a => a && a.map((p, i) => { const v = a.slice(Math.max(0, i - 4), i + 1).map(x => x[1]).sort((x, y) => x - y); return [p[0], v[Math.floor(v.length / 2)]]; });
 // Serie diaria completa (sin importar el período elegido) para los títulos que hablan del último dato
 const diariaCompleta = k => ST.D && ST.D[k] && ST.T1 === Infinity ? ST.D[k] : SD(k);
 const ultimoDato = k => last(diariaCompleta(k));
@@ -643,7 +646,8 @@ def("curva", { slug: "fed-y-treasuries", nombre: "Fed y Treasuries", sin: ["fond
   ks: ["fed_funds", "ust2", "ust10", "ust30", "sep_ff"],
   f: () => {
     const ks = [["fed_funds", "Fondos federales"], ["ust2", "2 años"], ["ust10", "10 años"], ["ust30", "30 años"]];
-    const ss = ks.map(([k, n], i) => ({ n, d: cut(SD(k)), c: i, dec: 2 })).filter(s => s.d && s.d.length); if (ss.length < 3) return null;
+    const limpia = (k, a) => k === "fed_funds" && freqD(k) === "D" ? mediana5(a) : a;
+    const ss = ks.map(([k, n], i) => ({ n, d: cut(limpia(k, SD(k))), c: i, dec: 2 })).filter(s => s.d && s.d.length); if (ss.length < 3) return null;
     const sep = sepPuntos("sep_ff");
     if (sep) ss.push({ n: "Proyección de la Fed para su tasa", t: "punto", c: 0, d: sep, dec: 2 });
     return { freq: freqD("ust10"), titulo: `Fed ${nf(last(ss[0].d)[1], 2)}%, 2 años ${nf(last(ss[1].d)[1], 2)}%, 10 años ${nf(last(ss[2].d)[1], 2)}%`,
@@ -667,8 +671,8 @@ def("tasaReal", { slug: "tasa-real", nombre: "Tasa real a 10 años", sin: ["tips
   f: () => {
     const r = SD("tips10"), be = SD("breakeven10"); if (!r || !be) return null;
     const v = last(r)[1];
-    return { freq: freqD("tips10"), titulo: `Tasa real a 10 años en ${nf(v, 2)}% e inflación esperada en ${nf(last(be)[1], 2)}%: la tasa real está en el percentil ${pctl(r, v)} desde 2003`,
-      sub: `El rendimiento nominal a 10 años se divide en tasa real (TIPS) e inflación esperada (breakeven), ${txtFrec("tips10")}. La inflación esperada va en el eje derecho: se mueve en un rango mucho más chico y en el mismo eje se vería plana.`,
+    return { freq: freqD("tips10"), titulo: `Tasa real a 10 años en ${nf(v, 2)}% (percentil ${pctl(r, v)} desde 2003) e inflación esperada en ${nf(last(be)[1], 2)}%`,
+      sub: `El 10 años nominal = tasa real (TIPS) + inflación esperada (breakeven, eje derecho), ${txtFrec("tips10")}.`,
       fuenteTxt: "Tesoro de EE.UU. vía FRED", dec: 2,
       series: [{ n: "Tasa real (TIPS)", d: cut(r), c: 0, w: 2.8 }, { n: "Inflación esperada (breakeven, eje derecho)", d: cut(be), c: 1, der: true }] };
   } });
@@ -698,14 +702,14 @@ def("senda", { slug: "que-descuenta-el-mercado", nombre: "Qué descuenta el merc
     const hoy = [ff, ...plazos.map(([p]) => val(p, ult))], previo = [ffHace ? ffHace[1] : null, ...plazos.map(([p]) => val(p, hace))];
     const y1 = val("1A", ult), d1 = (y1 - ff) * 100;
     const mov = Math.round(Math.abs(d1) / 25);
-    const titulo = Math.abs(d1) < 12.5 ? `El mercado no descuenta cambios de tasa a un año: la letra a 1 año está en ${nf(y1, 2)}%, contra ${nf(ff, 2)}% de la Fed`
-      : `El mercado descuenta ${d1 > 0 ? "subas" : "recortes"}: la letra a 1 año está ${nf(Math.abs(d1), 0)} pb ${d1 > 0 ? "encima" : "debajo"} de la Fed (unos ${mov} movimiento${mov === 1 ? "" : "s"} de 0,25 en 12 meses)`;
-    return { tipo: "cat", titulo, sub: `Tasa de la Fed y rendimiento del Tesoro por plazo: hoy (${fd(P(ult))}) y hace un mes. Si la curva corta sube con el plazo, el mercado espera subas; si baja, recortes.` + (sepPuntos("sep_ff") ? ` La Fed proyecta su tasa en ${sepTxt("sep_ff", 2)}.` : "") + " No depende del período elegido.",
+    const titulo = Math.abs(d1) < 12.5 ? `El mercado no descuenta cambios de tasa a un año (letra a 1 año en ${nf(y1, 2)}%)`
+      : `El mercado descuenta ${mov === 1 ? "una" : "unas " + mov} ${d1 > 0 ? "suba" : "baja"}${mov === 1 ? "" : "s"} de 0,25 en 12 meses: la letra a 1 año está ${nf(Math.abs(d1), 0)} pb ${d1 > 0 ? "sobre" : "bajo"} la Fed`;
+    return { tipo: "cat", titulo, sub: `Tesoro por plazo, hoy y hace un mes: si la curva corta sube, el mercado espera subas.` + (sepPuntos("sep_ff") ? ` La Fed proyecta ${sepTxt("sep_ff", 2)}.` : ""),
       fuenteTxt: "Fed y Tesoro de EE.UU. vía FRED", unidad: "%", dec: 2, decEje: 1, signo: false, escala: true, cats,
       series: [{ n: `Hoy (${fd(P(ult))})`, t: "line", c: 0, w: 3, etiquetas: "todas", d: hoy }, { n: "Hace un mes", t: "line", c: 1, w: 1.8, punteada: true, d: previo }] };
   } });
 def("politica", { slug: "tasa-real-de-la-fed", nombre: "Tasa real de la Fed y tasa neutral", sin: ["política monetaria", "restrictiva", "neutral", "r*", "r estrella"],
-  calc: "Tasa efectiva de fondos federales menos inflación core PCE interanual. La neutral es la tasa de largo plazo que proyecta la propia Fed (mediana de cada reunión con proyecciones) menos su meta de inflación de 2%.",
+  calc: "Tasa efectiva de fondos federales menos inflación core PCE interanual; el título usa el último dato diario de la tasa y el gráfico, promedios mensuales. La neutral es la tasa de largo plazo que proyecta la propia Fed (mediana de cada reunión con proyecciones) menos su meta de 2%; no se observa, se estima, y los modelos de la Fed de Nueva York la ubican entre 0,5% y 1,3%. Se considera cerca de neutral a menos de 0,5 pp de distancia.",
   ks: ["fed_funds", "pce_core", "sep_lr"],
   f: () => {
     const f = S("fed_funds"), c = yoy(S("pce_core")); if (!f || !c) return null;
@@ -720,7 +724,7 @@ def("politica", { slug: "tasa-real-de-la-fed", nombre: "Tasa real de la Fed y ta
     const ss = [{ n: "Tasa real de la Fed", d: cut(r), c: 0, area: true }];
     if (neutral) ss.push({ n: "Neutral según la Fed (largo plazo − 2%)", d: cut(neutral), c: 1, w: 2, punteada: true });
     return { titulo: `Tasa real de la Fed en ${nf(v)}%` + (n != null ? `, contra una neutral de ${nf(n)}% según la propia Fed: política ${lectura}` : `: política ${lectura}`),
-      sub: `Tasa de fondos federales menos inflación core PCE interanual. El título usa la tasa al ${fw(fu[0])} y la inflación de ${fm(last(c)[0])}; el gráfico, promedios mensuales. La neutral no se observa: la línea es la que estima la propia Fed y se actualiza en cada reunión con proyecciones. Los modelos de la Fed de Nueva York la ubican entre 0,5% y 1,3%. Se considera cerca de neutral a menos de 0,5 pp de distancia.`,
+      sub: `Fondos federales (${fw(fu[0])}) menos core PCE interanual (${fm(last(c)[0])}). La neutral es la que estima la propia Fed; cerca de neutral = a menos de 0,5 pp.`,
       series: ss, refs: [{ y: 0 }] };
   } });
 def("hipotecaria", { slug: "spread-hipotecario", nombre: "Tasa hipotecaria y spread", sin: ["hipoteca", "mortgage", "freddie mac", "vivienda"],
@@ -754,7 +758,7 @@ def("spreads", { slug: "spreads-de-credito", nombre: "Spreads de crédito corpor
     if (b) ss.push({ n: "Baa − Treasury 10 años", d: cut(b), c: 0, w: 2.6 });
     if (h) ss.push({ n: "High yield (ICE BofA)", d: cut(h), c: 1 });
     return { titulo: b ? `El spread corporativo Baa está en ${nf(last(b)[1], 2)} pp: percentil ${pctl(b, last(b)[1])} desde 2000` : `Spread high yield en ${nf(last(h)[1], 2)} pp`,
-      sub: "Lo que paga de más una empresa respecto del Tesoro. Spreads bajos: el mercado presta sin pedir compensación por riesgo. Cuando se abren rápido, suele anticipar un freno de la economía." + notaParcial(),
+      sub: "Lo que paga de más una empresa sobre el Tesoro. Cuando se abre rápido, suele anticipar un freno de la economía." + notaParcial(),
       freq: freqD("baa_spread"), unidad: "pp", dec: 2, banda: b ? rangoNormal(S("baa_spread")) : null, bandaTexto: "Rango normal Baa 2000-19", series: ss };
   } });
 def("hyCalidad", { slug: "high-yield-por-calidad", nombre: "High yield por calidad: BB contra CCC", sin: ["ccc", "bb", "junk", "basura", "high yield", "descompresión", "estrés de crédito"],
@@ -767,8 +771,8 @@ def("hyCalidad", { slug: "high-yield-por-calidad", nombre: "High yield por calid
     const ss = [{ n: "CCC y menor", d: cut(ccc), c: 1, w: 2.6 }];
     if (h) ss.push({ n: "High yield total", d: cut(h), c: 2 });
     ss.push({ n: "BB", d: cut(bb), c: 0 });
-    return { freq: freqD("hy_ccc"), titulo: `El crédito CCC paga ${nf(last(ccc)[1], 2)} pp sobre el Tesoro y el BB ${nf(last(bb)[1], 2)} pp: el CCC rinde ${nf(v, 1)} veces el spread del BB (promedio de 3 años: ${nf(m, 1)} veces)`,
-      sub: "El índice high yield total hoy tiene más peso de BB, así que tarda en reflejar el estrés. El primer movimiento aparece en el CCC: si su spread sube mientras el BB no se mueve, el mercado empieza a castigar al peor crédito. Sólo 3 años de historia en FRED.",
+    return { freq: freqD("hy_ccc"), titulo: `El spread CCC es ${nf(v, 1)} veces el del BB (${nf(last(ccc)[1], 2)} contra ${nf(last(bb)[1], 2)} pp), contra ${nf(m, 1)} veces de promedio en 3 años`,
+      sub: "El estrés aparece primero en el CCC, el peor crédito: si su spread sube y el BB no, el mercado empieza a discriminar. 3 años de historia.",
       unidad: "pp", dec: 2, series: ss };
   } });
 def("balanceFed", { slug: "balance-de-la-fed", nombre: "Balance de la Fed y reservas bancarias", sin: ["qt", "qe", "balance", "reservas", "liquidez", "h.4.1"],
@@ -808,7 +812,7 @@ def("expoImpo", { slug: "exportaciones-e-importaciones", nombre: "Exportaciones 
     const e = S("exports"), i = S("imports"); if (!e || !i) return null;
     const ve = vista(e, o.vista), vi = vista(i, o.vista);
     return { titulo: `Exportaciones ${sg(last(ve)[1], decV(o))}% e importaciones ${sg(last(vi)[1], decV(o))}% ${VT[o.vista]} en ${fechaDe(ve)}`,
-      sub: "Nominales. Cuando las importaciones se adelantan a una suba de aranceles, restan en el PBI por exportaciones netas y suman casi lo mismo en inventarios: el efecto neto es menor de lo que parece.",
+      sub: "Nominales. Las compras adelantadas a una suba de aranceles restan en exportaciones netas y suman en inventarios.",
       dec: decV(o), series: seriesVista([["Exportaciones", e, 0], ["Importaciones", i, 1]], o), refs: [{ y: 0 }] };
   } });
 def("cuentaCorriente", { slug: "cuenta-corriente", nombre: "Cuenta corriente / PBI", sin: ["cuenta corriente", "current account", "balanza de pagos", "financiamiento externo"],
@@ -838,7 +842,7 @@ def("dolar", { slug: "dolar", nombre: "Dólar multilateral", sin: ["dxy", "tipo 
     const d = SD("dollar"); if (!d) return null;
     const y = yoy(S("dollar")), v = last(d)[1];
     return { titulo: `El dólar multilateral ${last(y)[1] >= 0 ? "sube" : "cae"} ${nf(Math.abs(last(y)[1]))}% interanual: percentil ${pctl(d, v)} desde 2006`,
-      sub: `Dólar contra las monedas de los 26 principales socios comerciales de EE.UU., ponderadas por comercio (índice broad de la Fed), ${txtFrec("dollar")}. A diferencia del DXY, que pesa casi 60% el euro, incluye China, México y Canadá.` + notaParcial(),
+      sub: `Contra 26 socios comerciales ponderados por comercio (índice broad de la Fed), ${txtFrec("dollar")}. A diferencia del DXY, incluye China, México y Canadá.` + notaParcial(),
       freq: freqD("dollar"), unidad: "", dec: 1, series: [{ n: "Dólar multilateral", d: cut(d), c: 0 }] };
   } });
 def("terminos", { slug: "terminos-de-intercambio", nombre: "Términos de intercambio", sin: ["términos de intercambio", "precios de exportación", "precios de importación"],
@@ -848,7 +852,7 @@ def("terminos", { slug: "terminos-de-intercambio", nombre: "Términos de interca
     const r = join(S("export_prices"), S("import_prices"), (a, b) => a / b * 100); if (!r) return null;
     const y = yoy(r), v = last(y)[1];
     return { titulo: `Los términos de intercambio ${Math.abs(v) < 0.5 ? "se mantienen estables" : v > 0 ? "mejoran" : "empeoran"}: ${sg(v)}% interanual`,
-      sub: "Precios de exportación sobre precios de importación, 2000 = 100. Con la producción de petróleo y gas de EE.UU., la energía cara ya no empeora sus términos de intercambio como antes.",
+      sub: "Precios de exportación sobre precios de importación, 2000 = 100. Sube cuando lo que vende se encarece más que lo que compra.",
       unidad: "", dec: 1, series: [{ n: "Términos de intercambio", d: cut(r), c: 0 }], refs: [{ y: 100, l: "2000 = 100" }] };
   } });
 
@@ -874,7 +878,7 @@ def("ingresosGastos", { slug: "ingresos-y-gastos-federales", nombre: "Ingresos y
   f: () => {
     const g = S("gdp_nom"), rp = join(S("fed_receipts"), g, (a, b) => a / b * 100), ep = join(S("fed_expend"), g, (a, b) => a / b * 100); if (!rp || !ep) return null;
     return { freq: "Q", titulo: `El gobierno federal gasta ${nf(last(ep)[1])}% del PBI y recauda ${nf(last(rp)[1])}%`,
-      sub: "Cuentas nacionales: gasto corriente (incluye intereses, no la inversión pública). La distancia entre las dos líneas es el déficit corriente; muestra si el déficit viene por más gasto o por menos recaudación.",
+      sub: "Cuentas nacionales, gasto corriente con intereses. La distancia es el déficit: muestra si viene por más gasto o menos recaudación.",
       series: [{ n: "Gastos", d: cut(ep), c: 1, w: 2.6 }, { n: "Ingresos", d: cut(rp), c: 0, w: 2.6 }], shock: [T(2020, 3), T(2021, 6)] };
   } });
 def("intereses", { slug: "intereses-de-la-deuda", nombre: "Intereses de la deuda / PBI", sin: ["intereses", "costo de la deuda"],
@@ -915,8 +919,8 @@ def("aranceles", { slug: "aranceles", nombre: "Aranceles: tasa efectiva y recaud
   ks: ["customs", "imp_goods"],
   f: () => {
     const c = S("customs"), t = join(c, S("imp_goods"), (a, b) => a / b * 100); if (!t) return null;
-    return { freq: "Q", titulo: `La tasa arancelaria efectiva es ${nf(last(t)[1])}% y la recaudación por aranceles llega a US$ ${nf(last(c)[1], 0)} mil M por año`,
-      sub: "Aranceles cobrados sobre el valor de los bienes importados, trimestral. Es la tasa que efectivamente se paga, no la anunciada: descuenta exenciones, cambios de proveedor y demoras en el cobro.",
+    return { freq: "Q", titulo: `Tasa arancelaria efectiva de ${nf(last(t)[1])}%: los aranceles recaudan US$ ${nf(last(c)[1], 0)} mil M por año`,
+      sub: "Aranceles cobrados sobre bienes importados: la tasa que se paga, no la anunciada (descuenta exenciones y cambios de proveedor).",
       cero: true, series: [{ n: "Tasa arancelaria efectiva", d: cut(t), c: 1, area: true }] };
   } });
 
@@ -955,7 +959,7 @@ def("mapa", { slug: "mapa-del-ciclo", nombre: "Mapa del ciclo", sin: ["percentil
     const extremos = new Set(data.filter(d => d[0] >= ultCol - 2 && (d[2] >= 90 || d[2] <= 10)).map(d => d[1])).size;
     const vmap = new Map(vals.map(v => [v[0] + ":" + v[1], v]));
     return { tipo: "heat", titulo: `${extremos} de ${filas.length} indicadores están hoy en zona extrema de su historia (percentil menor a 10 o mayor a 90)`,
-      sub: "Cada fila es un indicador; cada columna, un mes. El color es el percentil del dato en su historia desde 2000: azul, cerca del mínimo; gris, normal; rojo, cerca del máximo. No es bueno ni malo: mide cuán lejos de lo normal está cada variable. Últimos 36 meses; no depende del período elegido.",
+      sub: "Cada fila, un indicador; cada columna, un mes. Color: percentil del dato en su historia desde 2000 (azul, mínimo; gris, normal; rojo, máximo). Mide distancia a lo normal, no si es bueno o malo.",
       fuenteTxt: "BEA, BLS, Census, Fed, Tesoro y U. de Michigan vía FRED", cols: cols.map(fm), filas, data, series: [], vmin: 0, vmax: 100, vtxt: ["Percentil 100", "0"], izq: 210,
       tip: ([x, y, pc]) => { const v = vmap.get(x + ":" + y); return `<b>${esc(filas[y])}</b><br>${fm(cols[x])}: ${v ? nf(v[2], v[3].d) + (v[3].u === "%" ? "%" : v[3].u ? " " + v[3].u : "") : ""} · percentil ${pc}`; },
       tabla: { cab: ["Indicador", ...cols.slice(-6).map(fm)], filas: filas.map((f, yi) => [f, ...cols.slice(-6).map((t, j) => { const v = vmap.get((cols.length - 6 + j) + ":" + yi); return v ? nf(v[2], v[3].d) : ""; })]) } };
@@ -978,11 +982,11 @@ function ciclos(o, serie, modo) {
   return { meses, actual, filas, prom, da, ultK, anio: t => new Date(t).getUTCFullYear(), mesTxt: t => fm(t) };
 }
 function defCiclo(id, slug, nombre, sujeto, sin, ks, serieFn, modo, unidad, dec, explica) {
-  def(id, { slug, nombre, sin, ops: [ANCLA], ks, calc: `${explica} Los ciclos se alinean en el mes del primer movimiento de la tasa objetivo de la Fed (mes 0) y se detectan solos: el primer recorte después de una suba, o la primera suba después de un recorte. Desde 1988 (antes, la Fed movía su objetivo en pasos muy chicos y no hay ciclos claros).`,
+  def(id, { slug, nombre, sin, ops: [ANCLA], ks, calc: `${explica} Cada línea gris es un ciclo anterior, con su año al final; al pasar el mouse por una se resalta. Los ciclos se alinean en el mes del primer movimiento de la tasa objetivo de la Fed (mes 0) y se detectan solos: el primer recorte después de una suba, o la primera suba después de un recorte. Desde 1988 (antes, la Fed movía su objetivo en pasos muy chicos y no hay ciclos claros).`,
     f: o => {
       const c = ciclos(o, serieFn(), modo); if (!c) return null;
       const dir = o.ancla === "s" ? "primera suba" : "primer recorte", deDir = o.ancla === "s" ? "de la primera suba" : "del primer recorte";
-      const series = c.filas.map(f => ({ n: `${c.anio(f.t)} (${c.mesTxt(f.t)})`, t: "line", c: "gris", fina: true, d: f.d, enLeyenda: false }));
+      const series = c.filas.map(f => ({ n: `${c.anio(f.t)} (${c.mesTxt(f.t)})`, etiquetaFin: String(c.anio(f.t)), t: "line", c: "gris", fina: true, d: f.d, enLeyenda: false }));
       series.push({ n: "Promedio de los ciclos anteriores", t: "line", c: "ink", w: 2, punteada: true, d: c.prom });
       series.push({ n: `Este ciclo (${c.mesTxt(c.actual)})`, t: "line", c: 0, w: 3.2, d: c.da });
       const va = c.da[c.ultK], vp = c.prom[c.ultK], k = c.meses[c.ultK];
@@ -995,9 +999,9 @@ function defCiclo(id, slug, nombre, sujeto, sin, ks, serieFn, modo, unidad, dec,
       lo = Math.floor(lo / paso) * paso; hi = Math.ceil(hi / paso) * paso;
       const rango = todos.length && (todos[0] < lo || todos[todos.length - 1] > hi) ? [lo, hi, true] : [null, null, false];
       return { tipo: "cat", sinPuntos: true, signo: modo === "cambio", escala: true, unidad, dec, decEje: Math.min(dec, 1),
-        titulo: va == null || vp == null ? `${nombre}: este ciclo contra los anteriores` : `A ${k} ${k === 1 ? "mes" : "meses"} ${deDir}, ${sujeto} ${modo === "cambio" ? "cambió" : "está en"} ${fmt(va)}, contra ${fmt(vp)} en el promedio de los ciclos anteriores`,
+        titulo: va == null || vp == null ? `${nombre}: este ciclo contra los anteriores` : `A ${k} ${k === 1 ? "mes" : "meses"} ${deDir}, ${sujeto} ${modo === "cambio" ? "cambió" : "está en"} ${fmt(va)}; en los ciclos anteriores, ${fmt(vp)}`,
         yMin: rango[0], yMax: rango[1],
-        sub: `Meses ${o.ancla === "s" ? "desde la primera suba" : "desde el primer recorte"} de la Fed (0 = mes del movimiento).${rango[2] ? " Eje recortado para que un ciclo extremo (como la pandemia) no aplaste a los demás." : ""} ${modo === "cambio" ? "Cambio contra el mes 0." : "Nivel."} Líneas grises: cada ciclo desde 1988 (${c.filas.map(f => c.anio(f.t)).join(", ")}); al pasar el mouse se ve cuál es cuál. No depende del período elegido.`,
+        sub: `Meses ${o.ancla === "s" ? "desde la primera suba" : "desde el primer recorte"} de la Fed${modo === "cambio" ? "; cambio contra el mes 0" : ""}. En gris, los ciclos desde 1988.${rango[2] ? " Eje recortado." : ""}`,
         cats: c.meses.map(x => (x > 0 ? "+" : "") + x), series };
     } });
 }
@@ -1014,8 +1018,8 @@ def("revEmpleo", { slug: "revisiones-del-empleo", nombre: "Revisiones de las nó
     const p1 = S("payrolls_1ra"), p = S("payrolls"); if (!p1 || !p) return null;
     const rev = join(diff(p), p1, (a, b) => a - b); if (!rev) return null;
     const desde = Math.max(ST.T0, T(2021)), r12 = rev.slice(-12), tot = r12.reduce((x, y) => x + y[1], 0);
-    return { titulo: `En los últimos 12 meses, el empleo se revisó en ${sg(tot, 0)} mil puestos respecto de lo que se publicó primero (${sg(tot / 12, 0)} mil por mes)`,
-      sub: "Barras: cuánto cambió el dato de cada mes desde su primera publicación, en miles de puestos. Negativo: el primer dato había sobreestimado el empleo. Los dos últimos meses todavía no recibieron todas sus revisiones." + (ST.T0 < T(2021) ? " Desde 2021." : ""),
+    return { titulo: `En 12 meses, las nóminas se revisaron ${sg(tot, 0)} mil puestos contra su primera publicación (${sg(tot / 12, 0)} mil por mes)`,
+      sub: "Cambio de cada mes desde su primera publicación, en miles. Negativo: el primer dato sobreestimó el empleo. Los 2 últimos meses siguen abiertos." + (ST.T0 < T(2021) ? " Desde 2021." : ""),
       unidad: "mil", dec: 0, cero: true, eventos: false, sinRecorte: true,
       series: [{ n: "Revisión del mes", t: "bar", c: 1, d: cut(rev, desde) }, { n: "Suma de 12 meses", c: "ink", w: 2, d: cut(roll(rev, 12, true), desde) }], refs: [{ y: 0 }] };
   } });
@@ -1027,7 +1031,7 @@ def("revPBI", { slug: "revisiones-del-pbi", nombre: "Revisiones del PBI", sin: [
     const rev = join(g, g1, (a, b) => a - b); if (!rev) return null;
     const u8 = rev.slice(-9, -1), m = u8.reduce((x, y) => x + y[1], 0) / u8.length, ma = u8.reduce((x, y) => x + Math.abs(y[1]), 0) / u8.length;
     return { freq: "Q", titulo: `El PBI se revisó en promedio ${sg(m)} pp por trimestre en los últimos dos años (${nf(ma)} pp en valor absoluto)`,
-      sub: "Crecimiento % trimestral anualizado: primera estimación contra el dato de hoy. Promedio de los 8 trimestres previos al último, que todavía no tuvo revisiones. Positivo: la primera estimación había subestimado el crecimiento.",
+      sub: "% trimestral anualizado: primera estimación contra el dato de hoy (8 trimestres, sin el último). Positivo: el primer dato subestimó.",
       series: [{ n: "Dato de hoy", d: cut(g), c: 0, w: 2.6 }, { n: "Primera estimación", d: cut(g1), c: 1, punteada: true }], refs: [{ y: 0 }], shock: [T(2020, 3), T(2020, 12)] };
   } });
 
