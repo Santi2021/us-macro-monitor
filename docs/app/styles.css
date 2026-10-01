@@ -201,10 +201,12 @@ h2.bloque { margin: 26px 0 12px; font-size: 13px; font-weight: 600; text-transfo
 .card.grande .chart { height: min(62vh, 680px); }
 :root[data-letra="grande"] .card .chart { height: 350px; }
 :root[data-letra="grande"] .card.ancha .chart { height: 400px; }
-.leyenda { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 10px; font-size: 13px; color: var(--ink-2); min-height: 20px; align-items: center; }
+.leyenda { display: flex; flex-wrap: nowrap; gap: 4px 14px; margin-top: 10px; font-size: 13px; color: var(--ink-2); min-height: 20px; align-items: flex-start; }
+.leyenda .items { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; flex: 1; min-width: 0; }
+.leyenda .items:empty { display: none; }
 :root[data-letra="grande"] .leyenda, :root[data-letra="grande"] .leyenda button { font-size: 14.5px; }
 .leyenda:empty { display: none; }
-.leyenda .fecha { font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; min-width: 52px; }
+.leyenda .fecha { font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; min-width: 52px; flex: none; padding: 1px 0; }
 .leyenda button { border: 0; background: none; padding: 1px 0; display: inline-flex; align-items: center; gap: 7px; cursor: pointer; color: var(--ink-2); font-size: 13px; text-align: left; }
 .leyenda button[aria-pressed="false"] { opacity: 0.4; }
 .leyenda span.fija { display: inline-flex; align-items: center; gap: 7px; color: var(--muted); }
@@ -214,7 +216,7 @@ h2.bloque { margin: 26px 0 12px; font-size: 13px; font-weight: 600; text-transfo
 .leyenda .ley-det .sep { margin: 0 8px; opacity: .6; }
 .leyenda .ley-det .nber { display: inline-flex; align-items: center; gap: 6px; }
 .sw { flex: none; display: inline-block; width: 16px; height: 0; border-top: 2.5px solid currentColor; border-radius: 2px; }
-.sw.barra { height: 10px; border: 0; background: currentColor; border-radius: 2px; width: 10px; }
+.sw.barra { display: inline-block; margin: 0; gap: 0; height: 10px; border: 0; background: currentColor; border-radius: 2px; width: 10px; }   /* la clase choca con la barra de pestañas (.barra): se anula su margen */
 .sw.barra.suave { opacity: 0.4; }
 .sw.area { height: 10px; border: 0; background: currentColor; opacity: 0.55; border-radius: 2px; width: 12px; }
 .sw.punteada { border-top-style: dashed; }

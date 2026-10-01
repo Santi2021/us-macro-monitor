@@ -286,6 +286,9 @@ export function leyenda(sp, getChart, redibujar, grande = false) {
   const fijaF = sp.fechaLey ?? (sp.tipo === "cat" && sp.freq && sp.cats?.length && !sp.sinFecha ? sp.cats[sp.cats.length - 1] : null);
   const fecha = (conValor && !sp.sinFecha) || fijaF ? el("span", { class: "fecha" }) : null;
   if (fecha) box.appendChild(fecha);
+  // los ítems van en su propia columna: si la leyenda baja de renglón, el segundo renglón queda alineado con el primero y no debajo de la fecha
+  const items = el("div", { class: "items" });
+  box.appendChild(items);
   const valores = [];
   sp.series.forEach((s, i) => {
     if (s.enLeyenda === false) return;
@@ -304,16 +307,16 @@ export function leyenda(sp, getChart, redibujar, grande = false) {
       } else ch.dispatchAction({ type: "legendToggleSelect", name: s.n });
       b.setAttribute("aria-pressed", oculta ? "false" : "true");
     });
-    box.appendChild(b);
+    items.appendChild(b);
     if (conValor && !s.sinValor) valores.push([b.querySelector("b"), s]);
   });
   // las referencias se rotulan sobre su propia línea; la banda no tiene rótulo en el gráfico, así que queda acá
-  if (sp.banda) box.insertAdjacentHTML("beforeend", `<span class="fija"><i class="sw banda"></i>${esc(sp.bandaTexto || "Rango normal 2000-19")}</span>`);
+  if (sp.banda) items.insertAdjacentHTML("beforeend", `<span class="fija"><i class="sw banda"></i>${esc(sp.bandaTexto || "Rango normal 2000-19")}</span>`);
   const vis = sp.tipo ? [] : sp.series.filter(s => s.d.length && s.t !== "punto");
   if (grande) {
     const det = sp.series.filter(s => s.enLeyenda !== false).map(s => [nombreLey(s), detalleLey(s)]).filter(x => x[1]).map(([n, d]) => `${esc(n)}: ${esc(d)}`);
     if (vis.length && mostrarRecesiones(sp, Math.min(...vis.map(s => s.d[0][0])), Math.max(...vis.map(s => s.d[s.d.length - 1][0])))) det.push(`<span class="nber"><i class="sw rec"></i>Recesión (NBER)</span>`);
-    if (det.length) box.insertAdjacentHTML("beforeend", `<div class="ley-det">${det.join('<span class="sep">·</span>')}</div>`);
+    if (det.length) items.insertAdjacentHTML("beforeend", `<div class="ley-det">${det.join('<span class="sep">·</span>')}</div>`);
   }
   api.actualizar = t => {
     let fUlt = null;
