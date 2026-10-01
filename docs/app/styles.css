@@ -420,3 +420,13 @@ a.evento:hover { border-color: var(--axis); background: var(--hover); }
   .card, .panel, .cabecera { break-inside: avoid; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+
+/* "?" de cada gráfico */
+.ayuda-b { font: 700 13px/1 var(--font); color: var(--muted); border: 1.3px solid var(--axis); border-radius: 50%; width: 20px; height: 20px; margin-top: 2px; }
+.ayuda-b:hover { color: var(--ink); border-color: var(--ink-2); background: var(--hover); }
+.card-h .ayuda-b + .star { margin-left: -4px; }
+.pop.ayuda { max-width: 360px; padding: 12px 14px; font-size: 13.5px; line-height: 1.5; color: var(--ink-2); }
+.pop.ayuda p { margin: 0; }
+.pop.ayuda p + p { margin-top: 8px; }
+.pop.ayuda b { color: var(--ink); font-weight: 600; }
+.card-h > h3 { flex: 1; min-width: 0; }

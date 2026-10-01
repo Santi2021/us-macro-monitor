@@ -6,6 +6,7 @@ import { ST, S, meta, fuente, enlaceSerie, FREC_TXT, proximoRelease, incorporado
 import { CAT, armar } from "./catalogo.js";
 import { opciones, leyenda, recorteShock, unirCursor, colorSerie, spVisible, ajustarEjes } from "./graficos.js";
 import { enlaceGrafico } from "./rutas.js";
+import { AYUDA } from "./ayuda.js";
 
 const VIVOS = new Set();
 export function limpiarGraficos() { for (const c of VIVOS) { try { c.dispose(); } catch (e) {} } VIVOS.clear(); }
@@ -117,6 +118,7 @@ export function tarjeta(id, opts = {}) {
       ${c ? `<button type="button" class="b-enlace">${ICONOS.enlace}Enlace</button>` : ""}
       ${opts.grande ? "" : `<button type="button" class="b-ampliar">${ICONOS.ampliar}Ampliar</button>`}
     </div></footer>`;
+  if (c && AYUDA[id]) art.querySelector(".card-h").appendChild(botonAyuda(id));
   if (c) art.querySelector(".card-h").appendChild(botonEstrella(id, nombre));
   else if (opts.estrella) art.querySelector(".card-h").appendChild(botonEstrella(opts.estrella, "Esta combinación del explorador"));
   const cuerpo = art.querySelector(".cuerpo");
@@ -237,6 +239,19 @@ function menuDescargas(boton, getSp, getChart) {
     pop.appendChild(b);
   }
   colocar(pop, boton);
+}
+// "?": por qué importa el gráfico y cómo leerlo
+function botonAyuda(id) {
+  const b = el("button", { type: "button", class: "star ayuda-b", title: "Por qué importa y cómo leerlo", "aria-label": "Por qué importa y cómo leerlo", "aria-haspopup": "dialog" }, "?");
+  b.addEventListener("click", e => {
+    e.stopPropagation();
+    const abierto = document.querySelector(".pop.ayuda");
+    cerrarPops(); if (abierto && abierto.dataset.id === id) return;
+    const [por, leer] = AYUDA[id];
+    const pop = el("div", { class: "pop ayuda", role: "dialog", "data-id": id }, `<p><b>Por qué importa.</b> ${esc(por)}</p><p><b>Cómo leerlo.</b> ${esc(leer)}</p>`);
+    colocar(pop, b);
+  });
+  return b;
 }
 export function colocar(pop, ancla) {
   document.body.appendChild(pop);
