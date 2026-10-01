@@ -2,11 +2,11 @@
 // El mismo componente se usa en las secciones, en Mi monitor y en la ventana ampliada.
 import { sinGuionFijo, el, esc, nf, sg, fm, fq, fw, fd, fPor, P, css, unidadTxt, ICONOS, toast, copiar, descargar, csvCelda, csvNum, horaBA, fLargo } from "./util.js";
 import { last, prev, pctl } from "./calc.js";
-import { ST, S, meta, fuente, enlaceSerie, FREC_TXT, proximoRelease, incorporado, guardarPrefs, orgDe } from "./datos.js";
+import { ST, S, meta, fuente, enlaceSerie, FREC_TXT, proximoRelease, incorporado, guardarPrefs, orgDe, calcularRango, cargarHistoria } from "./datos.js";
 import { CAT, armar } from "./catalogo.js";
 import { opciones, leyenda, recorteShock, unirCursor, colorSerie, spVisible, ajustarEjes } from "./graficos.js";
 import { enlaceGrafico } from "./rutas.js";
-import { AYUDA } from "./ayuda.js";
+import { AYUDA, TITULOS } from "./ayuda.js";
 
 const VIVOS = new Set();
 export function limpiarGraficos() { for (const c of VIVOS) { try { c.dispose(); } catch (e) {} } VIVOS.clear(); }
@@ -100,8 +100,14 @@ const cita = sp => `Fuente: ${sp.fuente || "BEA, BLS y Fed"}. US Macro Monitor (
 export function tarjeta(id, opts = {}) {
   const c = CAT[id];
   const art = el("article", { class: "card " + (opts.clase || "") + (opts.grande ? " grande" : ""), "data-id": id });
-  let o = Object.assign({}, opts.o || {}), sp = null, chart = null, ley = null, pestana = "g";
-  const construir = () => opts.spFijo ? opts.spFijo() : armar(id, o);
+  let o = Object.assign({}, opts.o || {}), sp = null, chart = null, ley = null, pestana = "g", rangoLocal = null;
+  // al ampliar, el gráfico puede tener su propio período sin tocar el general
+  const conRango = (r, fn) => {
+    if (!r) return fn();
+    const prev = ST.rango; ST.rango = { modo: r, desde: null, hasta: null }; calcularRango();
+    try { return fn(); } finally { ST.rango = prev; calcularRango(); }
+  };
+  const construir = () => opts.spFijo ? opts.spFijo() : conRango(rangoLocal, () => armar(id, o));
   sp = construir();
   if (!sp || (sp.tipo !== "heat" && !sp.series.some(s => s.d && s.d.length))) {
     art.innerHTML = `<h3>Sin datos para este gráfico</h3><p class="sub">Falta alguna de sus series en el período elegido o en la última actualización.</p>`;
@@ -109,7 +115,7 @@ export function tarjeta(id, opts = {}) {
     return art;
   }
   const nombre = c ? c.nombre : sp.titulo;
-  art.innerHTML = `<div class="card-h"><h3></h3></div><p class="sub"></p>
+  art.innerHTML = `<div class="card-h"><h3></h3></div>${opts.grande ? `<p class="contexto"></p>` : ""}<p class="sub"></p>
     <div class="barra"><div class="pestanas" role="tablist"><button type="button" role="tab" data-p="g" aria-selected="true">Gráfico</button><button type="button" role="tab" data-p="t" aria-selected="false">Tabla</button><button type="button" role="tab" data-p="f" aria-selected="false">Fuentes</button></div><div class="selectores"></div></div>
     <div class="cuerpo"></div>
     <div class="meta-g"></div>
@@ -125,6 +131,21 @@ export function tarjeta(id, opts = {}) {
 
   // selectores (vista, real, escala) declarados por el gráfico
   const sel = art.querySelector(".selectores");
+  if (opts.grande && c && !opts.spFijo) {
+    const per = [[null, "General"], ["2022", "2022"], ["5", "5 años"], ["10", "10 años"], ["2000", "2000"], ["todo", "Todo"]];
+    const g = el("div", { class: "seg chico periodo", role: "group", "aria-label": "Período de este gráfico" });
+    for (const [v, txt] of per) {
+      const b = el("button", { type: "button", "aria-pressed": String(v === null), title: v === null ? "El período elegido arriba, para toda la web" : null }, esc(txt));
+      b.addEventListener("click", async () => {
+        rangoLocal = v; g.querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", String(x === b)));
+        // la historia larga (antes de 1999) se baja recién cuando se pide
+        if (v === "todo" && !ST.historia) { try { await cargarHistoria(); } catch (e) {} }
+        rehacer();
+      });
+      g.appendChild(b);
+    }
+    sel.appendChild(g);
+  }
   for (const op of (c && !opts.spFijo ? c.ops : []) || []) {
     const g = el("div", { class: "seg chico", role: "group", "aria-label": op.nombre });
     for (const [v, txt] of op.valores) {
@@ -136,8 +157,11 @@ export function tarjeta(id, opts = {}) {
   }
 
   const pintarTextos = () => {
-    art.querySelector("h3").textContent = sp.titulo;
-    art.querySelector(".sub").textContent = sp.sub;
+    // la tarjeta muestra sólo el nombre; el dato está en la leyenda y el contexto (referencias, fechas) aparece al ampliar
+    const corto = c ? (TITULOS[id] || c.nombre) : sp.titulo;
+    art.querySelector("h3").textContent = opts.spFijo ? sp.titulo : corto;
+    if (opts.grande) { const cx = art.querySelector(".contexto"); if (cx) cx.textContent = opts.spFijo ? "" : sp.titulo; }
+    art.querySelector(".sub").textContent = c && !opts.grande && !opts.spFijo ? "" : sp.sub;
     art.querySelector(".meta-g").innerHTML = metaLinea(sp);
   };
   const dibujarGrafico = () => {
@@ -316,8 +340,10 @@ export function componerPNG(sp, W, H) {
     const ctx = c.getContext("2d"); ctx.scale(k, k);
     ctx.fillStyle = css("--surface"); ctx.fillRect(0, 0, W, H);
     ctx.textBaseline = "top";
-    ctx.font = `600 26px ${fnt}`; const lt = envolver(ctx, sp.titulo, W - pad * 2).slice(0, 2);
-    ctx.font = `400 16px ${fnt}`; const ls = envolver(ctx, sp.sub, W - pad * 2).slice(0, 3);
+    // título: el nombre del gráfico; debajo, el contexto con los datos (la imagen viaja sola, sin la web al lado)
+    const nom = sp.id && TITULOS[sp.id] ? TITULOS[sp.id] : null, tit = nom || sp.titulo, bajada = nom ? sp.titulo : sp.sub;
+    ctx.font = `600 26px ${fnt}`; const lt = envolver(ctx, tit, W - pad * 2).slice(0, 2);
+    ctx.font = `400 16px ${fnt}`; const ls = envolver(ctx, bajada, W - pad * 2).slice(0, 3);
     let y = pad - 6;
     ctx.fillStyle = css("--ink"); ctx.font = `600 26px ${fnt}`; for (const l of lt) { ctx.fillText(l, pad, y); y += 34; }
     y += 4; ctx.fillStyle = css("--muted"); ctx.font = `400 16px ${fnt}`; for (const l of ls) { ctx.fillText(l, pad, y); y += 22; }

@@ -430,3 +430,9 @@ a.evento:hover { border-color: var(--axis); background: var(--hover); }
 .pop.ayuda p + p { margin-top: 8px; }
 .pop.ayuda b { color: var(--ink); font-weight: 600; }
 .card-h > h3 { flex: 1; min-width: 0; }
+/* tarjeta: sólo el nombre; el contexto aparece al ampliar */
+.card .sub:empty { margin: 0; min-height: 0; }
+.card.grande .contexto { margin: 6px 0 2px; font-size: 15px; line-height: 1.5; color: var(--ink); font-weight: 500; max-width: 980px; }
+.card.grande .sub { max-width: 980px; }
+.card.grande .selectores { flex-wrap: wrap; gap: 8px; }
+.seg.periodo button[aria-pressed="true"] { font-weight: 600; }

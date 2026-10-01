@@ -167,3 +167,30 @@ export const AYUDA = {
   revPBI: ["Dice cuánta confianza darle a la primera estimación del PBI.",
     "Barras positivas: la primera estimación subestimó. Las revisiones típicas son de casi un punto: un dato cerca de cero puede cambiar de signo."],
 };
+
+// Título corto de cada gráfico en su tarjeta: sólo el nombre. El dato se ve en la leyenda; el contexto (referencias, fechas) aparece al ampliar.
+export const TITULOS = {
+  contribuciones: "Contribuciones al crecimiento del PBI", gdpnow: "GDPNow vs PBI publicado", demandaPrivada: "Demanda privada final",
+  brecha: "Brecha del producto y del desempleo", productividad: "Productividad", encuestas: "Nuevos pedidos de la industria",
+  industria: "Producción manufacturera y uso de la capacidad", ordenes: "Órdenes y envíos de bienes de capital", viviendas: "Permisos de construcción y stock de viviendas",
+  capex: "Inversión tecnológica / PBI", ganancias: "Margen de las empresas", pbiGdi: "PBI vs GDI", preciosPagados: "Precios pagados por las fábricas",
+  ventas: "Ventas minoristas: grupo de control", consumoTipo: "Consumo por tipo contra su tendencia", autos: "Ventas de autos y tasa de los préstamos",
+  sentimiento: "Confianza del consumidor y consumo real", ingresoConsumo: "Ingreso real vs consumo real", motores: "Fuentes del ingreso real",
+  ahorro: "Tasa de ahorro", credito: "Crédito al consumo / ingreso", riqueza: "Patrimonio de los hogares / ingreso", servicioDeuda: "Carga de la deuda de los hogares",
+  morosidad: "Morosidad de tarjetas", pce: "Inflación PCE", momentum: "Core PCE a distintos horizontes", subyacente: "Core, media recortada y mediana",
+  heat: "Rubros del core PCE", difusion: "Difusión de la inflación", serviciosBienes: "Servicios, supercore y bienes core", ppi: "Precios al productor vs al consumidor",
+  bienesCore: "Bienes core, importaciones y aranceles", cpiPce: "CPI core vs PCE core", vivienda: "Vivienda y core sin vivienda", componentes: "Del core al general",
+  expectativas: "Expectativas de inflación", energia: "Inflación de energía",
+  nominas: "Nóminas no agrícolas", composicion: "¿Quién crea el empleo?", desempleo: "Tasa de desempleo", sahm: "Regla de Sahm", tension: "Vacantes por desocupado",
+  rotacion: "Contrataciones, renuncias y despidos", epop: "Empleo y participación 25-54 años", salarioReal: "Salario real",
+  eci: "Costo laboral (ECI) y costo laboral unitario", pedidos: "Pedidos iniciales de desempleo", continuos: "Pedidos continuos de desempleo",
+  curvaTesoro: "Curva del Tesoro", curva: "Fed y Treasuries", pendiente: "Pendiente de la curva", politica: "Tasa real de la Fed vs neutral",
+  senda: "Curva corta vs la Fed", balanceFed: "Balance de la Fed", tasaReal: "Tasa real a 10 años", primaPlazo: "Prima por plazo a 10 años",
+  spreads: "Spreads corporativos", hyCalidad: "High yield: CCC vs BB", nfci: "Condiciones financieras (NFCI)", hipotecaria: "Tasa hipotecaria a 30 años",
+  balanza: "Balanza comercial", expoImpo: "Exportaciones e importaciones", cuentaCorriente: "Cuenta corriente / PBI", dolar: "Dólar multilateral",
+  terminos: "Términos de intercambio y petróleo", capexImport: "Importaciones de capital vs inversión tecnológica",
+  deficit: "Resultado fiscal / PBI", ingresosGastos: "Ingresos y gastos federales / PBI", aranceles: "Aranceles: tasa efectiva y recaudación",
+  intereses: "Intereses de la deuda", deuda: "Deuda federal / PBI", nominalTasa: "¿Por qué cambia la deuda?",
+  mapa: "Mapa del ciclo", cicloTasa: "Ciclos de la Fed: tasa", cicloDesempleo: "Ciclos de la Fed: desempleo", cicloCore: "Ciclos de la Fed: core PCE",
+  cicloSpread: "Ciclos de la Fed: spread Baa", revEmpleo: "Revisiones de las nóminas", revPBI: "Revisiones del PBI",
+};
