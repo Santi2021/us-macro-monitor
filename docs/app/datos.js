@@ -2,7 +2,7 @@
 import { T, P, DIA_MS, hoyUTC, fm, fq, fw, fd, nf, sg, unidadTxt, leer, guardar, horaBA } from "./util.js";
 import { last, prev, diff, pct, yoy, escala } from "./calc.js";
 
-export const VERSION = "5.0";
+export const VERSION = "5.1";
 export const ST = {
   DATA: null,
   rango: { modo: "2022", desde: null, hasta: null },
@@ -98,7 +98,7 @@ export function SD(k) {
   }
   return S(k);
 }
-export const freqD = k => usaDiario() && ST.D && ST.D[k] ? (["mortgage30", "nfci", "nfci_credit", "fed_assets", "reserves"].includes(k) ? "W" : "D") : "M";
+export const freqD = k => usaDiario() && ST.D && ST.D[k] ? (["mortgage30", "nfci", "nfci_credit", "anfci", "fed_assets", "reserves", "tga"].includes(k) ? "W" : "D") : "M";
 export const cut = (a, desde = ST.T0) => a ? a.filter(p => p[0] >= desde) : null;
 export const meta = k => ST.DATA.series[k];
 

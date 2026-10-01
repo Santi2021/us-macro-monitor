@@ -107,9 +107,10 @@ function opcionesLinea(sp, ancho, grande) {
     for (const [t, l] of eventos()) {
       if (t < x0 || t > x1 || (largo && l.includes("Fed")) || (conRec && (l === "Lehman" || l === "COVID"))) continue;
       const px = (t - x0) / (x1 - x0) * anchoPlot;
-      const conTexto = px - ultimoX > 72 && px > 24 && anchoPlot - px > 34;
+      // cerca del borde derecho la etiqueta se alinea hacia adentro en vez de esconderse (la última suba o baja de la Fed suele estar ahí)
+      const borde = anchoPlot - px <= 34, conTexto = px - ultimoX > 72 && px > 24;
       if (conTexto) { ultimoX = px; hayEtiquetas = true; }
-      aux.markLine.data.push({ xAxis: t, lineStyle: { color: axis, type: "solid", width: 1 }, label: { show: conTexto, formatter: l, position: "end", color: muted, fontSize: fs - 1.5, distance: 4 } });
+      aux.markLine.data.push({ xAxis: t, lineStyle: { color: axis, type: "solid", width: 1 }, label: { show: conTexto, formatter: l, position: "end", align: borde ? "right" : "center", color: muted, fontSize: fs - 1.5, distance: 4 } });
     }
   }
   series.push(aux);
@@ -170,7 +171,8 @@ export function ajustarEjes(chart, sp) {
       const m = chart.getModel().getComponent("yAxis", i); if (!m) return null;
       const paso = m.axis.scale.getInterval ? m.axis.scale.getInterval() : null; if (!paso) return null;
       const d = paso >= 1 - 1e-9 ? 0 : paso >= 0.1 - 1e-9 ? 1 : 2;
-      return { axisLabel: { formatter: v => nf(v, d) + (u === "%" ? "%" : "") } };
+      const ud = i ? ((sp.series.find(s => s.der) || {}).u ?? u) : u;   // el eje derecho lleva la unidad de su serie
+      return { axisLabel: { formatter: v => nf(v, d) + (ud === "%" ? "%" : "") } };
     }).filter(Boolean);
     if (yAxis.length) chart.setOption({ yAxis }, { lazyUpdate: false });
   } catch (e) {}
@@ -213,8 +215,9 @@ function opcionesCategoria(sp, ancho, grande) {
         label: s.etiquetas ? { show: true, position: "top", color: ink, fontSize: fs - 0.5, fontWeight: 600, distance: 8,
           formatter: p => p.value == null ? "" : (s.etiquetas === "todas" || p.dataIndex === ult || p.value === mx || p.value === mn) ? nf(p.value, dec) : "" } : undefined };
     }
-    return { type: "bar", name: s.n, data: s.d, stack: sp.apilado === false ? undefined : "c", barMaxWidth: 34, barCategoryGap: "30%",
-      itemStyle: { color: s.c === "gris" ? css("--axis") : colorSerie(sp, s, i), borderColor: css("--surface"), borderWidth: 1.5 } };
+    return { type: "bar", name: s.n, data: s.d, stack: s.der ? undefined : sp.apilado === false ? undefined : "c", barMaxWidth: 34, barCategoryGap: "30%", yAxisIndex: s.der ? 1 : 0,
+      itemStyle: { color: s.c === "gris" ? css("--axis") : colorSerie(sp, s, i), opacity: s.suave ? 0.35 : 1, borderColor: css("--surface"), borderWidth: 1.5 },
+      label: s.etiquetas ? { show: true, position: "top", color: muted, fontSize: fs - 1.5, formatter: p => p.value == null ? "" : sg(p.value, s.dec ?? 0) } : undefined };
   });
   return {
     textStyle: { fontFamily: css("--font"), color: css("--ink-2") },
@@ -224,7 +227,8 @@ function opcionesCategoria(sp, ancho, grande) {
       formatter: ps => `<div style="font-weight:600;margin-bottom:4px">${ps[0].axisValue}</div>` + ps.filter(p => p.value != null).map(p =>
         `<div style="display:flex;gap:12px;justify-content:space-between"><span>${p.marker}${esc(p.seriesName)}</span><b>${sp.signo === false ? nf(p.value, dec) : sg(p.value, dec)}${p.seriesType === "line" && sp.unidadLinea ? sp.unidadLinea : unidadTxt(u)}</b></div>`).join("") }),
     xAxis: { type: "category", data: sp.cats, axisTick: { show: false }, axisLine: { lineStyle: { color: css("--axis") } }, axisLabel: { color: muted, fontSize: fs, hideOverlap: true } },
-    yAxis: { type: "value", scale: !!sp.escala, min: sp.yMin ?? undefined, max: sp.yMax ?? undefined, axisLabel: { color: muted, fontSize: fs, formatter: v => nf(v, sp.decEje ?? 0) + (u === "%" ? "%" : "") }, splitLine: { lineStyle: { color: css("--grid") } } },
+    yAxis: [{ type: "value", scale: !!sp.escala, min: sp.yMin ?? undefined, max: sp.yMax ?? undefined, axisLabel: { color: muted, fontSize: fs, formatter: v => nf(v, sp.decEje ?? 0) + (u === "%" ? "%" : "") }, splitLine: { lineStyle: { color: css("--grid") } } }]
+      .concat(sp.series.some(x => x.der) ? [{ type: "value", position: "right", axisLabel: { color: muted, fontSize: fs, formatter: v => nf(v, 0) + (sp.unidadDer ? " " + sp.unidadDer : "") }, splitLine: { show: false } }] : []),
     series,
   };
 }
@@ -241,7 +245,7 @@ export function leyenda(sp, getChart, redibujar) {
   if (sp.tipo === "heat") return api;
   const u = sp.unidad ?? (sp.tipo === "cat" ? "pp" : "%"), dec = sp.dec ?? 1, conValor = sp.tipo !== "cat";
   const fx = fPor(sp.freq);
-  const fecha = conValor ? el("span", { class: "fecha" }) : null;
+  const fecha = conValor && !sp.sinFecha ? el("span", { class: "fecha" }) : null;
   if (fecha) box.appendChild(fecha);
   const valores = [];
   sp.series.forEach((s, i) => {

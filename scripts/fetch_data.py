@@ -161,6 +161,9 @@ FRED = {
     "hy_ccc":          ("BAMLH0A3HYC", "Spread high yield CCC y menor (ICE BofA, sólo últimos 3 años en FRED)", "%", "M", "ICE BofA"),
     "fed_assets":      ("WALCL", "Activos totales de la Fed", "US$ millones", "M", "Fed"),
     "reserves":        ("WRESBAL", "Reservas de los bancos en la Fed", "US$ millones", "M", "Fed"),
+    "rrp":             ("RRPONTSYD", "Recompra inversa a un día de la Fed (RRP)", "US$ miles de M", "M", "Fed"),
+    "tga":             ("WTREGEN", "Cuenta general del Tesoro en la Fed (TGA)", "US$ millones", "M", "Fed"),
+    "anfci":           ("ANFCI", "Índice de condiciones financieras ajustado (Fed de Chicago)", "índice", "M", "Fed de Chicago"),
     # Externo
     "trade_balance":   ("BOPGSTB", "Balanza comercial de bienes y servicios", "US$ millones", "M", "BEA y Census"),
     "exports":         ("BOPTEXP", "Exportaciones de bienes y servicios", "US$ millones", "M", "BEA y Census"),
@@ -188,12 +191,12 @@ FRED = {
 # Series cuyo promedio mensual no tiene sentido (flujos ya mensuales)
 SIN_PROMEDIO = {"deficit"}
 # Series de mercado: cambian todos los días, no cuentan como "novedad" de un release
-ALTA_FRECUENCIA = {"fed_obj", "fed_obj_sup", "fed_funds", "ust2", "ust10", "ust30", "tips10", "breakeven10", "breakeven5", "term_premium",
+ALTA_FRECUENCIA = {"fed_obj", "fed_obj_sup", "rrp", "tga", "anfci",  "fed_funds", "ust2", "ust10", "ust30", "tips10", "breakeven10", "breakeven5", "term_premium",
                    "mortgage30", "dollar", "infl_exp_5y5y", "spread_10y3m", "gdpnow", "nfci", "nfci_credit",
                    "baa_spread", "hy_oas", "hy_bb", "hy_ccc", "fed_assets", "reserves"}
 # Versión diaria (o semanal, tal como la publica la fuente) de las series de mercado, en docs/diarios.json.
 # La web la usa cuando el período elegido es corto; para períodos largos usa el promedio mensual.
-DIARIAS = ["fed_obj", "fed_obj_sup", "fed_funds", "ust2", "ust10", "ust30", "tips10", "breakeven10", "breakeven5", "spread_10y3m", "term_premium", "infl_exp_5y5y",
+DIARIAS = ["fed_obj", "fed_obj_sup", "rrp", "tga", "anfci",  "fed_funds", "ust2", "ust10", "ust30", "tips10", "breakeven10", "breakeven5", "spread_10y3m", "term_premium", "infl_exp_5y5y",
            "baa_spread", "hy_oas", "hy_bb", "hy_ccc", "dollar", "mortgage30", "nfci", "nfci_credit", "fed_assets", "reserves"]
 DESDE_DIARIO = "2000-01-01"
 # Series escalonadas (la tasa objetivo): se guardan sólo los días en que cambian, desde 1982

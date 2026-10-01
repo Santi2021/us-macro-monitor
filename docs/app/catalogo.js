@@ -908,26 +908,6 @@ def("continuos", { slug: "pedidos-continuos", nombre: "Pedidos continuos de dese
   } });
 
 // ═════════════════════════ Tasas ═════════════════════════
-def("curvaTesoro", { slug: "curva-del-tesoro", nombre: "Curva del Tesoro", sin: ["curva", "yield curve", "rendimientos", "bonos"],
-  calc: "Rendimiento de los bonos del Tesoro por plazo (constant maturity), datos diarios, hoy y hace 1, 6 y 12 meses.",
-  ks: ["ust10"],
-  f: () => {
-    const cv = ST.DATA.curva; if (!cv || Object.keys(cv).length < 6) return null;
-    const plazos = Object.keys(cv);
-    const fechas = [...new Set(plazos.flatMap(p => cv[p].map(o => o[0])))].filter(f => P(f) <= ST.T1).sort();
-    if (!fechas.length) return null;
-    const hoy = fechas[fechas.length - 1];
-    const cerca = obj => fechas.filter(f => f <= obj).pop();
-    const menos = (f, meses) => { const d = new Date(P(f)); d.setUTCMonth(d.getUTCMonth() - meses); return d.toISOString().slice(0, 10); };
-    const cortes = [[hoy, "Hoy", 0], [cerca(menos(hoy, 1)), "Hace 1 mes", 1], [cerca(menos(hoy, 6)), "Hace 6 meses", 2], [cerca(menos(hoy, 12)), "Hace 12 meses", 3]].filter(c => c[0]);
-    const val = (p, f) => { const o = cv[p].filter(x => x[0] <= f).pop(); return o ? o[1] : null; };
-    const series = cortes.map(([f, n, c], i) => ({ n: `${n} (${fd(P(f))}${i ? "-" + String(new Date(P(f)).getUTCFullYear()).slice(2) : ""})`, t: "line", c, w: i ? 1.8 : 3, punteada: i > 0, etiquetas: i === 0 ? "todas" : false, d: plazos.map(p => val(p, f)) }));
-    const y2 = val("2A", hoy), y10 = val("10A", hoy), m3 = val("3M", hoy);
-    const c1 = cortes[1] ? (val("10A", hoy) - val("10A", cortes[1][0])) * 100 : null, c6 = cortes[2] ? (val("10A", hoy) - val("10A", cortes[2][0])) * 100 : null;
-    return { tipo: "cat", titulo: `Curva del Tesoro: 3 meses ${nf(m3, 2)}%, 2 años ${nf(y2, 2)}%, 10 años ${nf(y10, 2)}%`,
-      sub: "Rendimiento por plazo, datos diarios. Compara la forma de la curva hoy con hace 1, 6 y 12 meses." + (c1 != null && c6 != null ? ` El 10 años cambió ${sg(c1, 0)} pb en un mes y ${sg(c6, 0)} pb en 6 meses.` : "") + " No depende del período elegido.",
-      fuenteTxt: "Tesoro de EE.UU. vía FRED", unidad: "%", dec: 2, decEje: 1, signo: false, escala: true, cats: plazos, series };
-  } });
 // Mediana móvil de 5 datos: saca los saltos de fin de mes de la tasa de fondos federales diaria sin correr los cambios de la Fed
 const mediana5 = a => a && a.map((p, i) => { const v = a.slice(Math.max(0, i - 4), i + 1).map(x => x[1]).sort((x, y) => x - y); return [p[0], v[Math.floor(v.length / 2)]]; });
 // Serie diaria completa (sin importar el período elegido) para los títulos que hablan del último dato
@@ -940,152 +920,240 @@ function notaParcial() {
   const f = cv[cv.length - 1][0], d = new Date(P(f));
   return d.getUTCDate() < 28 ? ` El último punto es el promedio del mes en curso hasta el ${d.getUTCDate()}-${MES[d.getUTCMonth()]}.` : "";
 }
-def("curva", { slug: "fed-y-treasuries", nombre: "Fed y Treasuries", sin: ["fondos federales", "tasa de política", "treasuries", "bonos"],
-  calc: "Tasa efectiva de fondos federales y rendimientos de Treasuries a 2, 10 y 30 años. Datos diarios con períodos de hasta 5 años; promedios mensuales con períodos más largos.",
-  ks: ["fed_funds", "ust2", "ust10", "ust30", "sep_ff"],
+// Fecha corta sin el día de la semana: "29-sep"
+const fdia = t => fd(t).replace(/^\S+ /, "");
+const minEntre = (a, y0, y1) => { const x = (a || []).filter(p => p[0] >= T(y0) && p[0] < T(y1 + 1)); return x.length ? x.reduce((m, p) => p[1] < m[1] ? p : m) : null; };
+// Último cambio de la tasa objetivo de la Fed (techo del rango): fecha, nivel y dirección
+function ultimoCambioFed() {
+  const a = ST.D && ST.D.fed_obj_sup; if (!a || a.length < 2) return null;
+  const u = a[a.length - 1], p = a[a.length - 2];
+  return { t: u[0], v: u[1], d: u[1] - p[1] };
+}
+
+def("curvaTesoro", { slug: "curva-del-tesoro", nombre: "Curva del Tesoro", sin: ["curva", "yield curve", "rendimientos", "bonos"],
+  calc: "Rendimiento de los bonos del Tesoro por plazo (constant maturity), datos diarios, hoy y hace 1, 6 y 12 meses. Barras (eje derecho): cambio de cada plazo en el último mes, en puntos básicos. No depende del período elegido.",
+  ks: ["ust10"],
   f: () => {
-    const ks = [["fed_funds", "Fondos federales"], ["ust2", "2 años"], ["ust10", "10 años"], ["ust30", "30 años"]];
+    const cv = ST.DATA.curva; if (!cv || Object.keys(cv).length < 6) return null;
+    const plazos = Object.keys(cv);
+    const fechas = [...new Set(plazos.flatMap(p => cv[p].map(o => o[0])))].filter(f => P(f) <= ST.T1).sort();
+    if (!fechas.length) return null;
+    const hoy = fechas[fechas.length - 1];
+    const cerca = obj => fechas.filter(f => f <= obj).pop();
+    const menos = (f, meses) => { const d = new Date(P(f)); d.setUTCMonth(d.getUTCMonth() - meses); return d.toISOString().slice(0, 10); };
+    const cortes = [[hoy, "Hoy", 0], [cerca(menos(hoy, 1)), "Hace 1 mes", 1], [cerca(menos(hoy, 6)), "Hace 6 meses", 2], [cerca(menos(hoy, 12)), "Hace 12 meses", 3]].filter(c => c[0]);
+    const val = (p, f) => { const o = cv[p].filter(x => x[0] <= f).pop(); return o ? o[1] : null; };
+    const series = cortes.map(([f, n, c], i) => ({ n: `${n} (${fdia(P(f))}${i ? "-" + String(new Date(P(f)).getUTCFullYear()).slice(2) : ""})`, t: "line", c, w: i ? 1.8 : 3, punteada: i > 0, etiquetas: i === 0 ? "todas" : false, d: plazos.map(p => val(p, f)) }));
+    const mes = cortes[1] && cortes[1][0], cb = p => mes && val(p, hoy) != null && val(p, mes) != null ? (val(p, hoy) - val(p, mes)) * 100 : null;
+    if (mes) series.push({ n: "Cambio en 1 mes (pb, eje derecho)", t: "bar", c: "gris", suave: true, der: true, etiquetas: true, dec: 0, d: plazos.map(cb) });
+    const pb = p => cb(p) != null ? `${p === "2A" ? "2 años" : p === "10A" ? "10 años" : "30 años"} ${sg(cb(p), 0)} pb` : "";
+    return { tipo: "cat", titulo: `Curva del Tesoro al ${fdia(P(hoy))}: 3 meses ${nf(val("3M", hoy), 2)}%, 2 años ${nf(val("2A", hoy), 2)}%, 10 años ${nf(val("10A", hoy), 2)}%, 30 años ${nf(val("30A", hoy), 2)}%` + (mes ? `; en un mes, ${[pb("2A"), pb("10A"), pb("30A")].join(", ")}` : ""),
+      sub: "Rendimiento por plazo (Tesoro de EE.UU.), datos diarios. Barras: cambio en el último mes, en puntos básicos.",
+      fuenteTxt: "Tesoro de EE.UU. vía FRED", unidad: "%", unidadDer: "pb", dec: 2, decEje: 1, signo: false, escala: true, apilado: false, cats: plazos, series };
+  } });
+
+def("curva", { slug: "fed-y-treasuries", nombre: "Fed y Treasuries", sin: ["fondos federales", "tasa de política", "treasuries", "bonos", "suba de tasa", "baja de tasa"],
+  calc: "Tasa efectiva de fondos federales (mediana de 5 días para sacar los saltos de fin de mes), techo del rango objetivo de la Fed (escalón gris) y rendimientos de Treasuries a 2, 10 y 30 años. Datos diarios con períodos de hasta 5 años; promedios mensuales con períodos más largos. Los rombos son la mediana de la tasa que proyecta la Fed para fin de año.",
+  ks: ["fed_funds", "fed_obj_sup", "ust2", "ust10", "ust30", "sep_ff"],
+  f: () => {
+    const ks = [["fed_funds", "Fondos federales (efectiva)"], ["ust2", "2 años"], ["ust10", "10 años"], ["ust30", "30 años"]];
     const limpia = (k, a) => k === "fed_funds" && freqD(k) === "D" ? mediana5(a) : a;
-    const ss = ks.map(([k, n], i) => ({ n, d: cut(limpia(k, SD(k))), c: i, dec: 2 })).filter(s => s.d && s.d.length); if (ss.length < 3) return null;
+    const ss = ks.map(([k, n], i) => ({ n, d: cut(limpia(k, SD(k))), c: i, dec: 2, w: i ? 1.8 : 2.6 })).filter(s => s.d && s.d.length); if (ss.length < 3) return null;
+    const obj = SD("fed_obj_sup");
+    if (obj && obj.length) ss.push({ n: "Techo del rango objetivo", d: cut(obj.concat(obj[obj.length - 1][0] < last(ss[1].d)[0] ? [[last(ss[1].d)[0], obj[obj.length - 1][1]]] : [])), c: "gris", w: 1.2, escalon: true, fin: false, dec: 2 });
     const sep = sepPuntos("sep_ff");
     if (sep) ss.push({ n: "Proyección de la Fed para su tasa", t: "punto", c: 0, d: sep, dec: 2 });
-    return { freq: freqD("ust10"), titulo: `Fed ${nf(last(ss[0].d)[1], 2)}%, 2 años ${nf(last(ss[1].d)[1], 2)}%, 10 años ${nf(last(ss[2].d)[1], 2)}%`,
-      sub: `Tasa de fondos federales y Treasuries por plazo, ${txtFrec("ust10")}.` + (sep ? ` Los rombos son la tasa que proyecta la Fed (mediana): ${sepTxt("sep_ff", 2)}.` : "") + notaParcial(), fuenteTxt: "Fed y Tesoro de EE.UU. vía FRED", dec: 2, series: ss };
+    const uc = ultimoCambioFed(), u = k => ultimoDato(k);
+    const desde = k => { const a = diariaCompleta(k); const v0 = uc ? valorEn(a, uc.t - DIA) : null; return v0 ? (last(a)[1] - v0[1]) * 100 : null; };
+    const ff = u("fed_funds");
+    return { freq: freqD("ust10"),
+      titulo: `Al ${fdia(ff[0])}: Fed ${nf(ff[1], 2)}%` + (uc ? ` (rango ${nf(uc.v - 0.25, 2)}-${nf(uc.v, 2)}%, ${uc.d > 0 ? "suba" : "baja"} del ${fdia(uc.t)}-${String(anio(uc.t)).slice(2)})` : "") + `, 2 años ${nf(u("ust2")[1], 2)}%, 10 años ${nf(u("ust10")[1], 2)}%, 30 años ${nf(u("ust30")[1], 2)}%` + (uc && desde("ust2") != null ? `; desde el último cambio: 2 años ${sg(desde("ust2"), 0)} pb, 10 años ${sg(desde("ust10"), 0)} pb` : ""),
+      sub: `Tasa efectiva de fondos federales, techo del rango objetivo y Treasuries por plazo, ${txtFrec("ust10")}. Rombos: tasa que proyecta la Fed (mediana).` + notaParcial(), fuenteTxt: "Fed y Tesoro de EE.UU. vía FRED", dec: 2, series: ss };
   } });
-def("pendiente", { slug: "pendiente-de-la-curva", nombre: "Pendiente de la curva", sin: ["10-2", "10-3m", "inversión de la curva", "spread"],
-  calc: "Treasury 10 años menos 2 años, y 10 años menos letra de 3 meses, en puntos básicos. Datos diarios con períodos de hasta 5 años; promedios mensuales con períodos más largos.",
+
+// Episodios de curva 10-2 invertida de más de 3 meses (con promedios mensuales, para no contar días sueltos)
+function inversiones() {
+  const s = join(S("ust10"), S("ust2"), (x, y) => x - y); if (!s) return [];
+  const out = []; let ini = null;
+  s.forEach((p, i) => {
+    if (p[1] < 0 && ini == null) ini = p[0];
+    if ((p[1] >= 0 || i === s.length - 1) && ini != null) { const fin = p[1] >= 0 ? p[0] : null; if ((fin || p[0]) - ini > 90 * DIA) out.push([ini, fin]); ini = null; }
+  });
+  return out;
+}
+def("pendiente", { slug: "pendiente-de-la-curva", nombre: "Pendiente de la curva", sin: ["10-2", "10-3m", "inversión de la curva", "spread"], historia: true,
+  calc: "Treasury 10 años menos 2 años, y 10 años menos letra de 3 meses, en puntos básicos. Datos diarios con períodos de hasta 5 años; promedios mensuales con períodos más largos. Las marcas señalan el inicio de cada inversión del 10-2 de más de 3 meses (en promedios mensuales). La referencia es el promedio del 10-2 entre 1976 y 2019.",
   ks: ["ust10", "ust2", "spread_10y3m"],
   f: () => {
     const a = SD("ust10"), b = SD("ust2"), c = SD("spread_10y3m"); if (!a || !b) return null;
     const s = join(a, b, (x, y) => (x - y) * 100), v = last(s)[1];
-    const ss = [{ n: "10 años − 2 años", d: cut(s), c: 0 }];
-    if (c) ss.push({ n: "10 años − 3 meses", d: escala(cut(c), 100), c: 1 });
-    return { titulo: v >= 0 ? `Curva 10-2 positiva en ${nf(v, 0)} pb` : `Curva 10-2 invertida en ${nf(-v, 0)} pb`,
-      sub: `La inversión 10-3 meses precedió a las últimas recesiones; el riesgo suele aparecer cuando vuelve a positiva. En puntos básicos, ${txtFrec("ust10")}.`, fuenteTxt: "Tesoro de EE.UU. vía FRED",
-      freq: freqD("ust10"), unidad: "pb", dec: 0, series: ss, refs: [{ y: 0 }] };
+    const m = join(S("ust10"), S("ust2"), (x, y) => (x - y) * 100), pr = promEntre(m, 1976, 2019);
+    const inv = inversiones(), ult = inv[inv.length - 1];
+    const ss = [{ n: "10 años − 2 años", d: cut(s), c: 0, w: 2.6 }];
+    if (c) ss.push({ n: "10 años − 3 meses", d: escala(cut(c), 100), c: 1, w: 1.6 });
+    const vis = inv.filter(([i]) => i >= ST.T0 && i <= ST.T1);
+    if (vis.length) ss.push({ n: "Inicio de inversión", t: "nota", c: 0, d: vis.map(([i]) => [i, 0]), textos: vis.map(([i]) => `Inversión ${anio(i)}`), enLeyenda: false });
+    const fe = t => fm(t);
+    return { titulo: `Al ${fdia(last(s)[0])}: 10-2 ${sg(v, 0)} pb` + (c ? `, 10-3 meses ${sg(last(c)[1] * 100, 0)} pb` : "") + (pr != null ? `; promedio 10-2 1976-2019: ${sg(pr, 0)} pb` : "") + (ult ? (ult[1] ? `; última inversión del 10-2: ${fe(ult[0])} a ${fe(ult[1])}` : `; invertida desde ${fe(ult[0])}`) : ""),
+      sub: `Treasury a 10 años menos 2 años y menos 3 meses, en puntos básicos, ${txtFrec("ust10")}.`, fuenteTxt: "Tesoro de EE.UU. vía FRED",
+      freq: freqD("ust10"), unidad: "pb", dec: 0, series: ss, refs: [{ y: 0 }].concat(pr != null ? [{ y: pr, l: `Promedio 10-2 1976-2019: ${nf(pr, 0)} pb` }] : []) };
   } });
-def("tasaReal", { slug: "tasa-real", nombre: "Tasa real a 10 años", sin: ["tips", "breakeven", "tasa real"],
-  calc: "Rendimiento de los TIPS a 10 años (tasa real) e inflación esperada implícita (breakeven a 10 años).",
-  ks: ["tips10", "breakeven10"],
+
+def("politica", { slug: "tasa-real-de-la-fed", nombre: "Tasa real de la Fed y tasa neutral", sin: ["política monetaria", "restrictiva", "neutral", "r*", "r estrella"],
+  calc: "Tasa efectiva de fondos federales menos inflación core PCE: interanual (línea gruesa) y anualizada a 6 meses (fina). El título usa el último dato diario de la tasa y el gráfico, promedios mensuales. La neutral es la tasa de largo plazo que proyecta la propia Fed (mediana de cada reunión con proyecciones) menos su meta de 2%: es una estimación, no se observa.",
+  ks: ["fed_funds", "pce_core", "sep_lr"],
   f: () => {
-    const r = SD("tips10"), be = SD("breakeven10"); if (!r || !be) return null;
-    const v = last(r)[1];
-    return { freq: freqD("tips10"), titulo: `Tasa real a 10 años en ${nf(v, 2)}% (percentil ${pctl(r, v)} desde 2003) e inflación esperada en ${nf(last(be)[1], 2)}%`,
-      sub: `El 10 años nominal = tasa real (TIPS) + inflación esperada (breakeven, eje derecho), ${txtFrec("tips10")}.`,
-      fuenteTxt: "Tesoro de EE.UU. vía FRED", dec: 2,
-      series: [{ n: "Tasa real (TIPS)", d: cut(r), c: 0, w: 2.8 }, { n: "Inflación esperada (breakeven, eje derecho)", d: cut(be), c: 1, der: true }] };
+    const f = S("fed_funds"), c = yoy(S("pce_core")), c6 = ann(S("pce_core"), 6); if (!f || !c) return null;
+    const r = join(f, c, (a, b) => a - b), r6 = c6 ? join(f, c6, (a, b) => a - b) : null, fu = ultimoDato("fed_funds");
+    const v = fu[1] - last(c)[1], v6 = c6 ? fu[1] - last(c6)[1] : null;
+    const lr = S("sep_lr");
+    const neutral = lr ? r.filter(p => p[0] >= lr[0][0]).map(p => { let x = null; for (const q of lr) if (q[0] <= p[0] + 31 * 864e5) x = q[1]; return [p[0], x - 2]; }).filter(p => p[1] != null) : null;
+    const n = lr ? last(lr)[1] - 2 : null;
+    if (neutral && neutral.length && last(lr)[0] > last(neutral)[0]) neutral.push([last(lr)[0], n]);
+    // el último punto usa la tasa del último día, igual que el título
+    const conHoy = (a, x) => a && fu[0] > last(a)[0] ? a.concat([[fu[0], x]]) : a;
+    const ss = [{ n: "Tasa real, core interanual", d: cut(conHoy(r, v)), c: 0, w: 2.8 }];
+    if (r6) ss.push({ n: "Tasa real, core a 6 meses", d: cut(conHoy(r6, v6)), c: 0, fina: true });
+    if (neutral) ss.push({ n: "Neutral según la Fed (largo plazo − 2%)", d: cut(neutral), c: 1, w: 2, punteada: true, escalon: true });
+    return { titulo: `Tasa real de la Fed al ${fdia(fu[0])}: ${nf(v)}% con core interanual (fondos ${nf(fu[1], 2)}% − core ${nf(last(c)[1])}%)` + (v6 != null ? `, ${nf(v6)}% con core a 6 meses` : "") + (n != null ? `; neutral según la Fed ${nf(n)}% (SEP de ${fm(last(lr)[0])})` : ""),
+      sub: `Fondos federales menos core PCE (${fm(last(c)[0])}). Neutral: tasa de largo plazo que proyecta la Fed (mediana) menos su meta de 2%.`,
+      series: ss, refs: [{ y: 0 }] };
   } });
-def("primaPlazo", { slug: "prima-por-plazo", nombre: "Prima por plazo a 10 años", sin: ["term premium", "kim wright"],
-  calc: "Prima por plazo del bono a 10 años según el modelo Kim-Wright de la Fed.",
-  ks: ["term_premium"],
-  f: () => {
-    const t = SD("term_premium"); if (!t) return null;
-    const v = last(t)[1];
-    return { titulo: `La prima por plazo a 10 años está en ${nf(v, 2)}%: percentil ${pctl(t, v)} desde 2000`,
-      sub: "Compensación extra por prestar a 10 años en vez de renovar a corto plazo. Sube con el riesgo fiscal y la incertidumbre de inflación.",
-      freq: freqD("term_premium"), dec: 2, banda: rangoNormal(S("term_premium")), series: [{ n: "Prima por plazo 10 años", d: cut(t), c: 0 }], refs: [{ y: 0 }] };
-  } });
-def("senda", { slug: "que-descuenta-el-mercado", nombre: "Qué descuenta el mercado: la senda implícita de la Fed", sin: ["recortes", "subas", "expectativas de tasa", "letras", "fed funds", "política esperada", "senda"],
-  calc: "Rendimiento de las letras y bonos del Tesoro a 1, 3 y 6 meses, 1 y 2 años (datos diarios), contra la tasa efectiva de fondos federales. La parte corta de la curva es la mejor aproximación pública a la tasa que el mercado espera; a 2 años incluye además una prima por plazo.",
+
+def("senda", { slug: "que-descuenta-el-mercado", nombre: "Curva corta contra la Fed", sin: ["recortes", "subas", "expectativas de tasa", "letras", "fed funds", "política esperada", "senda"],
+  calc: "Rendimiento de las letras y bonos del Tesoro a 1, 3 y 6 meses, 1 y 2 años (datos diarios), contra la tasa efectiva de fondos federales, ubicados en la fecha en que vence cada plazo; hoy y hace un mes. Los rombos son la mediana de la tasa que proyecta la Fed a fin de cada año. Las letras incluyen una diferencia estructural con los fondos federales (oferta del Tesoro, liquidez) y los bonos a 1-2 años, prima por plazo: no son la senda esperada pura, que se mide con futuros de fondos federales y OIS (no están en FRED). No depende del período elegido.",
   ks: ["fed_funds", "ust2", "sep_ff"],
   f: () => {
     const cv = ST.DATA.curva; if (!cv || !cv["1A"] || !cv["2A"]) return null;
     const fd_ = diariaCompleta("fed_funds"); if (!fd_) return null;
     const ff = last(fd_)[1];
-    const plazos = [["1M", "1 mes"], ["3M", "3 meses"], ["6M", "6 meses"], ["1A", "1 año"], ["2A", "2 años"]].filter(([p]) => cv[p]);
+    const plazos = [["1M", 1], ["3M", 3], ["6M", 6], ["1A", 12], ["2A", 24]].filter(([p]) => cv[p]);
     const ult = cv["1A"][cv["1A"].length - 1][0];
     const hace = (() => { const d = new Date(P(ult)); d.setUTCMonth(d.getUTCMonth() - 1); return d.toISOString().slice(0, 10); })();
     const val = (p, f) => { const o = cv[p].filter(x => x[0] <= f).pop(); return o ? o[1] : null; };
+    const mas = (f, m) => { const d = new Date(P(f)); d.setUTCMonth(d.getUTCMonth() + m); return d.getTime(); };
     const ffHace = valorEn(fd_, P(hace));
-    const cats = ["Fed hoy", ...plazos.map(([, n]) => n)];
-    const hoy = [ff, ...plazos.map(([p]) => val(p, ult))], previo = [ffHace ? ffHace[1] : null, ...plazos.map(([p]) => val(p, hace))];
-    const y1 = val("1A", ult), d1 = (y1 - ff) * 100;
-    const mov = Math.round(Math.abs(d1) / 25);
-    const titulo = Math.abs(d1) < 12.5 ? `El mercado no descuenta cambios de tasa a un año (letra a 1 año en ${nf(y1, 2)}%)`
-      : `El mercado descuenta ${mov === 1 ? "una" : "unas " + mov} ${d1 > 0 ? "suba" : "baja"}${mov === 1 ? "" : "s"} de 0,25 en 12 meses: la letra a 1 año está ${nf(Math.abs(d1), 0)} pb ${d1 > 0 ? "sobre" : "bajo"} la Fed`;
-    return { tipo: "cat", titulo, sub: `Tesoro por plazo, hoy y hace un mes: si la curva corta sube, el mercado espera subas.` + (sepPuntos("sep_ff") ? ` La Fed proyecta ${sepTxt("sep_ff", 2)}.` : ""),
-      fuenteTxt: "Fed y Tesoro de EE.UU. vía FRED", unidad: "%", dec: 2, decEje: 1, signo: false, escala: true, cats,
-      series: [{ n: `Hoy (${fd(P(ult))})`, t: "line", c: 0, w: 3, etiquetas: "todas", d: hoy }, { n: "Hace un mes", t: "line", c: 1, w: 1.8, punteada: true, d: previo }] };
+    const hoy = [[P(ult), ff], ...plazos.map(([p, m]) => [mas(ult, m), val(p, ult)])];
+    const previo = [[P(hace), ffHace ? ffHace[1] : null], ...plazos.map(([p, m]) => [mas(hace, m), val(p, hace)])].filter(p => p[1] != null);
+    const sep = sepPuntos("sep_ff", 11, 1);
+    const d1 = (val("1A", ult) - ff) * 100, d2 = (val("2A", ult) - ff) * 100;
+    const h1 = ffHace ? (val("1A", hace) - ffHace[1]) * 100 : null, h2 = ffHace ? (val("2A", hace) - ffHace[1]) * 100 : null;
+    const ss = [{ n: `Hoy (${fdia(P(ult))})`, d: hoy, c: 0, w: 3, dec: 2 }, { n: "Hace un mes", d: previo, c: 1, w: 1.8, punteada: true, dec: 2 }];
+    if (sep) ss.push({ n: "Proyección de la Fed (fin de año)", t: "punto", c: 0, d: sep, dec: 2 });
+    return { freq: "D", eventos: false, recesiones: false, sinRecorte: true, sinFecha: true,
+      titulo: `Al ${fdia(P(ult))}: letra a 1 año ${nf(val("1A", ult), 2)}% y bono a 2 años ${nf(val("2A", ult), 2)}%, contra la Fed en ${nf(ff, 2)}% (${sg(d1, 0)} y ${sg(d2, 0)} pb)` + (h1 != null ? `; hace un mes: ${sg(h1, 0)} y ${sg(h2, 0)} pb` : "") + (sep ? `; la Fed proyecta ${sep.map(p => `${nf(p[1], 2)}% a fin de ${anio(p[0])}`).join(" y ")}` : ""),
+      sub: "Rendimiento de letras y bonos cortos del Tesoro, ubicados en la fecha en que vence cada plazo, contra la tasa efectiva de fondos federales. Incluye la diferencia estructural entre letras y fondos federales, y prima por plazo.",
+      fuenteTxt: "Fed y Tesoro de EE.UU. vía FRED", dec: 2, series: ss };
   } });
-def("politica", { slug: "tasa-real-de-la-fed", nombre: "Tasa real de la Fed y tasa neutral", sin: ["política monetaria", "restrictiva", "neutral", "r*", "r estrella"],
-  calc: "Tasa efectiva de fondos federales menos inflación core PCE interanual; el título usa el último dato diario de la tasa y el gráfico, promedios mensuales. La neutral es la tasa de largo plazo que proyecta la propia Fed (mediana de cada reunión con proyecciones) menos su meta de 2%; no se observa, se estima, y los modelos de la Fed de Nueva York la ubican entre 0,5% y 1,3%. Se considera cerca de neutral a menos de 0,5 pp de distancia.",
-  ks: ["fed_funds", "pce_core", "sep_lr"],
+
+// Billones de US$: las series de la Fed vienen en millones o en miles de millones
+const aBillones = a => a && a.length ? escala(a, last(a)[1] > 1e5 ? 1e-6 : 1e-3) : null;
+def("balanceFed", { slug: "balance-de-la-fed", nombre: "Balance de la Fed: activos, reservas, RRP y cuenta del Tesoro", sin: ["qt", "qe", "balance", "reservas", "liquidez", "h.4.1", "rrp", "tga", "cuenta del tesoro"],
+  calc: "Activos totales de la Reserva Federal (línea) y tres de sus pasivos (áreas apiladas): reservas de los bancos, recompra inversa a un día (RRP: donde los fondos de dinero dejan liquidez en la Fed) y cuenta general del Tesoro (TGA). Fed, H.4.1 y operaciones diarias; billones de US$. Los tres pasivos no suman los activos: faltan los billetes en circulación y otras partidas. Con los activos quietos, las reservas suben o bajan cuando se mueven la RRP o la cuenta del Tesoro.",
+  ks: ["fed_assets", "reserves", "rrp", "tga", "gdp_nom"],
   f: () => {
-    const f = S("fed_funds"), c = yoy(S("pce_core")); if (!f || !c) return null;
-    const r = join(f, c, (a, b) => a - b), fu = ultimoDato("fed_funds"), v = fu[1] - last(c)[1];
-    const lr = S("sep_lr");
-    // escalón: cada valor vale desde su reunión hasta la siguiente, llevado a fin de mes para que coincida con la serie mensual
-    const neutral = lr ? r.filter(p => p[0] >= lr[0][0]).map(p => { let x = null; for (const q of lr) if (q[0] <= p[0] + 31 * 864e5) x = q[1]; return [p[0], x - 2]; }).filter(p => p[1] != null) : null;
-    const n = lr ? last(lr)[1] - 2 : null;   // la última estimación de la Fed, aunque sea de este mes
-    if (neutral && neutral.length && last(lr)[0] > last(neutral)[0]) neutral.push([last(lr)[0], n]);
-    const lectura = n == null ? (v > 1.3 ? "restrictiva" : v >= 0.5 ? "cerca de neutral" : "expansiva")
-      : v > n + 0.5 ? "restrictiva" : v < n - 0.5 ? "expansiva" : "cerca de neutral";
-    const ss = [{ n: "Tasa real de la Fed", d: cut(r), c: 0, area: true }];
-    if (neutral) ss.push({ n: "Neutral según la Fed (largo plazo − 2%)", d: cut(neutral), c: 1, w: 2, punteada: true });
-    return { titulo: `Tasa real de la Fed en ${nf(v)}%` + (n != null ? `, contra una neutral de ${nf(n)}% según la propia Fed: política ${lectura}` : `: política ${lectura}`),
-      sub: `Fondos federales (${fw(fu[0])}) menos core PCE interanual (${fm(last(c)[0])}). La neutral es la que estima la propia Fed; cerca de neutral = a menos de 0,5 pp.`,
-      series: ss, refs: [{ y: 0 }] };
+    const a = aBillones(SD("fed_assets")); if (!a) return null;
+    const r = aBillones(SD("reserves")), rp = aBillones(SD("rrp")), tg = aBillones(SD("tga"));
+    const aw = aBillones(diariaCompleta("fed_assets")), pk = aw.reduce((m, p) => p[1] > m[1] ? p : m), h13 = valorEn(aw, last(aw)[0] - 91 * DIA);
+    const g = S("gdp_nom"), rw = r ? aBillones(diariaCompleta("reserves")) : null;
+    const ss = [{ n: "Activos totales", d: cut(a), c: 0, w: 2.8 }];
+    if (r) ss.push({ n: "Reservas bancarias", d: cut(r), c: 2, area: true, stack: "p" });
+    if (rp) ss.push({ n: "RRP", d: cut(rp), c: 1, area: true, stack: "p" });
+    if (tg) ss.push({ n: "Cuenta del Tesoro (TGA)", d: cut(tg), c: 3, area: true, stack: "p" });
+    const lt = k => { const x = aBillones(diariaCompleta(k)); return x ? nf(last(x)[1], 2) : null; };
+    return { freq: freqD("fed_assets"),
+      titulo: `Activos de la Fed US$ ${nf(last(aw)[1], 2)} billones al ${fdia(last(aw)[0])} (máximo ${fm(pk[0])}: ${nf(pk[1], 2)}` + (h13 ? `; 13 semanas: ${sg(last(aw)[1] - h13[1], 2)}` : "") + ")"
+        + (rw ? `; reservas ${nf(last(rw)[1], 2)}` + (g ? ` (${nf(last(rw)[1] * 1000 / last(g)[1] * 100, 1)}% del PBI)` : "") : "") + (lt("rrp") ? `, RRP ${lt("rrp")}` : "") + (lt("tga") ? `, cuenta del Tesoro ${lt("tga")}` : ""),
+      sub: "Balance de la Fed, billones de US$. Las reservas cambian cuando cambian los activos, la RRP o la cuenta del Tesoro.",
+      unidad: "billones", dec: 2, series: ss };
   } });
-def("hipotecaria", { slug: "spread-hipotecario", nombre: "Tasa hipotecaria y spread", sin: ["hipoteca", "mortgage", "freddie mac", "vivienda"],
-  calc: "Tasa hipotecaria fija a 30 años de la encuesta semanal de Freddie Mac (se publica los jueves) menos Treasury a 10 años del mismo día. Con períodos de más de 5 años, promedios mensuales. Fuentes diarias como Mortgage News Daily suelen dar valores algo más altos: miden las tasas ofrecidas cada día, no el promedio de la encuesta semanal.",
-  ks: ["mortgage30", "ust10"],
+
+def("tasaReal", { slug: "tasa-real", nombre: "Tasa real a 10 años", sin: ["tips", "breakeven", "tasa real", "descomposición"], historia: true,
+  calc: "Rendimiento nominal del Treasury a 10 años, de los TIPS a 10 años (tasa real) y su diferencia (inflación esperada implícita, breakeven a 10 años), en el mismo eje: nominal = real + inflación esperada. La referencia es el promedio 2015-19 de la tasa real.",
+  ks: ["ust10", "tips10", "breakeven10"],
   f: () => {
-    const m = SD("mortgage30"), t = SD("ust10"); if (!m || !t) return null;
-    const sp = join(m, t, (a, b) => a - b), rn = rangoNormal(join(S("mortgage30"), S("ust10"), (a, b) => a - b));
-    return { freq: freqD("mortgage30"), titulo: `Hipotecaria a 30 años en ${nf(last(m)[1], 2)}% (Freddie Mac, semana al ${fw(last(m)[0])}), ${nf(last(sp)[1], 2)} pp sobre el Treasury a 10 años`,
-      sub: rn ? `El spread normal 2000-19 va de ${nf(rn[0], 1)} a ${nf(rn[1], 1)} pp: por encima, el crédito hipotecario está caro respecto de los bonos.` : "Spread entre la tasa hipotecaria y el Treasury a 10 años.",
-      unidad: "pp", dec: 2, banda: rn, series: [{ n: "Spread hipotecaria − Treasury 10 años", d: cut(sp), c: 1 }] };
+    const n = SD("ust10"), r = SD("tips10"), be = SD("breakeven10"); if (!r || !be) return null;
+    const rw = diariaCompleta("tips10"), v = last(rw)[1], ext = extremoDesde(rw, false), pr = promEntre(S("tips10"), 2015, 2019);
+    const ss = [];
+    if (n) ss.push({ n: "Nominal 10 años", d: cut(n), c: "gris", w: 1.4, dec: 2 });
+    ss.push({ n: "Tasa real (TIPS)", d: cut(r), c: 0, w: 2.8, dec: 2 }, { n: "Inflación esperada (breakeven)", d: cut(be), c: 1, w: 2, dec: 2 });
+    const nv = ultimoDato("ust10");
+    return { freq: freqD("tips10"),
+      titulo: `10 años ${nf(nv[1], 2)}% al ${fdia(last(rw)[0])} = tasa real ${nf(v, 2)}% + inflación esperada ${nf(ultimoDato("breakeven10")[1], 2)}%` + (ext ? `; la tasa real, ${ext.replace("máximo", "la más alta")}` : "") + (pr != null ? ` (promedio 2015-19: ${nf(pr, 2)}%)` : ""),
+      sub: `Treasury nominal a 10 años, TIPS a 10 años (tasa real) y su diferencia (inflación esperada), ${txtFrec("tips10")}.`,
+      fuenteTxt: "Tesoro de EE.UU. vía FRED", dec: 2, series: ss, refs: pr != null ? [{ y: pr, l: `Tasa real, promedio 2015-19: ${nf(pr, 2)}%` }] : [] };
   } });
-def("nfci", { slug: "condiciones-financieras", nombre: "Condiciones financieras (NFCI)", sin: ["nfci", "condiciones financieras", "spreads", "crédito", "chicago fed"],
-  calc: "Índice nacional de condiciones financieras de la Fed de Chicago y su subíndice de crédito, promedio mensual. Cero es el promedio histórico; positivo, más restrictivo; negativo, más laxo.",
-  ks: ["nfci", "nfci_credit"],
+
+def("primaPlazo", { slug: "prima-por-plazo", nombre: "Prima por plazo a 10 años", sin: ["term premium", "kim wright"], historia: true,
+  calc: "Prima por plazo del bono a 10 años según el modelo Kim-Wright de la Fed: la parte del rendimiento que no se explica por la tasa corta esperada. Es una estimación de modelo, no un precio de mercado; otros modelos (como el ACM de la Fed de Nueva York) dan niveles distintos. Referencias: promedios 1990-2007 y 2015-19.",
+  ks: ["term_premium"],
   f: () => {
-    const n = SD("nfci"), c = SD("nfci_credit"); if (!n) return null;
-    const v = last(n)[1];
-    const ss = [{ n: "NFCI", d: cut(n), c: 0, w: 2.6, dec: 2 }];
-    if (c) ss.push({ n: "Subíndice de crédito", d: cut(c), c: 1, dec: 2 });
-    return { titulo: `Condiciones financieras ${v < 0 ? "más laxas" : "más restrictivas"} que el promedio: NFCI en ${nf(v, 2)}`,
-      sub: "Resume más de 100 indicadores de riesgo, crédito y apalancamiento. Por encima de cero, el sistema financiero frena a la economía; por debajo, la empuja." + notaParcial(),
-      freq: freqD("nfci"), unidad: "", dec: 2, series: ss, refs: [{ y: 0, l: "Promedio histórico (0)" }] };
+    const t = SD("term_premium"); if (!t) return null;
+    const w = diariaCompleta("term_premium"), v = last(w)[1], ext = extremoDesde(w, v > 0 ? false : true);
+    const a = promEntre(S("term_premium"), 1990, 2007), b = promEntre(S("term_premium"), 2015, 2019);
+    const refs = [{ y: 0 }]; if (a != null) refs.push({ y: a, l: `Promedio 1990-2007: ${nf(a, 2)}%` }); if (b != null) refs.push({ y: b, l: `Promedio 2015-19: ${nf(b, 2)}%` });
+    return { titulo: `Prima por plazo a 10 años ${nf(v, 2)}% al ${fdia(last(w)[0])}` + (ext ? `, ${ext.replace("máximo", "la más alta").replace("mínimo", "la más baja")}` : "") + (a != null ? `; promedio 1990-2007: ${nf(a, 2)}%; 2015-19: ${nf(b, 2)}%` : ""),
+      sub: `Estimación del modelo Kim-Wright (Fed), ${txtFrec("term_premium")}: no se observa en el mercado; otros modelos dan niveles distintos.`,
+      freq: freqD("term_premium"), dec: 2, series: [{ n: "Prima por plazo 10 años", d: cut(t), c: 0, w: 2.6 }], refs };
   } });
-def("spreads", { slug: "spreads-de-credito", nombre: "Spreads de crédito corporativo", sin: ["spreads", "high yield", "baa", "crédito corporativo", "riesgo corporativo"],
-  calc: "Rendimiento de los bonos corporativos Baa de Moody's menos el Treasury a 10 años, y spread ajustado por opciones del índice high yield de ICE BofA (FRED publica sólo sus últimos 3 años). Promedios mensuales.",
+
+def("spreads", { slug: "spreads-de-credito", nombre: "Spreads de crédito corporativo", sin: ["spreads", "high yield", "baa", "crédito corporativo", "riesgo corporativo"], historia: true,
+  calc: "Rendimiento de los bonos corporativos Baa de Moody's menos el Treasury a 10 años (desde 1986), y spread ajustado por opciones del índice high yield de ICE BofA (FRED publica sólo desde oct-23). Datos diarios con períodos de hasta 5 años; promedios mensuales con períodos más largos. Referencias: promedio 1986-2019 y máximo de 2008.",
   ks: ["baa_spread", "hy_oas"],
   f: () => {
     const b = SD("baa_spread"), h = SD("hy_oas"); if (!b && !h) return null;
     const ss = [];
-    if (b) ss.push({ n: "Baa − Treasury 10 años", d: cut(b), c: 0, w: 2.6 });
-    if (h) ss.push({ n: "High yield (ICE BofA)", d: cut(h), c: 1 });
-    return { titulo: b ? `El spread corporativo Baa está en ${nf(last(b)[1], 2)} pp: percentil ${pctl(b, last(b)[1])} desde 2000` : `Spread high yield en ${nf(last(h)[1], 2)} pp`,
-      sub: "Lo que paga de más una empresa sobre el Tesoro. Cuando se abre rápido, suele anticipar un freno de la economía." + notaParcial(),
-      freq: freqD("baa_spread"), unidad: "pp", dec: 2, banda: b ? rangoNormal(S("baa_spread")) : null, bandaTexto: "Rango normal Baa 2000-19", series: ss };
+    if (b) ss.push({ n: "Baa − Treasury 10 años", d: cut(b), c: 0, w: 2.6, dec: 2 });
+    if (h) ss.push({ n: "High yield (ICE BofA, desde oct-23)", d: cut(h), c: 1, w: 1.4, dec: 2 });
+    const bm = S("baa_spread"), pr = promEntre(bm, 1986, 2019), pk = maxEntre(bm, 2008, 2009);
+    const bw = b ? diariaCompleta("baa_spread") : null, rec = bw ? minEntre(bw.slice(0, -1), new Date().getUTCFullYear() - 3, 2100) : null;
+    const refs = []; if (pr != null) refs.push({ y: pr, l: `Promedio 1986-2019: ${nf(pr, 2)} pp` }); if (pk) refs.push({ y: pk[1], l: `Máximo ${fm(pk[0])}: ${nf(pk[1], 2)} pp` });
+    return { titulo: (bw ? `Spread Baa ${nf(last(bw)[1], 2)} pp al ${fdia(last(bw)[0])}` + (rec ? ` (mínimo de 3 años: ${nf(rec[1], 2)} en ${fm(rec[0])}` : " (") + (pr != null ? `; promedio 1986-2019: ${nf(pr, 2)}` : "") + (pk ? `; máximo ${fm(pk[0])}: ${nf(pk[1], 2)}` : "") + ")" : "") + (h ? `${bw ? "; " : ""}high yield ${nf(ultimoDato("hy_oas")[1], 2)} pp` : ""),
+      sub: `Rendimiento de bonos corporativos sobre el Tesoro, ${txtFrec("baa_spread")}. Baa: Moody's menos Treasury a 10 años. High yield: ICE BofA, ajustado por opciones; FRED publica sólo desde oct-23.` + notaParcial(),
+      freq: freqD("baa_spread"), unidad: "pp", dec: 2, series: ss, refs };
   } });
-def("hyCalidad", { slug: "high-yield-por-calidad", nombre: "High yield por calidad: BB contra CCC", sin: ["ccc", "bb", "junk", "basura", "high yield", "descompresión", "estrés de crédito"],
-  calc: "Spreads ajustados por opciones de los índices ICE BofA de high yield BB (el tramo de mejor calidad) y CCC y menor (el peor crédito que todavía se financia en el mercado). FRED publica sólo sus últimos 3 años.",
-  ks: ["hy_bb", "hy_ccc", "hy_oas"],
+
+def("hyCalidad", { slug: "high-yield-por-calidad", nombre: "High yield por calidad: CCC contra BB", sin: ["ccc", "bb", "junk", "basura", "high yield", "descompresión", "estrés de crédito"],
+  calc: "Cociente entre los spreads ajustados por opciones de los índices ICE BofA de high yield CCC y menor (el peor crédito que todavía se financia en el mercado) y BB (el tramo de mejor calidad). La referencia es su promedio de 3 años. FRED publica sólo sus últimos 3 años.",
+  ks: ["hy_bb", "hy_ccc"],
   f: () => {
-    const bb = SD("hy_bb"), ccc = SD("hy_ccc"), h = SD("hy_oas"); if (!bb || !ccc) return null;
+    const bb = SD("hy_bb"), ccc = SD("hy_ccc"); if (!bb || !ccc) return null;
     const r = join(ccc, bb, (a, b) => a / b); if (!r) return null;
-    const v = last(r)[1], m = r.reduce((x, p) => x + p[1], 0) / r.length;
-    const ss = [{ n: "CCC y menor", d: cut(ccc), c: 1, w: 2.6 }];
-    if (h) ss.push({ n: "High yield total", d: cut(h), c: 2 });
-    ss.push({ n: "BB", d: cut(bb), c: 0 });
-    return { freq: freqD("hy_ccc"), titulo: `El spread CCC es ${nf(v, 1)} veces el del BB (${nf(last(ccc)[1], 2)} contra ${nf(last(bb)[1], 2)} pp), contra ${nf(m, 1)} veces de promedio en 3 años`,
-      sub: "El estrés aparece primero en el CCC, el peor crédito: si su spread sube y el BB no, el mercado empieza a discriminar. 3 años de historia.",
-      unidad: "pp", dec: 2, series: ss };
+    const bw = diariaCompleta("hy_bb"), cw = diariaCompleta("hy_ccc"), rw = join(cw, bw, (a, b) => a / b);
+    const m = rw.reduce((x, p) => x + p[1], 0) / rw.length, mn = Math.min(...rw.map(p => p[1])), mx = Math.max(...rw.map(p => p[1]));
+    const t3 = last(cw)[0] - 91 * DIA, c3 = valorEn(cw, t3), b3 = valorEn(bw, t3);
+    return { freq: freqD("hy_ccc"),
+      titulo: `Spread CCC ${nf(last(cw)[1], 2)} pp y BB ${nf(last(bw)[1], 2)} pp al ${fdia(last(cw)[0])}` + (c3 && b3 ? ` (en 3 meses: ${sg((last(cw)[1] - c3[1]) * 100, 0)} y ${sg((last(bw)[1] - b3[1]) * 100, 0)} pb)` : "") + `; cociente CCC/BB ${nf(last(rw)[1], 1)} (promedio 3 años: ${nf(m, 1)}; rango ${nf(mn, 1)}-${nf(mx, 1)})`,
+      sub: "Spreads ajustados por opciones de ICE BofA: CCC y menor sobre BB. FRED publica sólo los últimos 3 años.",
+      unidad: "veces", dec: 2, series: [{ n: "CCC / BB", d: cut(r), c: 1, w: 2.6 }], refs: [{ y: m, l: `Promedio 3 años: ${nf(m, 1)}` }] };
   } });
-def("balanceFed", { slug: "balance-de-la-fed", nombre: "Balance de la Fed y reservas bancarias", sin: ["qt", "qe", "balance", "reservas", "liquidez", "h.4.1"],
-  calc: "Activos totales de la Reserva Federal y reservas de los bancos depositadas en la Fed (Fed, H.4.1), promedio mensual de datos semanales, en billones de US$.",
-  ks: ["fed_assets", "reserves", "gdp_nom"],
+
+def("nfci", { slug: "condiciones-financieras", nombre: "Condiciones financieras (NFCI)", sin: ["nfci", "anfci", "condiciones financieras", "spreads", "crédito", "chicago fed"], historia: true,
+  calc: "Índice nacional de condiciones financieras de la Fed de Chicago (más de 100 indicadores de mercado de dinero, crédito, acciones y apalancamiento) y su versión ajustada (ANFCI), que descuenta lo que se explica por la inflación y la actividad del momento. Semanal. Cero es el promedio desde 1971; positivo, condiciones más restrictivas que el promedio; negativo, más laxas.",
+  ks: ["nfci", "anfci"],
   f: () => {
-    const a = escala(SD("fed_assets"), 1e-6), r = escala(SD("reserves"), 1e-6); if (!a) return null;
-    const pico = Math.max(...a.map(p => p[1])), g = S("gdp_nom");
-    const pbi = g ? ` Equivale a ${nf(last(a)[1] * 1000 / last(g)[1] * 100, 0)}% del PBI.` : "";
-    const ss = [{ n: "Activos totales", d: cut(a), c: 0, area: true, w: 2.6 }];
-    if (r) ss.push({ n: "Reservas bancarias", d: cut(r), c: 2 });
-    return { titulo: `La Fed tiene activos por US$ ${nf(last(a)[1], 2)} billones, ${nf((1 - last(a)[1] / pico) * 100, 0)}% menos que en su pico`,
-      sub: "Billones de US$. Cuando la Fed achica su balance retira liquidez del sistema; las reservas bancarias muestran cuánto margen queda antes de que se tense el mercado de dinero." + pbi,
-      freq: freqD("fed_assets"), unidad: "billones", dec: 2, series: ss };
+    const n = SD("nfci"), a = SD("anfci"); if (!n) return null;
+    const nw = diariaCompleta("nfci"), v = last(nw)[1], ext = extremoDesde(nw, v < 0);
+    const ss = [{ n: "NFCI", d: cut(n), c: 0, w: 2.6, dec: 2 }];
+    if (a) ss.push({ n: "NFCI ajustado", d: cut(a), c: 1, w: 1.6, dec: 2 });
+    return { titulo: `NFCI ${nf(v, 2)} al ${fdia(last(nw)[0])}` + (ext ? `, ${ext.replace("mínimo", "el más laxo").replace("máximo", "el más restrictivo")}` : "") + ` (percentil ${pctlDesde(S("nfci"), v, T(1971))} desde 1971)` + (a ? `; NFCI ajustado ${nf(ultimoDato("anfci")[1], 2)}` : ""),
+      sub: "Índice de condiciones financieras de la Fed de Chicago, semanal. Cero es el promedio desde 1971; positivo, más restrictivo; negativo, más laxo." + notaParcial(),
+      freq: freqD("nfci"), unidad: "", dec: 2, series: ss, refs: [{ y: 0, l: "Promedio desde 1971 (0)" }] };
+  } });
+
+def("hipotecaria", { slug: "spread-hipotecario", nombre: "Tasa hipotecaria y spread", sin: ["hipoteca", "mortgage", "freddie mac", "vivienda"], historia: true,
+  calc: "Tasa hipotecaria fija a 30 años de la encuesta semanal de Freddie Mac (se publica los jueves) y Treasury a 10 años del mismo día; barras: la diferencia. Con períodos de más de 5 años, promedios mensuales. La referencia es el promedio del spread 1990-2019. Fuentes diarias como Mortgage News Daily suelen dar valores algo más altos: miden las tasas ofrecidas cada día, no el promedio de la encuesta semanal.",
+  ks: ["mortgage30", "ust10"],
+  f: () => {
+    const m = SD("mortgage30"), t = SD("ust10"); if (!m || !t) return null;
+    const sp = join(m, t, (a, b) => a - b), mw = diariaCompleta("mortgage30"), tw = diariaCompleta("ust10");
+    const spm = join(S("mortgage30"), S("ust10"), (a, b) => a - b), pr = promEntre(spm, 1990, 2019);
+    const h2 = valorEn(mw, last(mw)[0] - 14 * DIA), mx = maxEntre(S("mortgage30"), 2022, 2100), tv = valorEn(tw, last(mw)[0]);
+    return { freq: freqD("mortgage30"),
+      titulo: `Hipotecaria a 30 años ${nf(last(mw)[1], 2)}% (Freddie Mac, semana al ${fw(last(mw)[0])}` + (h2 ? `; ${sg((last(mw)[1] - h2[1]) * 100, 0)} pb en 2 semanas` : "") + ")" + (tv ? `; Treasury 10 años ${nf(tv[1], 2)}%; spread ${nf(last(mw)[1] - tv[1], 2)} pp` : "") + (pr != null ? ` (promedio 1990-2019: ${nf(pr, 2)})` : "") + (mx ? `; máximo desde 2022: ${nf(mx[1], 2)}% (${fm(mx[0])})` : ""),
+      sub: "Encuesta semanal de Freddie Mac (se publica los jueves) y Treasury a 10 años del mismo día. Barras: diferencia.",
+      dec: 2, series: [{ n: "Spread (pp)", d: cut(sp), t: "bar", c: "gris", suave: true }, { n: "Hipotecaria 30 años", d: cut(m), c: 1, w: 2.8 }, { n: "Treasury 10 años", d: cut(t), c: 0, w: 1.4 }],
+      refs: pr != null ? [{ y: pr, l: `Spread promedio 1990-2019: ${nf(pr, 2)} pp` }] : [] };
   } });
 
 // ═════════════════════════ Externo ═════════════════════════ ═════════════════════════
