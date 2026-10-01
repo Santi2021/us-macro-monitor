@@ -153,10 +153,11 @@ function opcionesLinea(sp, ancho, grande) {
       },
     }),
     xAxis: {
-      type: "time", boundaryGap: hayBarras ? ["1%", "1%"] : false, minInterval: largo ? ((x1 - x0) > 40 * 365 * DIA_MS ? 3652 * DIA_MS : 365 * DIA_MS) : undefined,
-      maxInterval: (x1 - x0) > 40 * 365 * DIA_MS ? 3653 * DIA_MS : undefined,
+      type: "time", boundaryGap: hayBarras ? ["1%", "1%"] : false, minInterval: largo ? 365 * DIA_MS : undefined,
+      // con más de 20 años, una marca por año y rótulo sólo en los años redondos (1960, 1970… o cada 5): nunca 1973, 1983
+      maxInterval: (x1 - x0) > 20 * 365 * DIA_MS ? 366 * DIA_MS : undefined,
       axisLine: { lineStyle: { color: axis } }, axisTick: { show: false },
-      axisLabel: { color: muted, fontSize: fs, hideOverlap: true, formatter: (x1 - x0) < 200 * DIA_MS ? v => { const d = new Date(v), n = d.getUTCDate(); return (x1 - x0) > 60 * DIA_MS && n !== 1 && n !== 15 ? "" : `${n} ${MES[d.getUTCMonth()]}`; } : v => { const d = new Date(v); return d.getUTCMonth() === 0 ? String(d.getUTCFullYear()) : MES[d.getUTCMonth()]; } },
+      axisLabel: { color: muted, fontSize: fs, hideOverlap: (x1 - x0) <= 20 * 365 * DIA_MS, formatter: (x1 - x0) < 200 * DIA_MS ? v => { const d = new Date(v), n = d.getUTCDate(); return (x1 - x0) > 60 * DIA_MS && n !== 1 && n !== 15 ? "" : `${n} ${MES[d.getUTCMonth()]}`; } : v => { const d = new Date(v); if ((x1 - x0) > 20 * 365 * DIA_MS) { const y = d.getUTCFullYear(), paso = (x1 - x0) > 40 * 365 * DIA_MS ? (ancho < 420 ? 20 : 10) : (ancho < 420 ? 10 : 5); return d.getUTCMonth() === 0 && y % paso === 0 ? String(y) : ""; } return d.getUTCMonth() === 0 ? String(d.getUTCFullYear()) : MES[d.getUTCMonth()]; } },
       splitLine: { show: false },
     },
     yAxis: [{
