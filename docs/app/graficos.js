@@ -19,7 +19,7 @@ const COVID = [Date.UTC(2020, 2, 1), Date.UTC(2022, 5, 1)];
 const COVID_SHOCK = [Date.UTC(2020, 2, 1), Date.UTC(2021, 5, 1)];
 
 export const paleta = () => [css("--s1"), css("--s2"), css("--s3"), css("--s4")];
-export const colorSerie = (sp, s, i) => s.c === "gris" ? css("--muted") : s.c === "ink" ? css("--ink") : s.c != null ? paleta()[s.c] : (sp.tipo === "cat" && s.t === "line" ? css("--ink") : paleta()[i % 4]);
+export const colorSerie = (sp, s, i) => s.c === "gris" ? css(s.t === "bar" ? "--axis" : "--muted") : s.c === "ink" ? css("--ink") : s.c != null ? paleta()[s.c] : (sp.tipo === "cat" && s.t === "line" ? css("--ink") : paleta()[i % 4]);
 const FS = () => ST.prefs.letra === "grande" ? 1.14 : 1;
 function redondo(v, paso, arriba) { return (arriba ? Math.ceil(v / paso) : Math.floor(v / paso)) * paso; }
 function pasoLindo(r) { const e = Math.pow(10, Math.floor(Math.log10(r))); const f = r / e; return (f <= 2 ? 0.25 : f <= 5 ? 0.5 : 1) * e; }
@@ -78,11 +78,14 @@ function opcionesLinea(sp, ancho, grande) {
   sp.series.forEach((s, i) => {
     const c = colorSerie(sp, s, i);
     const base = { name: s.n, data: s.d, z: 3, itemStyle: { color: c }, yAxisIndex: conDer && s.der ? 1 : 0 };
-    if (s.t === "bar") { series.push(Object.assign(base, { type: "bar", stack: s.stack, barMaxWidth: 22, itemStyle: { color: c, borderRadius: [2, 2, 0, 0] } })); return; }
+    if (s.t === "bar") { series.push(Object.assign(base, { type: "bar", stack: s.stack, barMaxWidth: 22, itemStyle: { color: c, opacity: s.suave ? 0.35 : 1, borderRadius: [2, 2, 0, 0] } })); return; }
+    // marcas con texto (por ejemplo, el dato que movió una estimación)
+    if (s.t === "nota") { series.push({ type: "scatter", name: s.n, z: 8, symbolSize: grande ? 8 : 7, silent: true, tooltip: { show: false }, itemStyle: { color: css("--surface"), borderColor: c, borderWidth: 2 },
+      data: s.d.map((p, i) => ({ value: p, label: { show: true, formatter: s.textos[i], position: i % 2 ? "bottom" : "top", color: muted, fontSize: fs - 2, distance: 6 } })), labelLayout: { hideOverlap: true } }); return; }
     // proyecciones: rombos sin línea
     if (s.t === "punto") { series.push(Object.assign(base, { type: "scatter", symbol: "diamond", symbolSize: grande ? 15 : 12, z: 7, itemStyle: { color: css("--surface"), borderColor: c, borderWidth: 2.5 } })); return; }
     series.push(Object.assign(base, {
-      type: "line", stack: s.stack, showSymbol: false, symbol: "circle", symbolSize: 6,
+      type: "line", stack: s.stack, step: s.escalon ? "end" : undefined, showSymbol: false, symbol: "circle", symbolSize: 6,
       lineStyle: { width: s.w ?? (s.fina ? 1.2 : 2.2), color: c, type: s.punteada ? [6, 4] : "solid", opacity: s.fina ? 0.55 : 1 },
       areaStyle: s.area && (!sp.banda || s.stack) ? { color: c, opacity: s.stack ? 0.85 : 0.10 } : undefined,
     }));
@@ -129,7 +132,7 @@ function opcionesLinea(sp, ancho, grande) {
         let h = `<div style="font-weight:600;margin-bottom:4px">${fx(ps2[0].value[0])}</div>`;
         for (const p of ps2) {
           const s = sp.series.find(x => x.n === p.seriesName) || {};
-          h += `<div style="display:flex;gap:12px;justify-content:space-between;align-items:center"><span>${p.marker}${esc(p.seriesName)}</span><b style="font-variant-numeric:tabular-nums">${nf(p.value[1], s.dec ?? dec)}${unidadTxt(u)}</b></div>`;
+          h += `<div style="display:flex;gap:12px;justify-content:space-between;align-items:center"><span>${p.marker}${esc(p.seriesName)}</span><b style="font-variant-numeric:tabular-nums">${nf(p.value[1], s.dec ?? dec)}${unidadTxt(s.u ?? u)}</b></div>`;
         }
         return h;
       },
@@ -137,7 +140,7 @@ function opcionesLinea(sp, ancho, grande) {
     xAxis: {
       type: "time", boundaryGap: hayBarras ? ["1%", "1%"] : false, minInterval: largo ? 365 * DIA_MS : undefined,
       axisLine: { lineStyle: { color: axis } }, axisTick: { show: false },
-      axisLabel: { color: muted, fontSize: fs, hideOverlap: true, formatter: v => { const d = new Date(v); return d.getUTCMonth() === 0 ? String(d.getUTCFullYear()) : MES[d.getUTCMonth()]; } },
+      axisLabel: { color: muted, fontSize: fs, hideOverlap: true, formatter: (x1 - x0) < 200 * DIA_MS ? v => { const d = new Date(v); return `${d.getUTCDate()} ${MES[d.getUTCMonth()]}`; } : v => { const d = new Date(v); return d.getUTCMonth() === 0 ? String(d.getUTCFullYear()) : MES[d.getUTCMonth()]; } },
       splitLine: { show: false },
     },
     yAxis: [{
@@ -149,7 +152,7 @@ function opcionesLinea(sp, ancho, grande) {
     }].concat(conDer ? [{
       type: "value", scale: true, position: "right", splitLine: { show: false },
       axisLabel: { color: colorSerie(sp, vis.find(s => s.der), sp.series.indexOf(vis.find(s => s.der))), fontSize: fs,
-        formatter: v => nf(v, sp.decEje ?? (dec > 0 ? 1 : 0)) + (u === "%" ? "%" : "") },
+        formatter: v => nf(v, sp.decEje ?? (dec > 0 ? 1 : 0)) + ((vis.find(s => s.der).u ?? u) === "%" ? "%" : "") },
     }] : []),
     series,
   };
@@ -197,7 +200,7 @@ function opcionesCategoria(sp, ancho, grande) {
       const vals = s.d.filter(v => v != null), mx = Math.max(...vals), mn = Math.min(...vals);
       let ult = s.d.length - 1; while (ult > 0 && s.d[ult] == null) ult--;
       const c = colorSerie(sp, s, i);
-      return { type: "line", name: s.n, data: s.d, z: s.fina ? 3 : 5, symbol: sp.sinPuntos ? "none" : "circle", symbolSize: 7, connectNulls: true,
+      return { type: "line", name: s.n, data: s.d, z: s.fina ? 3 : 5, symbol: sp.sinPuntos || s.punteada ? "none" : "circle", symbolSize: 7, connectNulls: true,
         endLabel: s.etiquetaFin ? { show: true, formatter: s.etiquetaFin, color: muted, fontSize: fs - 2, distance: 4 } : undefined,
         labelLayout: s.etiquetaFin ? { moveOverlap: "shiftY" } : undefined,
         emphasis: s.fina ? { focus: "series", lineStyle: { width: 2.2, opacity: 1 } } : undefined,
@@ -207,7 +210,7 @@ function opcionesCategoria(sp, ancho, grande) {
           formatter: p => p.value == null ? "" : (s.etiquetas === "todas" || p.dataIndex === ult || p.value === mx || p.value === mn) ? nf(p.value, dec) : "" } : undefined };
     }
     return { type: "bar", name: s.n, data: s.d, stack: sp.apilado === false ? undefined : "c", barMaxWidth: 34, barCategoryGap: "30%",
-      itemStyle: { color: col[s.c ?? i], borderColor: css("--surface"), borderWidth: 1.5 } };
+      itemStyle: { color: s.c === "gris" ? css("--axis") : colorSerie(sp, s, i), borderColor: css("--surface"), borderWidth: 1.5 } };
   });
   return {
     textStyle: { fontFamily: css("--font"), color: css("--ink-2") },
@@ -240,7 +243,7 @@ export function leyenda(sp, getChart, redibujar) {
   sp.series.forEach((s, i) => {
     if (s.enLeyenda === false) return;
     const b = el("button", { type: "button", "aria-pressed": "true", title: "Mostrar u ocultar" });
-    const clase = s.t === "bar" ? "barra" : s.t === "punto" ? "punto" : s.area ? "area" : s.punteada ? "punteada" : s.fina ? "fina" : "";
+    const clase = s.t === "bar" ? (s.suave ? "barra suave" : "barra") : s.t === "punto" ? "punto" : s.area ? "area" : s.punteada ? "punteada" : s.fina ? "fina" : "";
     b.innerHTML = `<i class="sw ${clase}" style="color:${colorSerie(sp, s, i)}"></i><span>${esc(s.n)}${conValor ? " <b></b>" : ""}</span>`;
     b.addEventListener("click", () => {
       const ch = getChart(); if (!ch) return;
@@ -265,8 +268,8 @@ export function leyenda(sp, getChart, redibujar) {
     let fUlt = null;
     for (const [b, s] of valores) {
       const p = t == null ? (s.d.length ? [s.d[s.d.length - 1][0], s.finValor ?? s.d[s.d.length - 1][1]] : null) : valorEn(s.d, t);
-      b.textContent = p ? nf(p[1], s.dec ?? dec) + unidadTxt(u) : "–";
-      if (p && s.t !== "punto" && (fUlt == null || p[0] > fUlt)) fUlt = p[0];
+      b.textContent = p ? nf(p[1], s.dec ?? dec) + unidadTxt(s.u ?? u) : "–";
+      if (p && s.t !== "punto" && !s.ref && (fUlt == null || p[0] > fUlt)) fUlt = p[0];
     }
     if (fecha) fecha.textContent = t == null ? (fUlt ? fx(fUlt) : "") : fx(valorEn(vis[0]?.d, t)?.[0] ?? t);
     box.classList.toggle("cursor", t != null);

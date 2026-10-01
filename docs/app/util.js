@@ -12,8 +12,11 @@ export const nf = (v, d = 1) => v == null || !isFinite(v) ? "–" : redondo(v, d
 export const sg = (v, d = 1) => v == null || !isFinite(v) ? "–" : (redondo(v, d) > 0 ? "+" : "") + nf(v, d);
 export const T = (y, m = 1) => Date.UTC(y, m - 1, 1);
 export const P = s => Date.parse(s.length > 10 ? s : s + "T00:00:00Z");
-export const fm = t => { const d = new Date(t); return MES[d.getUTCMonth()] + "-" + String(d.getUTCFullYear()).slice(2); };
-export const fq = t => { const d = new Date(t); return "Q" + (Math.floor(d.getUTCMonth() / 3) + 1) + "-" + String(d.getUTCFullYear()).slice(2); };
+// Guion que no se corta al final de renglón ("Q2-26" y "ago-26" quedan enteros en los títulos)
+const GUION = "\u2011";
+export const sinGuionFijo = x => String(x).replace(/\u2011/g, "-");
+export const fm = t => { const d = new Date(t); return MES[d.getUTCMonth()] + GUION + String(d.getUTCFullYear()).slice(2); };
+export const fq = t => { const d = new Date(t); return "Q" + (Math.floor(d.getUTCMonth() / 3) + 1) + GUION + String(d.getUTCFullYear()).slice(2); };
 export const fw = t => { const d = new Date(t); return `${String(d.getUTCDate()).padStart(2, "0")}-${MES[d.getUTCMonth()]}-${String(d.getUTCFullYear()).slice(2)}`; };
 export const fd = t => { const d = new Date(t); return `${DIA[d.getUTCDay()]} ${String(d.getUTCDate()).padStart(2, "0")}-${MES[d.getUTCMonth()]}`; };
 export const fLargo = t => { const d = new Date(t); return `${d.getUTCDate()} de ${MES_LARGO[d.getUTCMonth()]} de ${d.getUTCFullYear()}`; };

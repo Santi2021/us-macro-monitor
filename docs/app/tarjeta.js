@@ -1,6 +1,6 @@
 // Componente de gráfico: título, barra (pestañas y selectores), leyenda, gráfico, tabla, fuentes, datos y acciones.
 // El mismo componente se usa en las secciones, en Mi monitor y en la ventana ampliada.
-import { el, esc, nf, sg, fm, fq, fw, fd, fPor, P, css, unidadTxt, ICONOS, toast, copiar, descargar, csvCelda, csvNum, horaBA, fLargo } from "./util.js";
+import { sinGuionFijo, el, esc, nf, sg, fm, fq, fw, fd, fPor, P, css, unidadTxt, ICONOS, toast, copiar, descargar, csvCelda, csvNum, horaBA, fLargo } from "./util.js";
 import { last, prev, pctl } from "./calc.js";
 import { ST, S, meta, fuente, enlaceSerie, FREC_TXT, proximoRelease, incorporado, guardarPrefs, orgDe } from "./datos.js";
 import { CAT, armar } from "./catalogo.js";
@@ -265,7 +265,7 @@ function csvVisible(sp) {
     filas = [["fecha", ...sp.series.map(s => s.n)], ...ts.map(t => [new Date(t).toISOString().slice(0, 10), ...ms.map(m => csvNum(m.get(t)))])];
   }
   filas.push([], [cita(sp)]);
-  descargar(nombreArchivo(sp, "csv"), filas.map(f => f.map(csvCelda).join(";")).join("\n"));
+  descargar(nombreArchivo(sp, "csv"), filas.map(f => f.map(x => csvCelda(typeof x === "string" ? sinGuionFijo(x) : x)).join(";")).join("\n"));
 }
 function csvOriginal(sp) {
   const ks = sp.ks || [];
@@ -309,7 +309,7 @@ export function componerPNG(sp, W, H) {
     // leyenda
     const u = sp.unidad ?? (sp.tipo === "cat" ? "pp" : "%"), dec = sp.dec ?? 1;
     const items = sp.tipo === "heat" ? [] : sp.series.filter(s => s.enLeyenda !== false).map((s, i) => ({ c: colorSerie(sp, s, sp.series.indexOf(s)), forma: s.t === "bar" || s.area ? "cuadro" : s.t === "punto" ? "rombo" : s.punteada ? "punteada" : "linea",
-      t: s.n + (sp.tipo !== "cat" && s.d.length ? "  " + nf(s.finValor ?? s.d[s.d.length - 1][1], s.dec ?? dec) + unidadTxt(u) : "") }))
+      t: s.n + (sp.tipo !== "cat" && s.d.length ? "  " + nf(s.finValor ?? s.d[s.d.length - 1][1], s.dec ?? dec) + unidadTxt(s.u ?? u) : "") }))
       .concat((sp.refs || []).filter(r => r.l).map(r => ({ c: css("--ref"), t: r.l, forma: "punteada" })))
       .concat(sp.banda ? [{ c: css("--band"), t: sp.bandaTexto || "Rango normal 2000-19", forma: "cuadro" }] : []);
     y += 10; ctx.font = `500 15px ${fnt}`;

@@ -1,7 +1,7 @@
 // Arranque: cabecera, navegación, período, ajustes, vigía y ruteo.
 import { el, esc, $, $$, P, fm, fLargo, ICONOS, horaBA, fd, guardar, leer, toast } from "./util.js";
 import { ST, VERSION, calcularRango, guardarPrefs, releasesDiarios, vigia, limpiarCache, necesitaHistoria, cargarHistoria, cargarDiarios, prepararDatos } from "./datos.js";
-import { FRENTES, CAT, porSlug } from "./catalogo.js";
+import { FRENTES, CAT, porSlug, seccionConHistoria } from "./catalogo.js";
 import { SECCIONES, leerRuta, construir, navegar, aplicarPeriodoDeRuta } from "./rutas.js";
 import { limpiarGraficos, abrirGrafico, abrirPanel, cerrarModal, hayModal, colocar, cerrarPops, redimensionar } from "./tarjeta.js";
 import { limpiarGrupos } from "./graficos.js";
@@ -133,7 +133,7 @@ let cargandoHistoria = false;
 function render() {
   cerrarPops();
   calcularRango();
-  if (necesitaHistoria() || (SEC === "ciclo" && !ST.historia)) {
+  if (necesitaHistoria() || (seccionConHistoria(SEC) && !ST.historia)) {
     if (!cargandoHistoria) {
       cargandoHistoria = true;
       $("#main").innerHTML = `<p class="vacio-txt" style="margin-top:32px">Cargando la historia completa (desde 1947)…</p>`;

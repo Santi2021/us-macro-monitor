@@ -53,6 +53,24 @@ FRED = {
     "c_inversion":     ("A006RY2Q224SBEA", "Contribución: inversión", "pp", "Q", "BEA"),
     "c_gobierno":      ("A822RY2Q224SBEA", "Contribución: gobierno", "pp", "Q", "BEA"),
     "c_externo":       ("A019RY2Q224SBEA", "Contribución: exportaciones netas", "pp", "Q", "BEA"),
+    "c_fija":          ("A007RY2Q224SBEA", "Contribución: inversión fija", "pp", "Q", "BEA"),
+    "c_inventarios":   ("A014RY2Q224SBEA", "Contribución: variación de inventarios", "pp", "Q", "BEA"),
+    "c_info":          ("Y034RY2Q224SBEA", "Contribución: equipos de procesamiento de información", "pp", "Q", "BEA"),
+    "c_software":      ("B985RY2Q224SBEA", "Contribución: software", "pp", "Q", "BEA"),
+    "gdp_gdi_prom":    ("LB0000091Q020SBEA", "Promedio real de PBI y GDI", "US$ miles de M de 2017", "Q", "BEA"),
+    "profits_nf":      ("A463RC1Q027SBEA", "Ganancias de las empresas no financieras (con ajustes)", "US$ miles de M", "Q", "BEA"),
+    "gva_nf":          ("A455RC1Q027SBEA", "Valor agregado bruto de las empresas no financieras", "US$ miles de M", "Q", "BEA"),
+    "nrou":            ("NROU", "Tasa de desempleo no cíclica (natural, CBO)", "%", "Q", "CBO"),
+    "ip_man":          ("IPMAN", "Producción industrial: manufactura", "índice 2017=100", "M", "Fed"),
+    "tcu_man":         ("MCUMFN", "Uso de la capacidad: manufactura", "%", "M", "Fed"),
+    "core_ship":       ("ANXAVS", "Envíos de bienes de capital sin defensa ni aviones", "US$ millones", "M", "Census"),
+    "permits1":        ("PERMIT1", "Permisos de construcción: casas unifamiliares", "miles, tasa anual", "M", "Census"),
+    "permits5":        ("PERMIT5", "Permisos de construcción: edificios de 5 o más unidades", "miles, tasa anual", "M", "Census"),
+    "meses_stock":     ("MSACSR", "Meses de stock de casas nuevas", "meses", "M", "Census"),
+    "philly_pedidos":  ("NOCDFSA066MSFRBPHI", "Encuesta de Filadelfia: nuevos pedidos", "índice de difusión", "M", "Fed de Filadelfia"),
+    "empire_pedidos":  ("NOCDISA066MSFRBNY", "Encuesta Empire State: nuevos pedidos", "índice de difusión", "M", "Fed de Nueva York"),
+    "philly_precios":  ("PPCDFSA066MSFRBPHI", "Encuesta de Filadelfia: precios pagados", "índice de difusión", "M", "Fed de Filadelfia"),
+    "empire_precios":  ("PPCDISA066MSFRBNY", "Encuesta Empire State: precios pagados", "índice de difusión", "M", "Fed de Nueva York"),
     "profits":         ("A053RC1Q027SBEA", "Ganancias corporativas", "US$ miles de M", "Q", "BEA"),
     "inv_info":        ("A679RC1Q027SBEA", "Inversión en equipos de información", "US$ miles de M", "Q", "BEA"),
     "inv_software":    ("B985RC1Q027SBEA", "Inversión en software", "US$ miles de M", "Q", "BEA"),
@@ -170,7 +188,7 @@ DIARIOS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "docs",
 # Series con pocos datos que cambian de forma por diseño (proyecciones): no se les aplica la regla de historia acortada
 SIN_REGLA_HISTORIA = {"sep_ff", "sep_core", "sep_unemp", "sep_gdp", "hy_oas", "hy_bb", "hy_ccc"}
 # Series que traen proyecciones a futuro (el PBI potencial de la CBO llega a 10 años): se cortan en hoy
-HASTA_HOY = {"gdp_pot"}
+HASTA_HOY = {"gdp_pot", "nrou"}
 # Series cuya primera publicación se guarda para mostrar revisiones
 CLAVES_REVISION = {"payrolls", "gdp_growth", "retail", "pce_core", "pce_p", "cpi_core", "cpi", "openings",
                    "indpro", "housing_starts", "core_orders", "dpi_real", "pce_real", "trade_balance", "ahe", "ppi_fd"}
@@ -282,6 +300,25 @@ def primera_nominas(key_):
     return pd.Series(out, dtype=float).sort_index()
 
 
+def gdpnow_recorrido(key_):
+    """Cada estimación del GDPNow para los dos últimos trimestres, con su fecha: {trimestre: [[fecha, valor], ...]}."""
+    obs = get("https://api.stlouisfed.org/fred/series/observations", series_id="GDPNOW", api_key=key_, file_type="json",
+              observation_start=(HOY - dt.timedelta(days=200)).isoformat(),
+              realtime_start=(HOY - dt.timedelta(days=330)).isoformat(), realtime_end="9999-12-31")["observations"]
+    out = {}
+    for o in obs:
+        if o["value"] in (".", ""):
+            continue
+        out.setdefault(o["date"], []).append([o["realtime_start"], round(float(o["value"]), 2)])
+    for k in out:
+        out[k] = sorted({f: v for f, v in out[k]}.items())
+        out[k] = [list(x) for x in out[k]]
+    trimestres = sorted(out)[-2:]
+    if not trimestres:
+        raise RuntimeError("sin estimaciones")
+    return {k: out[k] for k in trimestres}
+
+
 def primera_pbi(key_):
     """Crecimiento trimestral anualizado del PBI real tal como se publicó por primera vez (ALFRED, output_type=4)."""
     obs = get("https://api.stlouisfed.org/fred/series/observations", series_id="A191RL1Q225SBEA", api_key=key_, file_type="json",
@@ -349,6 +386,9 @@ def empaquetar(s, nombre, unidad, freq, fuente, codigo, org, grupo=None, release
             "rel": release, "d": [[d.strftime("%Y-%m-%d"), round(float(v), 4)] for d, v in s.items()]}
 
 
+EXTRA = {}   # datos que no son series (el recorrido del GDPNow)
+
+
 def bajar(anterior):
     """Devuelve (data, releases, curva, calendario, fallas). Nunca corta por una falla individual."""
     fred_key = key(["FRED_API_KEY"], "FRED", obligatoria=True)
@@ -379,6 +419,12 @@ def bajar(anterior):
             data[k] = empaquetar(fn(fred_key), nombre, unidad, freq, "ALFRED", sid, org)
         except Exception as e:
             fallas[k] = f"no se pudo bajar ({str(e)[:80]})"; print(f"  [aviso] {k}: {e}")
+
+    print("Recorrido del GDPNow (ALFRED)…")
+    try:
+        EXTRA["gdpnow_rec"] = gdpnow_recorrido(fred_key)
+    except Exception as e:
+        fallas["gdpnow_rec"] = f"no se pudo bajar ({str(e)[:80]})"; print(f"  [aviso] gdpnow_rec: {e}")
 
     print("BLS…")
     series_bls = {}
@@ -746,7 +792,9 @@ def main():
         with open(os.environ["ALERTA_ARCHIVO"], "w", encoding="utf-8") as f:
             f.write(texto_alerta)
 
+    gdpnow_rec = EXTRA.get("gdpnow_rec") or anterior.get("gdpnow_rec", {})
     sin_cambios = (anterior.get("series") == json.loads(json.dumps(data)) and anterior.get("calendario") == calendario
+                   and anterior.get("gdpnow_rec") == gdpnow_rec
                    and anterior.get("curva") == curva and anterior.get("respaldo", {}) == respaldo
                    and anterior.get("fallas", {}) == fallas and "vistos" in anterior and os.path.exists(HISTORIA)
                    and not formato_viejo)
@@ -757,7 +805,7 @@ def main():
     paquete = {"version": 4, "generado": AHORA, "faltan": sorted(set(fallas) | set(respaldo)), "fallas": fallas,
                "respaldo": respaldo, "series": data, "calendario": calendario, "curva": curva,
                "releases": {str(k): v for k, v in releases.items()} or anterior.get("releases", {}),
-               "vistos": vistos, "primeras": primeras, "gdpnow_hist": gdpnow_hist, "novedades": novedades, "corridas": corridas, "avisos": avisos}
+               "vistos": vistos, "primeras": primeras, "gdpnow_hist": gdpnow_hist, "gdpnow_rec": gdpnow_rec, "novedades": novedades, "corridas": corridas, "avisos": avisos}
     with open(SALIDA, "w", encoding="utf-8") as f:
         json.dump(dict(paquete, series={k: dict(v, d=compactar(v["d"])) for k, v in data.items()}), f, ensure_ascii=False, separators=(",", ":"))
     with open(HISTORIA, "w", encoding="utf-8") as f:

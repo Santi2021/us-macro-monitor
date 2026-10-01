@@ -402,6 +402,8 @@ function spExplora(EXP, OP) {
 }
 // ───────── Metodología ─────────
 const CHANGELOG = [
+  ["4.7", "2026-10-01", ["Actividad revisada gráfico por gráfico: contribuciones con inversión fija e inventarios separados y tendencia de 4 trimestres; GDPNow con su recorrido en el trimestre y el dato que lo movió; demanda privada con momento y tendencia; brecha del producto y del desempleo desde 2000; productividad contra el boom 1995-2004; encuestas con nuevos pedidos; industria manufacturera contra su máximo de 2007 y uso de la capacidad; órdenes y envíos de capital reales; vivienda con permisos por tipo y stock sin vender; margen de las empresas desde 1960.",
+    "Nuevo en Precios: precios que pagan las fábricas. PBI vs GDI pasa a Ciclo, junto a las revisiones."]],
   ["4.6", "2026-10-01", ["Títulos y subtítulos más cortos: la explicación larga pasa a la ficha de cada gráfico.",
     "Proyecciones de la Fed: en el gráfico va la de fin de este año (el eje ya no se estira un año al vacío); el subtítulo menciona también la del próximo.",
     "Ciclos comparados con el año al final de cada línea gris; al pasar el mouse se resalta el ciclo.",

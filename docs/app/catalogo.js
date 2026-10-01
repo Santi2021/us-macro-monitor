@@ -1,8 +1,8 @@
 // Catálogo: cada gráfico es una definición (series, fórmula, selectores y cómo se arma su título).
 // De acá salen el gráfico, su tabla, su ficha de fuentes, el buscador, los enlaces y la metodología.
-import { T, P, nf, sg, fm, fq, fw, fd, esc, unidadTxt } from "./util.js";
+import { T, P, MES, nf, sg, fm, fq, fw, fd, esc, unidadTxt } from "./util.js";
 import { last, prev, yoy, ann, pct, diff, roll, join, joinQ, toQ, indice, deflactar, rangoNormal, pctl, escala, racha, valorEn } from "./calc.js";
-import { ST, S, SD, freqD, usaDiario, iniciosFed, cut, fuente, meta } from "./datos.js";
+import { ST, S, SD, freqD, usaDiario, iniciosFed, cut, fuente, meta, nombreRelease, infoRelease } from "./datos.js";
 
 export const FRENTES = { actividad: "Actividad", consumidor: "Consumidor", precios: "Precios", empleo: "Empleo", tasas: "Tasas", externo: "Externo", fiscal: "Fiscal" };
 
@@ -48,107 +48,235 @@ const sepTxt = (k, dec = 1) => { const p = sepPuntos(k, 11, 1); return p ? p.map
 function def(id, m) { CAT[id] = Object.assign({ id, ops: [] }, m); }
 
 // ═════════════════════════ Actividad ═════════════════════════
-def("contribuciones", { slug: "contribuciones-al-pbi", nombre: "Contribuciones al crecimiento del PBI", sin: ["pbi", "gdp", "crecimiento", "motores del pbi"],
-  calc: "Contribución de cada componente del gasto al crecimiento real del PBI, en puntos porcentuales de la tasa trimestral anualizada (BEA, tabla 1.1.2). La línea es la suma: el PBI.",
-  ks: ["gdp_growth", "c_consumo", "c_inversion", "c_gobierno", "c_externo"],
+const DIA = 864e5;
+// Proyección de crecimiento de la Fed como texto (el rombo no va en un gráfico de tasa trimestral)
+const sepPBI = () => { const p = sepPuntos("sep_gdp", 9, 1); return p ? ` La Fed proyecta ${p.map(x => `${nf(x[1])}% para ${new Date(x[0]).getUTCFullYear()}`).join(" y ")} (cuarto trimestre contra cuarto trimestre).` : ""; };
+def("contribuciones", { slug: "contribuciones-al-pbi", nombre: "Contribuciones al crecimiento del PBI", sin: ["pbi", "gdp", "crecimiento", "motores del pbi", "inventarios"],
+  calc: "Contribución de cada componente del gasto al crecimiento real del PBI, en puntos porcentuales de la tasa trimestral anualizada (BEA, tabla 1.1.2). La inversión se separa en fija (fábricas, equipos, software, viviendas) y variación de inventarios, que es ruido de corto plazo. La suma de los cinco es el PBI. La línea punteada es el promedio de 4 trimestres. Hasta 24 trimestres.",
+  ks: ["gdp_growth", "c_consumo", "c_fija", "c_inventarios", "c_gobierno", "c_externo", "sep_gdp"],
   f: () => {
-    const ks = [["c_consumo", "Consumo"], ["c_inversion", "Inversión"], ["c_gobierno", "Gobierno"], ["c_externo", "Export. netas"]];
-    const g = S("gdp_growth"); if (!g || ks.some(([k]) => !S(k))) return null;
-    const gg = cut(g, Math.max(ST.T0, T(2021))), ts = gg.map(p => p[0]);
-    const series = ks.map(([k, n], i) => { const m = new Map(S(k)); return { n, c: i, t: "bar", d: ts.map(t => m.get(t) ?? 0) }; });
+    const g = S("gdp_growth"); if (!g) return null;
+    const conFija = S("c_fija") && S("c_inventarios");
+    const ks = conFija ? [["c_consumo", "Consumo", 0], ["c_fija", "Inversión fija", 1], ["c_inventarios", "Inventarios", "gris"], ["c_gobierno", "Gobierno", 2], ["c_externo", "Export. netas", 3]]
+      : [["c_consumo", "Consumo", 0], ["c_inversion", "Inversión", 1], ["c_gobierno", "Gobierno", 2], ["c_externo", "Export. netas", 3]];
+    if (ks.some(([k]) => !S(k))) return null;
+    const desde = Math.max(ST.T0, g[Math.max(0, g.length - 24)][0]);
+    const gg = cut(g, desde), ts = gg.map(p => p[0]), m4 = new Map(roll(g, 4) || []);
+    const series = ks.map(([k, n, c]) => { const m = new Map(S(k)); return { n, c, t: "bar", d: ts.map(t => m.get(t) ?? 0), k }; });
     series.push({ n: "PBI real (%)", t: "line", etiquetas: true, d: gg.map(p => p[1]) });
-    const u = series.slice(0, 4).map(s => [s.n, s.d[s.d.length - 1]]).sort((a, b) => b[1] - a[1])[0];
-    return { tipo: "cat", freq: "Q", titulo: `PBI ${nf(last(g)[1])}% en ${fq(last(g)[0])}: el motor fue ${u[0].toLowerCase()} (${sg(u[1])} pp)`,
-      sub: "Contribuciones al crecimiento real, en puntos porcentuales; la línea es el PBI, % trimestral anualizado. Desde 2021.", unidadLinea: "%", cats: ts.map(fq), series };
+    series.push({ n: "Promedio 4 trimestres", t: "line", c: "ink", w: 1.4, punteada: true, d: ts.map(t => m4.get(t) ?? null) });
+    const u = ts.length - 1, val = k => series.find(s => s.k === k)?.d[u] ?? 0;
+    const ruido = (conFija ? val("c_inventarios") : 0) + val("c_externo"), nucleo = last(g)[1] - ruido;
+    // el componente que más cambió contra el trimestre anterior
+    const cambio = series.filter(s => s.k).map(s => ({ n: s.n, a: s.d[u], b: s.d[u - 1] })).filter(x => x.b != null).sort((x, y) => Math.abs(y.a - y.b) - Math.abs(x.a - x.b))[0];
+    const art = { "Consumo": "el consumo", "Inversión fija": "la inversión fija", "Inversión": "la inversión", "Inventarios": "los inventarios", "Gobierno": "el gobierno", "Export. netas": "las exportaciones netas" };
+    const quien = cambio ? art[cambio.n] || cambio.n.toLowerCase() : "";
+    const giro = cambio ? (Math.sign(cambio.a) !== Math.sign(cambio.b) && Math.abs(cambio.b) >= 0.1 ? `${quien} pasó de ${cambio.b < 0 ? "restar" : "sumar"} a ${cambio.a < 0 ? "restar" : "sumar"}` : `${quien} pasó de ${sg(cambio.b)} a ${sg(cambio.a)} pp`) : "";
+    return { tipo: "cat", freq: "Q", titulo: `PBI ${nf(last(g)[1])}% en ${fq(last(g)[0])}: sin inventarios ni exportaciones netas, ${nf(nucleo)}%` + (giro ? `; ${giro}` : ""),
+      sub: "Contribuciones al crecimiento, pp de la tasa trimestral anualizada. Los inventarios, en gris, son ruido de corto plazo." + sepPBI(), unidadLinea: "%", cats: ts.map(fq), series };
   } });
-def("gdpnow", { slug: "gdpnow", nombre: "GDPNow vs PBI publicado", sin: ["nowcast", "atlanta", "pbi en tiempo real"],
-  calc: "Última estimación del modelo GDPNow de la Fed de Atlanta para cada trimestre, contra el PBI real publicado por BEA (% trimestral anualizado).",
-  ks: ["gdpnow", "gdp_growth"],
+def("gdpnow", { slug: "gdpnow", nombre: "GDPNow: el PBI del trimestre en tiempo real", sin: ["nowcast", "atlanta", "pbi en tiempo real", "gdpnow"],
+  calc: "Cada estimación del modelo GDPNow de la Fed de Atlanta para el trimestre en curso, con la fecha en que se publicó (archivo de versiones ALFRED de la Fed de St. Louis). La estimación cambia en escalones, cada vez que entra un dato. En gris, el recorrido del trimestre anterior desplazado tres meses para comparar el momento, y el rombo es su PBI publicado. Las marcas indican el dato del día de cada movimiento de 0,3 pp o más. El error promedio compara la última estimación de cada trimestre con la primera publicación del PBI.",
+  ks: ["gdpnow", "gdp_1ra"],
   f: () => {
-    const g = S("gdp_growth"), n = S("gdpnow"); if (!g || !n) return null;
-    const ult = last(n), pub = last(g);
-    const ts = [...new Set([...cut(g, Math.max(ST.T0, T(2021))).map(p => p[0]), ...cut(n, Math.max(ST.T0, T(2021))).map(p => p[0])])].sort((a, b) => a - b);
-    const mg = new Map(g), mn = new Map(n), enCurso = ult[0] > pub[0];
-    const hist = (ST.DATA.gdpnow_hist || []).filter(h => P(h[1]) === ult[0]);
-    const evol = hist.length > 1 ? ` En el trimestre en curso pasó de ${nf(hist[0][2])}% (${fd(P(hist[0][0]))}) a ${nf(hist[hist.length - 1][2])}%.` : "";
-    return { tipo: "cat", freq: "Q", apilado: false, signo: false, unidad: "%",
-      titulo: enCurso ? `GDPNow estima ${nf(ult[1])}% para ${fq(ult[0])}, contra ${nf(pub[1])}% del último trimestre publicado` : `El último PBI publicado fue ${nf(pub[1])}% en ${fq(pub[0])}`,
-      sub: "PBI real publicado (barras) y la última estimación en tiempo real de la Fed de Atlanta para cada trimestre, % t/t anualizado." + evol,
-      cats: ts.map(fq),
-      series: [{ n: "PBI publicado", c: 0, t: "bar", d: ts.map(t => mg.get(t) ?? null) }, { n: "GDPNow", t: "line", c: 1, punteada: true, etiquetas: true, d: ts.map(t => mn.get(t) ?? null) }] };
+    const rec = ST.DATA.gdpnow_rec || {}, hist = ST.DATA.gdpnow_hist || [];
+    const n = S("gdpnow"); if (!n) return null;
+    // recorrido por trimestre: ALFRED más lo que registra el monitor en cada corrida
+    const camino = q => { const m = new Map((rec[q] || []).map(([f, v]) => [f, v])); for (const [f, t, v] of hist) if (t === q && !m.has(f)) m.set(f, v); return [...m].sort((a, b) => a[0].localeCompare(b[0])).map(([f, v]) => [P(f), v]); };
+    const trims = [...new Set([...Object.keys(rec), ...hist.map(h => h[1])])].sort();
+    const qa = trims[trims.length - 1]; if (!qa) return null;
+    const qp = trims.length > 1 ? trims[trims.length - 2] : null;
+    const actual = camino(qa); if (actual.length < 2) return null;
+    const ant = qp ? camino(qp).map(([t, v]) => { const d = new Date(t); return [Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 3, d.getUTCDate()), v]; }) : [];
+    const v = last(actual)[1];
+    // movimiento del último mes y el dato que más lo movió
+    const hace = valorEn(actual, last(actual)[0] - 30 * DIA) || actual[0], dm = v - hace[1];
+    const movs = [];
+    for (let i = 1; i < actual.length; i++) {
+      const d = actual[i][1] - actual[i - 1][1]; if (Math.abs(d) < 0.3) continue;
+      const f = new Date(actual[i][0]).toISOString().slice(0, 10), f0 = new Date(actual[i][0] - 3 * DIA).toISOString().slice(0, 10);
+      const rel = (ST.DATA.calendario || []).filter(c => c.fecha <= f && c.fecha >= f0 && infoRelease(c.nombre).imp >= 2 && !/GDPNow|FOMC|Summary of Economic|Target Range/.test(c.nombre))
+        .sort((x, y) => infoRelease(y.nombre).imp - infoRelease(x.nombre).imp || y.fecha.localeCompare(x.fecha))[0];
+      movs.push({ p: actual[i], d, rel: rel ? nombreRelease(rel.nombre) : null });
+    }
+    const notas = movs.map(m => m.p), textos = movs.map(m => (m.rel ? m.rel + " " : "") + sg(m.d));
+    const recientes = movs.filter(m => m.rel && m.p[0] >= last(actual)[0] - 30 * DIA);
+    const motor = recientes.length ? recientes.reduce((x, y) => Math.abs(y.d) > Math.abs(x.d) ? y : x).rel : "";
+    // error de los últimos 8 trimestres contra la primera publicación del PBI
+    const p1 = S("gdp_1ra"), err = p1 ? join(n, p1, (a, b) => Math.abs(a - b)) : null;
+    const e8 = err && err.length >= 4 ? err.slice(-8) : null, em = e8 ? e8.reduce((x, y) => x + y[1], 0) / e8.length : null;
+    const pubAnt = qp && p1 ? (new Map(p1)).get(P(qp)) : null;
+    const series = [];
+    if (ant.length) series.push({ n: `Trimestre anterior (${fq(P(qp))})`, d: ant, c: "gris", w: 1.6, escalon: true, fin: false, ref: true });
+    if (pubAnt != null && ant.length) series.push({ n: `PBI publicado ${fq(P(qp))}`, t: "punto", c: "gris", d: [[last(ant)[0] + 6 * DIA, pubAnt]], ref: true });
+    series.push({ n: `GDPNow ${fq(P(qa))}`, d: actual, c: 0, w: 2.8, escalon: true });
+    if (notas.length) series.push({ n: "Dato que la movió", t: "nota", c: 0, d: notas, textos, enLeyenda: false });
+    return { freq: "D", eventos: false, recesiones: false, sinRecorte: true,
+      titulo: `GDPNow estima ${nf(v)}% para ${fq(P(qa))}: ${Math.abs(dm) < 0.1 ? "sin cambios en el último mes" : `${dm > 0 ? "subió" : "bajó"} ${nf(Math.abs(dm))} pp en el último mes`}` + (motor && Math.abs(dm) >= 0.1 ? `, sobre todo por ${motor.toLowerCase()}` : ""),
+      sub: "Cada escalón es un dato nuevo; en gris, el trimestre anterior y su PBI." + (em != null ? ` Error promedio (${e8.length} trimestres): ${nf(em)} pp.` : ""),
+      series, refs: [{ y: 0 }] };
   } });
-def("demandaPrivada", { slug: "demanda-privada", nombre: "Demanda privada final vs PBI", sin: ["ventas finales", "final sales", "demanda interna"], ops: [VISTA_Q],
-  calc: "Ventas finales reales a compradores privados domésticos (consumo + inversión fija privada) y PBI real. Vista interanual o trimestral anualizada.",
-  ks: ["final_sales_priv", "gdp_real", "sep_gdp"],
-  f: o => {
-    const f = vista(S("final_sales_priv"), o.vista, "Q"), g = vista(S("gdp_real"), o.vista, "Q"); if (!f || !g) return null;
-    const d = last(f)[1] - last(g)[1];
-    return { freq: "Q", titulo: `La demanda privada crece ${nf(last(f)[1])}% ${VT[o.vista]}, ${nf(Math.abs(d))} pp ${d >= 0 ? "por encima" : "por debajo"} del PBI`,
-      sub: "Consumo más inversión fija privada, real." + (o.vista === "a" && sepPuntos("sep_gdp", 9) ? ` Rombo: PBI que proyecta la Fed, ${sepTxt("sep_gdp")}.` : " La demanda sin inventarios, gobierno ni comercio exterior."),
-      series: [{ n: "Demanda privada final", d: cut(f), c: 0, w: 2.8 }, { n: "PBI real", d: cut(g), c: 1 }]
-        .concat(o.vista === "a" && sepPuntos("sep_gdp", 9) ? [{ n: "Proyección de la Fed para el PBI", t: "punto", c: 1, d: sepPuntos("sep_gdp", 9) }] : []), refs: [{ y: 0 }] };
-  } });
-def("pbiGdi", { slug: "pbi-vs-gdi", nombre: "PBI vs GDI", sin: ["ingreso bruto", "gdi"],
-  calc: "Producto medido por el gasto (PBI) y por el ingreso (GDI), variación interanual real.",
-  ks: ["gdp_real", "gdi_real"],
+def("demandaPrivada", { slug: "demanda-privada", nombre: "Demanda privada final", sin: ["ventas finales", "final sales", "demanda interna", "pbi núcleo"],
+  calc: "Ventas finales reales a compradores privados domésticos: consumo más inversión fija privada (BEA). Deja afuera inventarios, gobierno y comercio exterior, los componentes ruidosos del PBI. Barras: variación trimestral anualizada (el momento); línea: interanual (la tendencia). Si las barras quedan por encima de la línea, la demanda se acelera.",
+  ks: ["final_sales_priv", "gdp_real"],
   f: () => {
-    const a = yoy(S("gdp_real"), 4), b = yoy(S("gdi_real"), 4); if (!a || !b) return null;
-    const br = Math.abs(last(a)[1] - last(b)[1]);
-    return { freq: "Q", titulo: br < 0.5 ? `Gasto e ingreso coinciden: el PBI crece ${nf(last(a)[1])}% interanual` : `Gasto (${nf(last(a)[1])}%) e ingreso (${nf(last(b)[1])}%) difieren en ${nf(br)} pp`,
-      sub: "Producto medido por el gasto (PBI) y por el ingreso (GDI), variación interanual real. Cuando difieren, suele revisarse el PBI.",
-      series: [{ n: "PBI real", d: cut(a), c: 0 }, { n: "GDI real", d: cut(b), c: 2 }], refs: [{ y: 0 }] };
+    const f = S("final_sales_priv"), g = S("gdp_real"); if (!f || !g) return null;
+    const q = ann(f, 1, 4), a = yoy(f, 4), ga = yoy(g, 4); if (!q || !a) return null;
+    const vq = last(q)[1], va = last(a)[1], acel = vq > va + 0.3 ? "se acelera" : vq < va - 0.3 ? "se frena" : "crece estable";
+    return { freq: "Q", titulo: `La demanda privada ${acel}: ${nf(vq)}% anualizado en ${fq(last(q)[0])} contra ${nf(va)}% interanual; el PBI, ${nf(last(ga)[1])}%`,
+      sub: "Consumo más inversión fija privada, real: la demanda de fondo, sin inventarios, gobierno ni comercio exterior.",
+      series: [{ n: "Trimestral anualizado", d: cut(q), t: "bar", c: 0, suave: true }, { n: "Interanual", d: cut(a), c: 0, w: 3 }, { n: "PBI real, interanual", d: cut(ga), c: "gris", w: 1.4, punteada: true }], refs: [{ y: 0 }] };
   } });
-def("brecha", { slug: "brecha-del-producto", nombre: "Brecha del producto y uso de la capacidad", sin: ["output gap", "potencial", "cbo", "holgura", "capacidad instalada", "recalentamiento"],
-  calc: "Brecha del producto: PBI real sobre el PBI potencial que estima la Oficina de Presupuesto del Congreso (CBO), menos 1, en %. Uso de la capacidad: utilización de la capacidad industrial (Fed) menos su promedio 2000-19, en puntos, promedio del trimestre.",
-  ks: ["gdp_real", "gdp_pot", "tcu"],
+def("brecha", { slug: "brecha-del-producto", nombre: "Brecha del producto y del desempleo", sin: ["output gap", "potencial", "cbo", "holgura", "recalentamiento", "okun", "nairu", "desempleo natural"],
+  calc: "Brecha del producto: PBI real sobre el PBI potencial de la Oficina de Presupuesto del Congreso (CBO), menos 1, en %. Brecha del desempleo: tasa natural (no cíclica) de la CBO menos el desempleo, en puntos; positiva significa un mercado laboral más ajustado que lo normal. Las dos se leen igual: sobre cero, recalentamiento. La CBO revisa su potencial en cada informe, así que la historia puede moverse. Siempre desde 2000.",
+  ks: ["gdp_real", "gdp_pot", "unemployment", "nrou"],
   f: () => {
     const b = join(S("gdp_real"), S("gdp_pot"), (a, c) => (a / c - 1) * 100); if (!b) return null;
-    const ss = [{ n: "Brecha del producto (CBO)", d: cut(b), c: 0, w: 2.8, area: true }];
-    const t = S("tcu"); let extra = "";
-    if (t) {
-      const base = t.filter(x => x[0] >= T(2000) && x[0] < T(2020)).map(x => x[1]), m = base.reduce((a, c) => a + c, 0) / base.length;
-      const tq = toQ(t.map(([x, v]) => [x, v - m]));
-      if (tq) ss.push({ n: `Uso de la capacidad vs. promedio 2000-19 (${nf(m)}%)`, d: cut(tq), c: 1 });
-      extra = ` Uso de la capacidad: ${nf(last(t)[1])}%.`;
-    }
-    const v = last(b)[1];
-    return { freq: "Q", titulo: Math.abs(v) < 0.3 ? `La economía produce en línea con su potencial (brecha de ${nf(Math.abs(v))}%)` : `La economía produce ${nf(Math.abs(v))}% ${v > 0 ? "por encima" : "por debajo"} de su potencial`,
-      sub: "Positivo: usa más recursos de los que puede sostener y presiona sobre la inflación; negativo: hay capacidad ociosa." + extra,
-      series: ss, refs: [{ y: 0, l: "Potencial" }] };
+    const u = toQ(S("unemployment")), n = S("nrou");
+    const bu = u && n ? join(n, u, (a, c) => a - c) : null;
+    const ss = [{ n: "Brecha del producto (CBO)", d: cut(b, T(2000)), c: 0, w: 2.6, area: true }];
+    if (bu) ss.push({ n: "Brecha del desempleo (natural − actual)", d: cut(bu, T(2000)), c: 1, w: 2 });
+    const v = last(b)[1], w = bu ? last(bu)[1] : null;
+    const caliente = v > 0.3, ajustado = w != null && w > 0.1, flojo = w != null && w < -0.1;
+    const diag = w == null ? "" : caliente && ajustado ? ": recalentamiento" : !caliente && v < -0.3 && flojo ? ": hay holgura" : caliente && flojo ? ": las dos medidas no coinciden" : "";
+    return { freq: "Q", sinRecorte: false,
+      titulo: `El PBI está ${nf(Math.abs(v))}% ${v >= 0 ? "sobre" : "bajo"} su potencial` + (w != null ? ` y el desempleo ${nf(Math.abs(w))} pp ${w >= 0 ? "bajo" : "sobre"} su nivel natural` : "") + diag,
+      sub: "Las dos brechas se leen igual: sobre cero, la economía usa más recursos de los que puede sostener y presiona sobre los precios. Desde 2000.",
+      series: ss, refs: [{ y: 0, l: "Potencial / nivel natural" }] };
   } });
-def("productividad", { slug: "productividad-y-costo-laboral", nombre: "Productividad y costo laboral unitario", sin: ["productividad", "ulc", "costo laboral unitario", "ia", "inteligencia artificial"], ops: [VISTA_Q],
-  calc: "Producto por hora y costo laboral unitario del sector empresas no agrícolas (BLS). El costo laboral unitario es la remuneración por hora dividida la productividad.",
-  ks: ["productivity", "ulc"],
-  f: o => {
-    const p = vista(S("productivity"), o.vista, "Q"), u = vista(S("ulc"), o.vista, "Q"); if (!p || !u) return null;
-    return { freq: "Q", titulo: `La productividad crece ${nf(last(p)[1])}% ${VT[o.vista]} y el costo laboral unitario ${nf(last(u)[1])}%`,
-      sub: "Empresas no agrícolas. Un costo laboral unitario cerca de 2% es compatible con la meta: los salarios suben sin presionar precios.",
-      series: [{ n: "Productividad", d: cut(p), c: 0, w: 2.8 }, { n: "Costo laboral unitario", d: cut(u), c: 1 }], refs: [{ y: 0 }, { y: 2, l: "2%" }] };
-  } });
-def("encuestas", { slug: "encuestas-manufactureras", nombre: "Encuestas manufactureras de la Fed", sin: ["philly fed", "empire state", "pmi", "ism", "encuestas", "manufactura", "filadelfia", "nueva york"],
-  calc: "Índices de difusión de actividad general de las encuestas manufactureras de la Fed de Filadelfia y de la Fed de Nueva York (Empire State): porcentaje de empresas que ven mejora menos el que ve deterioro. La línea gruesa es el promedio de las dos, promedio móvil de 3 meses.",
-  ks: ["philly", "empire"],
+def("productividad", { slug: "productividad", nombre: "¿Hay un boom de productividad?", sin: ["productividad", "ia", "inteligencia artificial", "boom", "producto por hora"], historia: true,
+  calc: "Producto por hora del sector empresas no agrícolas (BLS). Línea: crecimiento anualizado a 5 años, la tendencia; barras: variación interanual. Las referencias son el crecimiento anual promedio del boom 1995-2004 y del período 2005-19, calculados con los datos. La productividad trimestral se mueve al revés del ciclo (en 2020 saltó porque se perdieron empleos de baja productividad): por eso la lectura es la de 5 años. Siempre desde 1990.",
+  ks: ["productivity"],
   f: () => {
-    const a = S("philly"), b = S("empire"); if (!a && !b) return null;
+    const p = S("productivity"); if (!p) return null;
+    const a5 = ann(p, 20, 4), y = yoy(p, 4); if (!a5 || !y) return null;
+    const nivel = t => valorEn(p, t)?.[1];
+    const era = (a, b) => { const x = nivel(T(a, 1)), z = nivel(T(b, 10)); return x && z ? (Math.pow(z / x, 1 / (b - a + 0.75)) - 1) * 100 : null; };
+    const boom = era(1995, 2004), normal = era(2005, 2019), v = last(a5)[1];
+    const refs = [{ y: 0 }];
+    if (boom) refs.push({ y: boom, l: `Boom 1995-2004: ${nf(boom)}%` });
+    if (normal) refs.push({ y: normal, l: `2005-19: ${nf(normal)}%` });
+    const lect = boom && normal ? (v >= boom ? "al nivel del boom 1995-2004" : v > normal ? `por encima de 2005-19 (${nf(normal)}%), todavía debajo del boom 1995-2004 (${nf(boom)}%)` : `en el ritmo de 2005-19 (${nf(normal)}%), lejos del boom 1995-2004`) : "";
+    return { freq: "Q", titulo: `La productividad crece ${nf(v)}% anual en 5 años` + (lect ? `: ${lect}` : ""),
+      sub: `Producto por hora, empresas no agrícolas. Línea: tendencia de 5 años; barras: interanual (último, ${nf(last(y)[1])}%). Desde 1990.`,
+      sinRecorte: true, series: [{ n: "Interanual", d: cut(y, T(1990)), t: "bar", c: 0, suave: true }, { n: "Anualizado a 5 años", d: cut(a5, T(1990)), c: 0, w: 3 }], refs };
+  } });
+def("encuestas", { slug: "encuestas-manufactureras", nombre: "Encuestas de la Fed: nuevos pedidos de la industria", sin: ["philly fed", "empire state", "pmi", "ism", "encuestas", "nuevos pedidos", "filadelfia", "nueva york"],
+  calc: "Índices de difusión de nuevos pedidos y de actividad general de las encuestas manufactureras de la Fed de Filadelfia y de Nueva York (Empire State): porcentaje de empresas que ven mejora menos el que ve deterioro. Se promedian las dos encuestas y se suaviza con 3 meses. Los nuevos pedidos adelantan la actividad; la actividad general es la pregunta más anímica y volátil.",
+  ks: ["philly_pedidos", "empire_pedidos", "philly", "empire"],
+  f: () => {
+    const prom = (a, b) => a && b ? roll(join(a, b, (x, y) => (x + y) / 2), 3) : a ? roll(a, 3) : b ? roll(b, 3) : null;
+    const ped = prom(S("philly_pedidos"), S("empire_pedidos")), act = prom(S("philly"), S("empire")); if (!ped && !act) return null;
+    const base = ped || act, v = last(base)[1], prev3 = valorEn(base, last(base)[0] - 92 * DIA);
     const ss = [];
-    if (a) ss.push({ n: "Filadelfia", d: cut(a), c: 0, fina: true });
-    if (b) ss.push({ n: "Nueva York", d: cut(b), c: 1, fina: true });
-    const prom = a && b ? roll(join(a, b, (x, y) => (x + y) / 2), 3) : null;
-    if (prom) ss.push({ n: "Promedio, 3 meses", d: cut(prom), c: "ink", w: 2.6 });
-    const v = prom ? last(prom)[1] : last(a || b)[1];
-    return { titulo: `Las encuestas de la Fed ${v >= 0 ? "muestran expansión" : "muestran contracción"} en la industria: promedio de 3 meses en ${sg(v)}`,
-      sub: `Sobre cero, más empresas ven mejora que deterioro. ${fechaDe(a || b)}: Filadelfia ${a ? sg(last(a)[1]) : "–"}, Nueva York ${b ? sg(last(b)[1]) : "–"}. Es el primer dato industrial del mes.`,
+    if (ped) ss.push({ n: "Nuevos pedidos", d: cut(ped), c: 0, w: 2.8 });
+    if (act) ss.push({ n: "Actividad general", d: cut(act), c: "gris", w: 1.4 });
+    return { titulo: `Nuevos pedidos de la industria en ${sg(v)} (promedio de 3 meses)` + (prev3 ? `, ${v - prev3[1] >= 0 ? "mejor" : "peor"} que hace 3 meses (${sg(prev3[1])})` : ""),
+      sub: `Promedio de Filadelfia y Nueva York, 3 meses. Sobre cero, más empresas ven mejora que deterioro. Es el primer dato industrial de cada mes.`,
       unidad: "", dec: 1, series: ss, refs: [{ y: 0 }] };
   } });
-def("industria", { slug: "produccion-industrial", nombre: "Producción industrial", sin: ["industria", "indpro", "manufactura"], ops: [VISTA_M],
-  calc: "Índice de producción industrial de la Fed (2017 = 100), transformado según la vista.",
-  ks: ["indpro"],
-  f: o => {
-    const a = S("indpro"); if (!a) return null;
-    const v = vista(a, o.vista), r = racha(v, fm);
-    return { titulo: `Producción industrial ${sg(last(v)[1], decV(o))}% ${VT[o.vista]} en ${fechaDe(v)}${r ? ", " + r : ""}`,
-      sub: "Índice de producción industrial de la Fed: manufactura, minería y servicios públicos.", dec: decV(o),
-      series: seriesVista([["Producción industrial", a, 0]], o), refs: [{ y: 0 }] };
+def("industria", { slug: "industria-manufacturera", nombre: "Industria manufacturera: producción y uso de la capacidad", sin: ["industria", "manufactura", "relocalización", "reshoring", "capacidad instalada", "fábricas"],
+  calc: "Índice de producción manufacturera de la Fed (2017 = 100) y uso de la capacidad manufacturera (%, eje derecho). La referencia es el máximo de la producción en 2007. El índice total de producción industrial suma minería y servicios públicos (que se mueven con el petróleo y el clima); acá va sólo manufactura. Siempre desde 2000.",
+  ks: ["ip_man", "tcu_man"],
+  f: () => {
+    const m = S("ip_man"); if (!m) return null;
+    const t = S("tcu_man"), pico = Math.max(...m.filter(p => p[0] >= T(2007) && p[0] < T(2008)).map(p => p[1]));
+    const v = last(m)[1], d = (v / pico - 1) * 100, mm = pct(m);
+    const ss = [{ n: "Producción manufacturera", d: cut(m, T(2000)), c: 0, w: 2.8 }];
+    let txt = "";
+    if (t) {
+      ss.push({ n: "Uso de la capacidad (eje derecho)", d: cut(t, T(2000)), c: 1, w: 1.4, der: true, u: "%" });
+      const base = t.filter(p => p[0] >= T(2000) && p[0] < T(2020)).map(p => p[1]), prom = base.reduce((a, b) => a + b, 0) / base.length;
+      txt = `; uso de la capacidad ${nf(last(t)[1])}% (promedio 2000-19: ${nf(prom)}%)`;
+    }
+    return { titulo: `Producción manufacturera ${nf(Math.abs(d))}% ${d < 0 ? "bajo" : "sobre"} su máximo de 2007` + txt,
+      sub: `Índice 2017 = 100. ${fechaDe(m)}: ${sg(last(mm)[1])}% en el mes. Desde 2000.`, unidad: "", dec: 1, sinRecorte: true,
+      series: ss, refs: [{ y: pico, l: "Máximo de 2007" }] };
+  } });
+def("ordenes", { slug: "ordenes-de-capital", nombre: "Órdenes y envíos de bienes de capital", sin: ["core orders", "capex", "bienes durables", "inversión en equipos", "envíos", "book to bill"],
+  calc: "Órdenes nuevas y envíos de bienes de capital sin defensa ni aviones (Census, M3), deflactados por el PPI de bienes de capital (BLS): miles de millones de dólares constantes del último mes. Las órdenes adelantan a los envíos, y los envíos son lo que BEA usa para la inversión en equipos del PBI. Si las órdenes corren por encima de los envíos, se acumula cartera y la inversión sigue subiendo.",
+  ks: ["core_orders", "core_ship", "ppi_capital"],
+  f: () => {
+    const defl = S("ppi_capital");
+    const o = escala(deflactar(S("core_orders"), defl), 1e-3), e = escala(deflactar(S("core_ship"), defl), 1e-3); if (!o) return null;
+    const o3 = roll(o, 3), e3 = e ? roll(e, 3) : null;
+    const crec = o3.length > 3 ? (Math.pow(last(o3)[1] / o3[o3.length - 4][1], 4) - 1) * 100 : null;
+    const comun = e3 ? join(o3, e3, (a, b) => a / b) : null, r = comun ? last(comun)[1] : null;
+    const diag = r == null ? "" : r > 1.01 ? ", sobre los envíos: la inversión en equipos sube" : r < 0.99 ? ", bajo los envíos: se anticipa un freno" : ", a la par de los envíos";
+    const ss = [{ n: "Órdenes, mensual", d: cut(o), c: 0, fina: true }, { n: "Órdenes, promedio 3 meses", d: cut(o3), c: 0, w: 2.8 }];
+    if (e3) ss.push({ n: "Envíos, promedio 3 meses", d: cut(e3), c: 1, w: 2 });
+    return { titulo: `Órdenes de capital reales ${sg(crec)}% anualizado en 3 meses` + diag,
+      sub: "Sin defensa ni aviones, a precios constantes, miles de M de US$. Las órdenes adelantan a los envíos, que entran al PBI.",
+      unidad: "mil M", dec: 1, series: ss };
+  } });
+def("viviendas", { slug: "vivienda", nombre: "Vivienda: permisos y casas nuevas sin vender", sin: ["housing starts", "permisos", "construcción", "vivienda", "casas", "stock"],
+  calc: "Permisos de construcción de casas unifamiliares y de edificios de 5 o más unidades (Census), miles por año, promedio de 3 meses; y meses de stock de casas nuevas (cuánto tardaría en venderse lo que hay al ritmo actual), eje derecho. Las unifamiliares son la parte sensible a la tasa hipotecaria; los edificios siguen el ciclo del alquiler. Alrededor de 6 meses de stock es el equilibrio habitual: por encima, los constructores frenan.",
+  ks: ["permits1", "permits5", "meses_stock"],
+  f: () => {
+    const u = S("permits1"), e = S("permits5"), st = S("meses_stock"); if (!u) return null;
+    const u3 = roll(u, 3), cr = u3.length > 3 ? (Math.pow(last(u3)[1] / u3[u3.length - 4][1], 4) - 1) * 100 : null;
+    const ss = [{ n: "Casas unifamiliares", d: cut(u3), c: 0, w: 2.8 }];
+    if (e) ss.push({ n: "Edificios (5 o más unidades)", d: cut(roll(e, 3)), c: 3, w: 1.6 });
+    if (st) ss.push({ n: "Meses de stock (eje derecho)", d: cut(st), c: 1, w: 1.6, der: true, dec: 1, u: "meses" });
+    const vs = st ? last(st)[1] : null;
+    return { titulo: `Permisos de casas unifamiliares ${sg(cr, 0)}% anualizado en 3 meses` + (vs != null ? `; ${nf(vs)} meses de stock sin vender, ${vs > 6.5 ? "sobre" : vs < 5.5 ? "bajo" : "cerca de"} el equilibrio de 6` : ""),
+      sub: "Permisos en miles por año, promedio de 3 meses. Con mucho stock sin vender, los constructores frenan.", unidad: "mil", dec: 0, series: ss };
+  } });
+def("capex", { slug: "inversion-tecnologica", nombre: "Inversión tecnológica / PBI", sin: ["ia", "data centers", "software", "punto com", "capex tecnológico", "inteligencia artificial"],
+  calc: "Inversión en equipos de procesamiento de información más software (BEA), sobre PBI nominal, desde 2000; la referencia es el pico punto com (máximo anterior a 2003). El aporte al crecimiento suma las contribuciones de los dos rubros al PBI real del último trimestre (BEA). Los data centers como edificios son estructuras y no están incluidos: Census publica su construcción por separado, pero no está en FRED.",
+  ks: ["inv_info", "inv_software", "gdp_nom", "c_info", "c_software", "gdp_growth"],
+  f: () => {
+    const e = S("inv_info"), s = S("inv_software"), g = S("gdp_nom"); if (!e || !s || !g) return null;
+    const ep = join(e, g, (a, b) => a / b * 100), sp = join(s, g, (a, b) => a / b * 100), tot = join(ep, sp, (a, b) => a + b);
+    const pc = Math.max(...tot.filter(p => p[0] < T(2003)).map(p => p[1])), v = last(tot)[1], d = v - pc;
+    const ci = S("c_info"), cs = S("c_software"), gg = S("gdp_growth");
+    const aporte = ci && cs ? last(ci)[1] + last(cs)[1] : null;
+    return { titulo: `La inversión tecnológica pesa ${nf(v)}% del PBI (${sg(d)} pp contra el pico punto com)` + (aporte != null && gg ? ` y aportó ${nf(aporte)} pp al crecimiento` : ""),
+      sub: "Equipos de procesamiento de información más software, % del PBI nominal, desde 2000. No incluye los edificios de los data centers.",
+      freq: "Q", dec: 1, decEje: 1, cero: true, eventos: false, sinRecorte: true,
+      series: [{ n: "Equipos de información", d: cut(ep, T(2000)), area: true, stack: "t", c: 0, fin: false }, { n: "Software (tope = total)", d: cut(sp, T(2000)), area: true, stack: "t", c: 2, finValor: v }],
+      refs: [{ y: pc, l: `Pico punto com: ${nf(pc)}%` }] };
+  } });
+def("ganancias", { slug: "margen-de-las-empresas", nombre: "Margen de las empresas no financieras", sin: ["profits", "márgenes", "empresas", "ganancias", "rentabilidad"], historia: true,
+  calc: "Ganancias de las empresas no financieras (con ajustes de valuación de inventarios y de amortización) sobre su valor agregado bruto (BEA): la medida clásica de margen, que aísla el negocio doméstico de las ganancias en el exterior y del sector financiero. La referencia es el promedio desde 1960. Si el margen sube, la participación de los salarios en lo producido baja. Siempre desde 1960.",
+  ks: ["profits_nf", "gva_nf"],
+  f: () => {
+    const p = S("profits_nf"), g = S("gva_nf"); if (!p || !g) return null;
+    const m = join(p, g, (a, b) => a / b * 100).filter(x => x[0] >= T(1960)); if (!m.length) return null;
+    const prom = m.reduce((a, b) => a + b[1], 0) / m.length, v = last(m)[1], max = Math.max(...m.map(x => x[1]));
+    const y = yoy(p, 4), cy = y ? last(y)[1] : null;
+    const nivel = v >= max - 0.05 ? "máximo desde 1960" : `percentil ${pctl(m, v)} desde 1960`;
+    return { freq: "Q", sinRecorte: true,
+      titulo: `Margen de las empresas en ${nf(v)}%, ${nivel}` + (cy != null ? `; ganancias ${sg(cy)}% interanual` : ""),
+      sub: "Ganancias sobre valor agregado de las empresas no financieras. Una caída interanual de las ganancias antecedió a casi todas las recesiones. Desde 1960.",
+      series: [{ n: "Margen", d: cut(m, T(1960)), c: 2, w: 2.6 }], refs: [{ y: prom, l: `Promedio desde 1960: ${nf(prom)}%` }] };
+  } });
+def("pbiGdi", { slug: "pbi-vs-gdi", nombre: "PBI vs GDI: ¿se va a revisar el PBI?", sin: ["ingreso bruto", "gdi", "revisiones", "discrepancia estadística"],
+  calc: "El producto se mide por el gasto (PBI) y por el ingreso (GDI); en teoría dan lo mismo. Barras: diferencia de crecimiento interanual GDI menos PBI. Línea punteada: promedio de PBI y GDI, que BEA publica y la Fed usa como mejor estimación del crecimiento real. El GDI sale un mes después que el PBI. Históricamente, cuando difieren, el PBI tiende a revisarse hacia el GDI.",
+  ks: ["gdp_real", "gdi_real", "gdp_gdi_prom"],
+  f: () => {
+    const a = yoy(S("gdp_real"), 4), b = yoy(S("gdi_real"), 4); if (!a || !b) return null;
+    const dif = join(b, a, (x, y) => x - y), pr = yoy(S("gdp_gdi_prom"), 4), u = last(dif);
+    const falta = last(a)[0] > last(b)[0];
+    const ss = [{ n: "GDI − PBI (pp)", d: cut(dif), t: "bar", c: 3, suave: true }, { n: "PBI real", d: cut(a), c: 0, w: 1.6 }, { n: "GDI real", d: cut(b), c: 1, w: 1.6 }];
+    if (pr) ss.push({ n: "Promedio PBI-GDI", d: cut(pr), c: "ink", w: 2, punteada: true });
+    const va = valorEn(a, u[0])[1], vb = valorEn(b, u[0])[1];
+    return { freq: "Q", titulo: Math.abs(u[1]) < 0.3 ? `Gasto e ingreso coinciden en ${fq(u[0])}: el PBI publicado es consistente` : `El ingreso crece ${nf(vb)}% y el gasto ${nf(va)}% en ${fq(u[0])}: el PBI tiende a revisarse hacia el ingreso`,
+      sub: "Variación interanual real; barras: diferencia GDI menos PBI." + (falta ? ` El GDI de ${fq(last(a)[0])} todavía no se publicó.` : ""),
+      series: ss, refs: [{ y: 0 }] };
+  } });
+def("preciosPagados", { slug: "precios-pagados-industria", nombre: "Precios que pagan las fábricas", sin: ["precios pagados", "costos", "encuestas", "philly fed", "empire state", "aranceles", "cañería"],
+  calc: "Índices de difusión de precios pagados por las empresas manufactureras en las encuestas de la Fed de Filadelfia y de Nueva York: porcentaje que paga más menos el que paga menos. Promedio de las dos, 3 meses. Adelanta varios meses la inflación de bienes en el PPI y el CPI. El rango normal es 2000-19.",
+  ks: ["philly_precios", "empire_precios"],
+  f: () => {
+    const a = S("philly_precios"), b = S("empire_precios"); if (!a && !b) return null;
+    const pr = a && b ? roll(join(a, b, (x, y) => (x + y) / 2), 3) : roll(a || b, 3), v = last(pr)[1];
+    const ss = [{ n: "Promedio, 3 meses", d: cut(pr), c: 1, w: 2.8 }];
+    if (a) ss.push({ n: "Filadelfia", d: cut(a), c: "gris", fina: true });
+    if (b) ss.push({ n: "Nueva York", d: cut(b), c: "gris", fina: true });
+    return { titulo: `Las fábricas reportan presión de costos en ${nf(v, 0)}: percentil ${pctl(pr, v)} desde 2000`,
+      sub: "Precios pagados, encuestas de Filadelfia y Nueva York. Adelanta la inflación de bienes en el PPI y el CPI.",
+      unidad: "", dec: 0, banda: rangoNormal(pr), series: ss };
   } });
 def("ventas", { slug: "ventas-minoristas", nombre: "Ventas minoristas", sin: ["retail", "consumo", "comercio"], ops: [VISTA_M, REAL("cpi")],
   calc: "Ventas minoristas y de servicios de comida (Census), desestacionalizadas. En vista real se deflactan por el CPI general.",
@@ -160,51 +288,6 @@ def("ventas", { slug: "ventas-minoristas", nombre: "Ventas minoristas", sin: ["r
       sub: o.real === "r" ? "Ventas minoristas deflactadas por el CPI general: cuánto más (o menos) se compra, sin el efecto de los precios." : "Ventas minoristas nominales: incluyen el efecto de los precios. La vista real las deflacta por el CPI.",
       dec: decV(o), series: seriesVista([[o.real === "r" ? "Ventas reales" : "Ventas nominales", a, 1]], o), refs: [{ y: 0 }] };
   } });
-def("ordenes", { slug: "ordenes-de-capital", nombre: "Órdenes de bienes de capital", sin: ["core orders", "capex", "bienes durables", "inversión en equipos"], ops: [VISTA_M, REAL("ppi_capital")],
-  calc: "Órdenes nuevas de bienes de capital sin defensa ni aviones (Census, M3). En vista real se deflactan por el PPI de bienes de capital (BLS).",
-  ks: ["core_orders", "ppi_capital"],
-  f: o => {
-    const a = real(S("core_orders"), o, "ppi_capital"); if (!a) return null;
-    const v = vista(a, o.vista);
-    return { titulo: `Órdenes de bienes de capital ${sg(last(v)[1], decV(o))}% ${VT[o.vista]}${o.real === "r" ? " en términos reales" : ""} en ${fechaDe(v)}`,
-      sub: "Bienes de capital sin defensa ni aviones: el adelanto de la inversión en equipos." + (o.real === "r" ? " Deflactadas por el PPI de bienes de capital." : ""),
-      dec: decV(o), series: seriesVista([["Órdenes de capital", a, 0]], o), refs: [{ y: 0 }] };
-  } });
-def("viviendas", { slug: "viviendas", nombre: "Inicios y permisos de viviendas", sin: ["housing starts", "permisos", "construcción", "vivienda"],
-  calc: "Viviendas iniciadas y permisos de construcción (Census), en miles, tasa anual desestacionalizada. Los permisos adelantan a los inicios uno o dos meses.",
-  ks: ["housing_starts", "permits"],
-  f: () => {
-    const h = S("housing_starts"), p = S("permits"); if (!h) return null;
-    const v = last(h)[1];
-    const ss = [{ n: "Inicios", d: cut(h), c: 0 }];
-    if (p) ss.push({ n: "Permisos", d: cut(p), c: 3, w: 1.8 });
-    return { titulo: `Inicios de viviendas en ${nf(v, 0)} mil por año` + (p ? `; los permisos, que los adelantan, en ${nf(last(p)[1], 0)} mil` : ""),
-      sub: "En miles, tasa anual desestacionalizada. Es el sector más sensible a la tasa hipotecaria.",
-      unidad: "mil", dec: 0, banda: rangoNormal(h), bandaTexto: "Rango normal de los inicios 2000-19", series: ss };
-  } });
-def("capex", { slug: "inversion-tecnologica", nombre: "Inversión tecnológica / PBI", sin: ["ia", "data centers", "software", "punto com", "capex tecnológico"],
-  calc: "Inversión en equipos de procesamiento de información más software (BEA), sobre PBI nominal. El pico punto com es el máximo anterior a 2003.",
-  ks: ["inv_info", "inv_software", "gdp_nom"],
-  f: () => {
-    const e = S("inv_info"), s = S("inv_software"), g = S("gdp_nom"); if (!e || !s || !g) return null;
-    const ep = join(e, g, (a, b) => a / b * 100), sp = join(s, g, (a, b) => a / b * 100), tot = join(ep, sp, (a, b) => a + b);
-    const pc = Math.max(...tot.filter(p => p[0] < T(2003)).map(p => p[1])), d = last(tot)[1] - pc;
-    return { titulo: d > 0 ? `La inversión tecnológica supera el pico punto com en ${nf(d, 2)} pp del PBI` : `La inversión tecnológica está a ${nf(-d, 2)} pp del pico punto com`,
-      sub: "Equipos de procesamiento de información + software, % del PBI nominal, desde 2000. Las estructuras (data centers) no tienen serie propia.",
-      freq: "Q", dec: 2, decEje: 1, cero: true, eventos: false, sinRecorte: true,
-      series: [{ n: "Equipos de información", d: cut(ep, T(2000)), area: true, stack: "t", c: 0, fin: false }, { n: "Software (tope = total)", d: cut(sp, T(2000)), area: true, stack: "t", c: 2, finValor: last(tot)[1] }],
-      refs: [{ y: pc, l: `Pico punto com: ${nf(pc, 2)}%` }] };
-  } });
-def("ganancias", { slug: "ganancias-corporativas", nombre: "Ganancias corporativas / PBI", sin: ["profits", "márgenes", "empresas"],
-  calc: "Ganancias corporativas con ajustes de valuación de inventarios y amortización (BEA), sobre PBI nominal.",
-  ks: ["profits", "gdp_nom"],
-  f: () => {
-    const p = S("profits"), g = S("gdp_nom"); if (!p || !g) return null;
-    const r = join(p, g, (a, b) => a / b * 100), v = last(r)[1];
-    return { freq: "Q", titulo: `Las ganancias corporativas equivalen al ${nf(v)}% del PBI: percentil ${pctl(r, v)} desde 2000`,
-      sub: "Ganancias corporativas (con ajustes de inventario y amortización) sobre PBI nominal.", banda: rangoNormal(r), series: [{ n: "Ganancias / PBI", d: cut(r), c: 2 }] };
-  } });
-
 // ═════════════════════════ Consumidor ═════════════════════════
 const BASE19 = T(2019, 12);
 def("ingresoConsumo", { slug: "ingreso-vs-consumo", nombre: "Ingreso real vs consumo real", sin: ["ingreso disponible", "consumo real"],
@@ -566,13 +649,13 @@ def("salarioReal", { slug: "salario-real", nombre: "Salario horario y salario re
   } });
 def("eci", { slug: "costo-laboral-eci", nombre: "Índice de costo laboral (ECI) vs salario horario", sin: ["eci", "salarios", "costo laboral"], ops: [VISTA_Q],
   calc: "Índice de costo laboral, salarios del sector privado (BLS, trimestral), contra el salario horario promedio llevado a trimestre. El ECI mantiene fija la composición del empleo.",
-  ks: ["eci", "ahe"],
+  ks: ["eci", "ahe", "ulc"],
   f: o => {
     const e = S("eci"), w = toQ(S("ahe")); if (!e || !w) return null;
-    const ve = vista(e, o.vista, "Q"), vw = join(vista(w, o.vista, "Q"), ve, a => a);
+    const ve = vista(e, o.vista, "Q"), vw = join(vista(w, o.vista, "Q"), ve, a => a), vu = S("ulc") ? vista(S("ulc"), o.vista, "Q") : null;
     return { freq: "Q", titulo: `Los salarios medidos por el ECI suben ${nf(last(ve)[1])}% ${VT[o.vista]}`,
       sub: "El ECI no cambia cuando cambia la composición del empleo (por ejemplo, si se pierden puestos de bajo salario): es la medida de salarios que mira la Fed.",
-      series: [{ n: "ECI salarios", d: cut(ve), c: 0, w: 2.8 }, { n: "Salario horario promedio", d: cut(vw), c: 1 }], refs: [{ y: 3.5, l: "Compatible con 2% de inflación (≈3,5%)" }] };
+      series: [{ n: "ECI salarios", d: cut(ve), c: 0, w: 2.8 }, { n: "Salario horario promedio", d: cut(vw), c: 1 }].concat(vu ? [{ n: "Costo laboral unitario", d: cut(vu), c: 2, w: 1.6 }] : []), refs: [{ y: 3.5, l: "Compatible con 2% de inflación (≈3,5%)" }] };
   } });
 def("epop", { slug: "empleo-25-54", nombre: "Empleo 25-54 y participación", sin: ["epop", "participación", "prime age"],
   calc: "Proporción de la población de 25 a 54 años con empleo y tasa de participación de toda la población (BLS).",
@@ -639,7 +722,7 @@ function notaParcial() {
   if (usaDiario()) return "";
   const cv = ST.DATA.curva && ST.DATA.curva["10A"]; if (!cv || !cv.length) return "";
   const f = cv[cv.length - 1][0], d = new Date(P(f));
-  return d.getUTCDate() < 28 ? ` El último punto es el promedio del mes en curso hasta el ${d.getUTCDate()}-${fm(P(f)).split("-")[0]}.` : "";
+  return d.getUTCDate() < 28 ? ` El último punto es el promedio del mes en curso hasta el ${d.getUTCDate()}-${MES[d.getUTCMonth()]}.` : "";
 }
 def("curva", { slug: "fed-y-treasuries", nombre: "Fed y Treasuries", sin: ["fondos federales", "tasa de política", "treasuries", "bonos"],
   calc: "Tasa efectiva de fondos federales y rendimientos de Treasuries a 2, 10 y 30 años. Datos diarios con períodos de hasta 5 años; promedios mensuales con períodos más largos.",
@@ -1038,15 +1121,15 @@ def("revPBI", { slug: "revisiones-del-pbi", nombre: "Revisiones del PBI", sin: [
 // ═════════════════════════ Organización por frente ═════════════════════════
 export const BLOQUES = {
   actividad: [["¿Cuánto crece y qué lo empuja?", [["contribuciones", "ancha"], ["gdpnow"], ["demandaPrivada"]]],
-    ["¿Está por encima o por debajo de su potencial?", [["brecha"], ["productividad"]]],
+    ["¿Está por encima de su potencial?", [["brecha"], ["productividad"]]],
     ["¿Qué dicen los datos del mes?", [["encuestas"], ["industria"], ["ordenes"], ["viviendas"]]],
-    ["¿Dónde está el ciclo de inversión y ganancias?", [["capex"], ["ganancias"], ["pbiGdi", "ancha"]]]],
+    ["¿Dónde está el ciclo de inversión y ganancias?", [["capex"], ["ganancias"]]]],
   consumidor: [["¿Cuánto gasta?", [["ventas"], ["consumoTipo"], ["autos"], ["sentimiento"]]],
     ["¿Con qué lo paga?", [["ingresoConsumo"], ["motores"], ["ahorro"], ["credito"]]],
     ["¿Cuánto aguanta?", [["riqueza"], ["servicioDeuda"], ["morosidad", "ancha"]]]],
   precios: [["¿Dónde está la inflación y hacia dónde va?", [["pce"], ["momentum"], ["subyacente", "ancha"]]],
     ["¿Es amplia o concentrada?", [["heat", "ancha alta"], ["difusion"], ["serviciosBienes"]]],
-    ["¿Qué viene por la cañería?", [["ppi"], ["bienesCore"]]],
+    ["¿Qué viene por la cañería?", [["preciosPagados"], ["ppi"], ["bienesCore", "ancha"]]],
     ["Componentes y otras medidas", [["cpiPce"], ["vivienda"], ["componentes"], ["energia"], ["expectativas", "ancha"]]]],
   empleo: [["¿Cuánto empleo se crea y dónde?", [["nominas", "ancha"], ["composicion"], ["desempleo"]]],
     ["¿Qué tan ajustado está el mercado?", [["sahm"], ["tension"], ["rotacion"], ["epop"]]],
@@ -1060,12 +1143,14 @@ export const BLOQUES = {
     ["Precios, moneda e inversión", [["dolar"], ["terminos"], ["capexImport", "ancha"]]]],
   ciclo: [["¿Dónde está cada variable respecto de su historia?", [["mapa", "ancha muy-alta"]]],
     ["¿Este ciclo se parece a los anteriores?", [["cicloTasa"], ["cicloDesempleo"], ["cicloCore"], ["cicloSpread"]]],
-    ["¿Qué tan confiable es el primer dato?", [["revEmpleo"], ["revPBI"]]]],
+    ["¿Qué tan confiable es el primer dato?", [["revEmpleo", "ancha"], ["revPBI"], ["pbiGdi"]]]],
   fiscal: [["¿Cuánto gasta, cuánto recauda y cuánto pide prestado?", [["deficit", "ancha"], ["ingresosGastos"], ["aranceles"]]],
     ["¿Cuánto cuesta la deuda y es sostenible?", [["intereses"], ["deuda"], ["nominalTasa", "ancha"]]]],
 };
 export const PREGUNTAS_CICLO = [["brecha", "ancha"], ["heat", "ancha alta"], ["composicion"], ["politica"]];
 for (const [f, bloques] of Object.entries(BLOQUES)) for (const [, lista] of bloques) for (const [id] of lista) CAT[id].frente = f;
+// Secciones con gráficos que usan la historia completa: se carga antes de dibujar
+export const seccionConHistoria = sec => sec === "ciclo" || (BLOQUES[sec] || []).some(([, l]) => l.some(([id]) => CAT[id] && CAT[id].historia)) || (sec === "portada" && PREGUNTAS_CICLO.some(([id]) => CAT[id] && CAT[id].historia));
 export const porSlug = s => Object.values(CAT).find(c => c.slug === s);
 export const defaultsDe = id => Object.fromEntries((CAT[id].ops || []).map(op => [op.id, op.valores[0][0]]));
 
@@ -1101,9 +1186,9 @@ export const IND = [
   { id: "gdpnow", f: "actividad", n: "GDPNow", nota: "estimación del trimestre", u: "%", d: 1, q: true, ks: ["gdpnow"], g: "gdpnow", s: () => S("gdpnow") },
   { id: "brecha", f: "actividad", n: "Brecha del producto", nota: "% del potencial (CBO)", u: "%", d: 1, q: true, ks: ["gdp_real", "gdp_pot"], g: "brecha", s: () => join(S("gdp_real"), S("gdp_pot"), (a, c) => (a / c - 1) * 100) },
   { id: "demanda", f: "actividad", n: "Demanda privada final", nota: "interanual real", u: "%", d: 1, q: true, ks: ["final_sales_priv"], g: "demandaPrivada", s: () => yoy(S("final_sales_priv"), 4) },
-  { id: "indpro", f: "actividad", n: "Producción industrial", nota: "interanual", u: "%", d: 1, ks: ["indpro"], g: "industria", s: () => yoy(S("indpro")) },
+  { id: "indpro", f: "actividad", n: "Producción manufacturera", nota: "interanual", u: "%", d: 1, ks: ["ip_man"], g: "industria", s: () => yoy(S("ip_man") || S("indpro")) },
   { id: "retail", f: "consumidor", n: "Ventas minoristas", nota: "interanual nominal", u: "%", d: 1, ks: ["retail"], g: "ventas", s: () => yoy(S("retail")) },
-  { id: "ordenes", f: "actividad", n: "Órdenes de capital", nota: "interanual, sin defensa ni aviones", u: "%", d: 1, ks: ["core_orders"], g: "ordenes", s: () => yoy(S("core_orders")) },
+  { id: "ordenes", f: "actividad", n: "Órdenes de capital", nota: "reales, prom. 3m, interanual", u: "%", d: 1, ks: ["core_orders"], g: "ordenes", s: () => yoy(roll(deflactar(S("core_orders"), S("ppi_capital")), 3)) },
   { id: "viviendas", f: "actividad", n: "Inicios de viviendas", nota: "miles por año", u: "mil", d: 0, ks: ["housing_starts"], g: "viviendas", s: () => S("housing_starts") },
   { id: "consumo", f: "consumidor", n: "Consumo real", nota: "interanual", u: "%", d: 1, ks: ["pce_real"], g: "consumoTipo", s: () => yoy(S("pce_real")) },
   { id: "ingreso", f: "consumidor", n: "Ingreso disponible real", nota: "interanual", u: "%", d: 1, ks: ["dpi_real"], g: "ingresoConsumo", s: () => yoy(S("dpi_real")) },
