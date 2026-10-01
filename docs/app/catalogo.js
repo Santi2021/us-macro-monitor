@@ -2,7 +2,7 @@
 // De acá salen el gráfico, su tabla, su ficha de fuentes, el buscador, los enlaces y la metodología.
 import { T, P, MES, nf, sg, fm, fq, fw, fd, esc, unidadTxt } from "./util.js";
 import { last, prev, yoy, ann, pct, diff, roll, join, joinQ, toQ, indice, deflactar, rangoNormal, pctl, escala, racha, valorEn } from "./calc.js";
-import { ST, S, SD, freqD, usaDiario, iniciosFed, cut, fuente, meta, nombreRelease, infoRelease } from "./datos.js";
+import { ST, S, SD, freqD, usaDiario, periodoLargo, iniciosFed, cut, fuente, meta, nombreRelease, infoRelease } from "./datos.js";
 
 export const FRENTES = { actividad: "Actividad", consumidor: "Consumidor", precios: "Precios", empleo: "Empleo", tasas: "Tasas", externo: "Externo", fiscal: "Fiscal" };
 
@@ -268,17 +268,18 @@ def("pbiGdi", { slug: "pbi-vs-gdi", nombre: "PBI vs GDI: ¿se va a revisar el PB
       series: ss, refs: [{ y: 0 }] };
   } });
 def("preciosPagados", { slug: "precios-pagados-industria", nombre: "Precios que pagan las fábricas", sin: ["precios pagados", "costos", "encuestas", "philly fed", "empire state", "aranceles", "cañería"],
-  calc: "Índices de difusión de precios pagados por las empresas manufactureras en las encuestas de la Fed de Filadelfia y de Nueva York: porcentaje que paga más menos el que paga menos. Promedio de las dos, 3 meses. Adelanta varios meses la inflación de bienes en el PPI y el CPI. El rango normal es 2000-19.",
-  ks: ["philly_precios", "empire_precios"],
+  calc: "Índices de difusión de precios pagados por las empresas manufactureras en las encuestas de la Fed de Filadelfia y de Nueva York: porcentaje que paga más menos el que paga menos. Promedio de las dos, 3 meses. Eje derecho: PPI de demanda final, interanual (BLS). Desde 2002 la correlación con el PPI es más alta en el mismo mes (0,89) que con el PPI de 6 meses después (0,81) o de 12 meses después (0,39): es un dato coincidente que se publica antes, a mitad del mes que mide. Referencias: promedio 2015-19 y máximo de 2021-22.",
+  ks: ["philly_precios", "empire_precios", "ppi_fd"],
   f: () => {
     const a = S("philly_precios"), b = S("empire_precios"); if (!a && !b) return null;
     const pr = a && b ? roll(join(a, b, (x, y) => (x + y) / 2), 3) : roll(a || b, 3), v = last(pr)[1];
-    const ss = [{ n: "Promedio, 3 meses", d: cut(pr), c: 1, w: 2.8 }];
-    if (a) ss.push({ n: "Filadelfia", d: cut(a), c: "gris", fina: true });
-    if (b) ss.push({ n: "Nueva York", d: cut(b), c: "gris", fina: true });
-    return { titulo: `Las fábricas reportan presión de costos en ${nf(v, 0)}: percentil ${pctl(pr, v)} desde 2000`,
-      sub: "Precios pagados, encuestas de Filadelfia y Nueva York. Adelanta la inflación de bienes en el PPI y el CPI.",
-      unidad: "", dec: 0, banda: rangoNormal(pr), series: ss };
+    const p = promEntre(pr, 2015, 2019), mx = maxEntre(pr, 2021, 2022), ppi = yoy(S("ppi_fd"));
+    const ss = [{ n: "Precios pagados, promedio 3 meses", d: cut(pr), c: 1, w: 2.8 }];
+    if (ppi) ss.push({ n: "PPI demanda final, interanual (eje derecho)", d: cut(ppi), c: 0, w: 1.6, der: true, u: "%" });
+    const refs = []; if (p != null) refs.push({ y: p, l: `Promedio 2015-19: ${nf(p, 0)}` }); if (mx) refs.push({ y: mx[1], l: `Máximo ${anio(mx[0])}: ${nf(mx[1], 0)}` });
+    return { titulo: `Precios pagados por las fábricas: ${nf(v, 0)} (promedio 3 meses, ${fechaDe(pr)}), percentil ${pctl(pr, v)} desde 2001` + (p != null ? `; 2015-19: ${nf(p, 0)}` : "") + (mx ? `; máximo ${anio(mx[0])}: ${nf(mx[1], 0)}` : "") + (ppi ? `; PPI demanda final ${sg(last(ppi)[1])}% interanual` : ""),
+      sub: "Saldo de respuestas (pagan más menos pagan menos), encuestas de Filadelfia y Nueva York. Se publica a mitad del mes, antes que el PPI del mismo mes.",
+      unidad: "", dec: 0, series: ss, refs };
   } });
 // ═════════════════════════ Consumidor ═════════════════════════
 // Títulos con hechos medibles: el dato y su comparación (contra su historia, una referencia fija u otra serie), sin adjetivos ni causas.
@@ -495,116 +496,232 @@ def("morosidad", { slug: "morosidad-de-tarjetas", nombre: "Morosidad de tarjetas
   } });
 
 // ═════════════════════════ Precios ═════════════════════════
-def("pce", { slug: "pce", nombre: "Inflación PCE general y core", sin: ["inflación", "pce", "core pce", "precios"], ops: [VISTA_M],
-  calc: "Índice de precios del gasto de consumo personal (BEA), general y sin alimentos ni energía (core). Es la medida que apunta la Fed.",
+// Promedio 2000-19 de la brecha CPI core − PCE core: convierte la meta de 2% (PCE) a la escala del CPI
+function brechaCpiPce() {
+  const a = yoy(S("cpi_core")), b = yoy(S("pce_core")); if (!a || !b) return null;
+  return join(a, b, (x, y) => x - y);
+}
+def("pce", { slug: "pce", nombre: "Inflación PCE general y core", sin: ["inflación", "pce", "core pce", "precios", "meta"],
+  calc: "Índice de precios del gasto de consumo personal (BEA), general y sin alimentos ni energía (core), variación interanual. Es la medida que apunta la Fed (meta 2%). El rombo es la mediana de la proyección de la Fed para el core a fin de año (Resumen de Proyecciones Económicas).",
   ks: ["pce_core", "pce_p", "sep_core"],
-  f: o => {
-    const c = S("pce_core"), h = S("pce_p"); if (!c || !h) return null;
-    const vc = vista(c, o.vista), v = last(vc)[1];
-    const titulo = o.vista === "m" ? `Core PCE ${sg(v, 2)}% mensual en ${fechaDe(vc)}, contra ${sg(prev(vc)[1], 2)}% del mes anterior`
-      : `Core PCE en ${nf(v)}% ${VT[o.vista]}: ${nf(Math.abs(v - 2))} pp ${v >= 2 ? "por encima" : "por debajo"} de la meta`;
-    const ss = seriesVista([["PCE core", c, 0, { w: 2.8 }], ["PCE general", h, 1]], o), sep = o.vista === "a" ? sepPuntos("sep_core") : null;
+  f: () => {
+    const c = yoy(S("pce_core")), h = yoy(S("pce_p")); if (!c || !h) return null;
+    const sep = sepPuntos("sep_core");
+    const ss = [{ n: "PCE core", d: cut(c), c: 0, w: 2.8 }, { n: "PCE general", d: cut(h), c: 1, w: 1.6 }];
     if (sep) ss.push({ n: "Proyección de la Fed para el core", t: "punto", c: 0, d: sep });
-    return { titulo, sub: "La diferencia entre general y core es energía y alimentos." + (sep ? ` Rombos: core que proyecta la Fed, ${sepTxt("sep_core")}.` : ""), dec: decV(o),
-      banda: o.vista === "a" ? rangoNormal(vc) : null, bandaTexto: "Rango normal del core 2000-19",
-      series: ss, refs: [metaRef(o)] };
+    return { titulo: `PCE core ${nf(last(c)[1])}% y general ${nf(last(h)[1])}% interanual en ${fechaDe(c)}; meta 2%` + (sep ? `; la Fed proyecta ${nf(sep[0][1])}% para el core a fin de ${anio(sep[0][0])}` : ""),
+      sub: "Índice de precios del consumo personal (BEA), variación interanual. Core: sin alimentos ni energía.", dec: 1,
+      series: ss, refs: [{ y: 2, l: "Meta Fed 2%" }] };
   } });
-def("momentum", { slug: "momentum-del-core", nombre: "Momentum del core PCE", sin: ["desinflación", "3 meses", "6 meses"],
-  calc: "Core PCE: variación interanual, anualizada a 6 meses y anualizada a 3 meses.",
+
+def("momentum", { slug: "momentum-del-core", nombre: "Core PCE a distintos horizontes", sin: ["desinflación", "3 meses", "6 meses", "momentum", "ritmo"],
+  calc: "Core PCE (BEA): variación de cada mes anualizada (barras), anualizada a 3 meses, anualizada a 6 meses e interanual. Con períodos de 10 años o más se omiten las barras mensuales.",
   ks: ["pce_core"],
   f: () => {
     const c = S("pce_core"); if (!c) return null;
-    const y = yoy(c), m3 = ann(c, 3), m6 = ann(c, 6);
-    const verbo = last(m3)[1] < last(y)[1] ? "se desacelera" : "se acelera";
-    return { titulo: `El core ${verbo}: ${nf(last(m3)[1])}% anualizado a 3 meses vs ${nf(last(y)[1])}% interanual`,
-      sub: `Si el anualizado corto queda por debajo del interanual, la desinflación sigue. A 6 meses: ${nf(last(m6)[1])}%.`,
-      series: [{ n: "Interanual", d: cut(y), c: 0, w: 2.8 }, { n: "3 meses anualizado", d: cut(m3), c: 3, w: 1.6 }], refs: [{ y: 2, l: "Meta Fed 2%" }] };
-  } });
-def("subyacente", { slug: "inflacion-subyacente", nombre: "Núcleo de la inflación: mediana y media recortada", sin: ["mediana", "media recortada", "trimmed mean", "median cpi", "cleveland", "dallas", "subyacente"],
-  calc: "Tres medidas del núcleo de la inflación, interanuales: PCE core (BEA), PCE media recortada (Fed de Dallas: descarta cada mes los rubros con subas y bajas más extremas) y CPI mediana (Fed de Cleveland: la suba del rubro del medio).",
-  ks: ["pce_core", "pce_trim", "cpi_median"],
-  f: () => {
-    const c = yoy(S("pce_core")), t = S("pce_trim"), m = yoy(S("cpi_median")); if (!c) return null;
-    const ss = [{ n: "PCE core", d: cut(c), c: 0, w: 2.8 }];
-    if (t) ss.push({ n: "PCE media recortada (Dallas)", d: cut(t), c: 2 });
-    if (m) ss.push({ n: "CPI mediana (Cleveland)", d: cut(m), c: 1 });
-    const vs = ss.map(x => last(x.d)).filter(Boolean).map(x => x[1]), mn = Math.min(...vs), mx = Math.max(...vs);
-    return { titulo: `El núcleo de la inflación va de ${nf(mn)}% a ${nf(mx)}% interanual según la medida`,
-      sub: "Las medidas que descartan los rubros extremos muestran si la inflación es general o depende de pocos precios. Si las tres coinciden, la lectura es firme. Mediana y media recortada salen unos días después que el PCE.",
+    const m1 = ann(c, 1), m3 = ann(c, 3), m6 = ann(c, 6), y = yoy(c);
+    const ss = [];
+    if (!periodoLargo()) ss.push({ n: "Cada mes, anualizado", d: cut(m1), t: "bar", c: 0, suave: true });
+    ss.push({ n: "3 meses anualizado", d: cut(m3), c: 3, w: 1.6 }, { n: "6 meses anualizado", d: cut(m6), c: 0, w: 2.8 }, { n: "Interanual", d: cut(y), c: "gris", w: 1.4, punteada: true });
+    return { titulo: `Core PCE anualizado en ${fechaDe(c)}: ${nf(last(m1)[1])}% en el mes, ${nf(last(m3)[1])}% a 3 meses, ${nf(last(m6)[1])}% a 6 meses y ${nf(last(y)[1])}% interanual`,
+      sub: "Variación del core PCE anualizada a distintos horizontes. Barras: cada mes anualizado.", dec: 1,
       series: ss, refs: [{ y: 2, l: "Meta Fed 2%" }] };
   } });
-def("ppi", { slug: "ppi", nombre: "Precios al productor (PPI)", sin: ["ppi", "mayoristas", "productor", "cañería"],
-  calc: "Índice de precios al productor para la demanda final (BLS), general y sin alimentos ni energía, variación interanual. El BLS no desestacionaliza el PPI core, por eso sólo se muestra interanual.",
-  ks: ["ppi_fd", "ppi_core"],
+
+def("subyacente", { slug: "inflacion-subyacente", nombre: "Núcleo de la inflación: mediana y media recortada", sin: ["mediana", "media recortada", "trimmed mean", "median cpi", "cleveland", "dallas", "subyacente"],
+  calc: "Medidas del núcleo de la inflación, interanuales, en pares de la misma familia: PCE core (BEA) y PCE media recortada (Fed de Dallas: descarta cada mes los rubros con subas y bajas más extremas); CPI core (BLS) y CPI mediana (Fed de Cleveland: la suba del rubro del medio). Barras: PCE core menos media recortada, en puntos; la referencia es su promedio 2000-19.",
+  ks: ["pce_core", "pce_trim", "cpi_core", "cpi_median"],
   f: () => {
-    const a = yoy(S("ppi_fd")), b = yoy(S("ppi_core")); if (!a) return null;
-    const ss = [{ n: "PPI demanda final", d: cut(a), c: 1 }];
-    if (b) ss.push({ n: "PPI sin alimentos ni energía", d: cut(b), c: 0, w: 2.8 });
-    return { titulo: `Los precios al productor suben ${nf(last(a)[1])}% interanual` + (b ? `; sin alimentos ni energía, ${nf(last(b)[1])}%` : ""),
-      sub: "Lo que cobran las empresas por lo que venden: anticipa parte de lo que después llega al CPI y al PCE. Serie desde 2010.",
-      series: ss, refs: [{ y: 0 }, { y: 2, l: "2%" }] };
+    const c = yoy(S("pce_core")), t = S("pce_trim"), cc = yoy(S("cpi_core")), m = yoy(S("cpi_median")); if (!c) return null;
+    const ss = [], refs = [{ y: 2, l: "Meta Fed 2%" }];
+    const g = t ? join(c, t, (a, b) => a - b) : null, gp = g ? promEntre(g, 2000, 2019) : null;
+    if (g) ss.push({ n: "PCE core − media recortada (pp)", d: cut(g), t: "bar", c: "gris", suave: true });
+    ss.push({ n: "PCE core", d: cut(c), c: 0, w: 2.6 });
+    if (t) ss.push({ n: "PCE media recortada (Dallas)", d: cut(t), c: 2, w: 1.8 });
+    if (cc) ss.push({ n: "CPI core", d: cut(cc), c: 1, w: 1.4, punteada: true });
+    if (m) ss.push({ n: "CPI mediana (Cleveland)", d: cut(m), c: 3, w: 1.4, punteada: true });
+    if (gp != null) refs.push({ y: gp, l: `Brecha promedio 2000-19: ${sg(gp)} pp` });
+    return { titulo: `Interanual en ${fechaDe(c)}: PCE core ${nf(last(c)[1])}%` + (t ? ` y media recortada ${nf(last(t)[1])}% (brecha ${sg(last(g)[1])} pp; promedio 2000-19: ${sg(gp)})` : "") + (cc && m ? `; CPI core ${nf(last(cc)[1])}% y mediana ${nf(last(m)[1])}%` : ""),
+      sub: "Medidas que descartan los rubros extremos (Fed de Dallas y de Cleveland). Barras: PCE core menos media recortada.", dec: 1, series: ss, refs };
   } });
-def("bienesCore", { slug: "bienes-core-y-aranceles", nombre: "Bienes core y precios de importación", sin: ["aranceles", "tariffs", "bienes core", "importación", "core goods", "traslado"], ops: [VISTA_M],
-  calc: "CPI de bienes sin alimentos ni energía (BLS) y precios de importación de todos los productos (BLS). El precio de importación se mide sin el arancel. Incluye combustibles y no está desestacionalizado: en vista mensual, mirar la tendencia.",
-  ks: ["cpi_core_goods", "import_prices"],
-  f: o => {
-    const g = S("cpi_core_goods"), i = S("import_prices"); if (!g) return null;
-    const lista = [["CPI bienes core", g, 1, { w: 2.8 }]];
-    if (i) lista.push(["Precios de importación", i, 0]);
-    const vg = vista(g, o.vista), vi = i ? vista(i, o.vista) : null;
-    return { titulo: `Los bienes core del CPI ${last(vg)[1] >= 0 ? "suben" : "bajan"} ${nf(Math.abs(last(vg)[1]), decV(o))}% ${VT[o.vista]}` + (vi ? `; los importados, antes del arancel, ${sg(last(vi)[1], decV(o))}%` : ""),
-      sub: "Si los bienes al consumidor suben más que los importados (medidos sin arancel), el arancel se traslada a precios.",
-      dec: decV(o), series: seriesVista(lista, o), refs: [{ y: 0 }] };
-  } });
+
 export function rubros() { return Object.keys(ST.DATA.series).filter(k => k.startsWith("cat:")).map(k => ({ k, n: ST.DATA.series[k].n, a3: ann(S(k), 3) })).filter(r => r.a3); }
-def("heat", { slug: "rubros-del-core", nombre: "Mapa de calor: rubros del core PCE", sin: ["rubros", "componentes", "heatmap", "vivienda", "salud", "autos"],
-  calc: "Inflación anualizada a 3 meses de los 13 rubros del PCE core (BEA, tabla NIPA 2.8.4), últimos 18 meses.",
-  ks: ["cat:Salud"],
+// Pesos de los 13 rubros del core: gasto nominal de cada rubro sobre la suma de los 13 (BEA, tabla 2.8.5)
+function pesosRubros(rs) {
+  const g = rs.map(r => ({ n: r.n, m: new Map(S("peso:" + r.n) || []) })); if (g.some(x => !x.m.size)) return null;
+  const ts = [...g[0].m.keys()].filter(t => g.every(x => x.m.has(t)));
+  const out = new Map(g.map(x => [x.n, new Map()]));
+  for (const t of ts) { const tot = g.reduce((s, x) => s + x.m.get(t), 0); for (const x of g) out.get(x.n).set(t, x.m.get(t) / tot); }
+  return out;
+}
+const pesoEn = (m, t) => { if (!m || !m.size) return null; if (m.has(t)) return m.get(t); const ks = [...m.keys()].filter(k => k <= t); return ks.length ? m.get(ks[ks.length - 1]) : null; };
+
+def("heat", { slug: "rubros-del-core", nombre: "Mapa de calor: rubros del core PCE", sin: ["rubros", "componentes", "heatmap", "vivienda", "salud", "autos", "aporte"],
+  calc: "Inflación anualizada a 3 meses de los 13 rubros del PCE core (BEA, tabla NIPA 2.8.4), últimos 18 meses. El peso de cada rubro es su gasto nominal sobre el de los 13 (tabla 2.8.5) y su aporte es peso × inflación del rubro, en puntos de la inflación anualizada a 3 meses del conjunto. Orden: por aporte en el último mes. \"Vivienda y servicios públicos\" incluye electricidad y gas, que no son core: BEA no publica la vivienda sola en este cuadro. No depende del período elegido.",
+  ks: ["cat:Salud", "peso:Salud"],
   f: () => {
     const rs = rubros(); if (rs.length < 5) return null;
-    const fechas = rs[0].a3.slice(-18).map(p => p[0]);
-    const ult = rs.map(r => ({ n: r.n, m: new Map(r.a3), v: last(r.a3)[1] })).sort((a, b) => b.v - a.v);
+    const fechas = rs[0].a3.slice(-18).map(p => p[0]), tu = fechas[fechas.length - 1];
+    const pw = pesosRubros(rs);
+    const ult = rs.map(r => { const m = new Map(r.a3), v = last(r.a3)[1], w = pw ? pesoEn(pw.get(r.n), tu) : null; return { n: r.n, m, v, w, ap: w != null ? w * v : null }; })
+      .sort((a, b) => pw ? b.ap - a.ap : b.v - a.v);
     const data = []; ult.forEach((r, yi) => fechas.forEach((t, xi) => { const v = r.m.get(t); if (v != null) data.push([xi, yi, v]); }));
-    const cal = ult.filter(r => r.v > 3).length;
-    return { tipo: "heat", titulo: `${cal} de ${ult.length} rubros del núcleo corren arriba de 3% anual`,
-      sub: "Inflación por rubro del PCE core, anualizada a 3 meses. Gris = cerca de 2%; rojo, arriba; azul, abajo. Ordenado por el último mes. No depende del período elegido.",
-      fuenteTxt: "BEA, tabla NIPA 2.8.4", cols: fechas.map(fm), filas: ult.map(r => r.n), data, series: [],
-      tabla: { cab: ["Rubro", ...fechas.slice(-6).map(fm)], filas: ult.map(r => [r.n, ...fechas.slice(-6).map(t => nf(r.m.get(t)))]) } };
+    const cal = ult.filter(r => r.v > 3), wcal = pw ? cal.reduce((s, r) => s + r.w, 0) * 100 : null;
+    const top = pw ? ult.slice(0, 3).map(r => `${r.n.toLowerCase()} (${sg(r.ap, 2)} pp)`).join(", ") : "";
+    const filas = ult.map(r => r.w != null ? `${r.n} · ${nf(r.w * 100, 0)}%` : r.n);
+    return { tipo: "heat", izq: pw ? 214 : 182,
+      titulo: pw ? `Rubros que más aportan al core a 3 meses en ${fm(tu)}: ${top}; ${cal.length} de ${ult.length} rubros, que pesan ${nf(wcal, 0)}% del core, corren arriba de 3%`
+        : `${cal.length} de ${ult.length} rubros del núcleo corren arriba de 3% anual`,
+      sub: "Inflación por rubro del PCE core, anualizada a 3 meses." + (pw ? " Junto al nombre, su peso en el core; orden por aporte (peso × inflación)." : " Ordenado por el último mes.") + " Gris = cerca de 2%; rojo, arriba; azul, abajo.",
+      fuenteTxt: "BEA, tablas NIPA 2.8.4 y 2.8.5", cols: fechas.map(fm), filas, data, series: [],
+      tip: v => { const r = ult[v[1]], w = r.w != null ? pesoEn(pw.get(r.n), fechas[v[0]]) : null; return `<b>${esc(r.n)}</b><br>${fm(fechas[v[0]])}: ${nf(v[2], 1)}% anualizado 3m` + (w != null ? `<br>Peso ${nf(w * 100, 1)}% · aporte ${sg(w * v[2], 2)} pp` : ""); },
+      tabla: { cab: ["Rubro", "Peso", "Aporte", ...fechas.slice(-6).map(fm)], filas: ult.map(r => [r.n, r.w != null ? nf(r.w * 100, 1) + "%" : "–", r.ap != null ? sg(r.ap, 2) : "–", ...fechas.slice(-6).map(t => nf(r.m.get(t)))]) } };
   } });
-def("difusion", { slug: "difusion", nombre: "Difusión de la inflación", sin: ["amplitud", "rubros arriba de 3%"],
-  calc: "Porcentaje de los 13 rubros del PCE core con inflación anualizada a 3 meses mayor a 3%, promedio móvil de 3 meses.",
-  ks: ["cat:Salud"],
+
+def("difusion", { slug: "difusion", nombre: "Difusión de la inflación", sin: ["amplitud", "rubros arriba de 3%", "difusión"],
+  calc: "Parte del core PCE en rubros con inflación anualizada a 3 meses mayor a 3%: suma de los pesos (gasto nominal, BEA tabla 2.8.5) de esos rubros entre los 13 del core; promedio móvil de 3 meses. En gris, la versión simple (cada rubro pesa igual). Referencias: promedio 2015-19 y máximo de 2021-23. Los rubros arrancan en 1999.",
+  ks: ["cat:Salud", "peso:Salud"],
   f: () => {
     const rs = rubros(); if (rs.length < 5) return null;
-    const m = new Map();
-    for (const r of rs) for (const [t, v] of r.a3) { const e = m.get(t) || [0, 0]; e[0] += v > 3 ? 1 : 0; e[1]++; m.set(t, e); }
-    const s = roll([...m].sort((a, b) => a[0] - b[0]).map(([t, [a, n]]) => [t, a / n * 100]), 3);
-    return { titulo: `La presión de precios alcanza al ${nf(last(s)[1], 0)}% de los rubros del núcleo`,
-      sub: "Porcentaje de rubros del PCE core con inflación anualizada a 3 meses mayor a 3% (promedio móvil 3 meses).", fuenteTxt: "BEA, tabla NIPA 2.8.4",
-      dec: 0, banda: rangoNormal(s), yMin: 0, yMax: 100, series: [{ n: "Rubros arriba de 3%", d: cut(s), c: 1 }] };
+    const pw = pesosRubros(rs), mS = new Map(), mW = new Map();
+    for (const r of rs) for (const [t, v] of r.a3) {
+      const e = mS.get(t) || [0, 0]; e[0] += v > 3 ? 1 : 0; e[1]++; mS.set(t, e);
+      const w = pw ? pesoEn(pw.get(r.n), t) : null; if (w != null) { const f = mW.get(t) || [0, 0]; f[0] += v > 3 ? w : 0; f[1] += w; mW.set(t, f); }
+    }
+    const simple = roll([...mS].sort((a, b) => a[0] - b[0]).map(([t, [a, n]]) => [t, a / n * 100]), 3);
+    const pond = mW.size ? roll([...mW].sort((a, b) => a[0] - b[0]).map(([t, [a, n]]) => [t, a / n * 100]), 3) : null;
+    const base = pond || simple, p = promEntre(base, 2015, 2019), mx = maxEntre(base, 2021, 2023);
+    const refs = []; if (p != null) refs.push({ y: p, l: `Promedio 2015-19: ${nf(p, 0)}%` }); if (mx) refs.push({ y: mx[1], l: `Máximo ${anio(mx[0])}: ${nf(mx[1], 0)}%` });
+    const ss = pond ? [{ n: "Ponderada por gasto", d: cut(pond), c: 1, w: 2.8 }, { n: "Cada rubro pesa igual", d: cut(simple), c: "gris", w: 1.4 }] : [{ n: "Rubros arriba de 3%", d: cut(simple), c: 1, w: 2.8 }];
+    return { titulo: (pond ? `En ${fechaDe(pond)}, rubros que pesan ${nf(last(pond)[1], 0)}% del core corren arriba de 3% anual (${nf(last(simple)[1], 0)}% de los rubros)` : `${nf(last(simple)[1], 0)}% de los rubros del core corren arriba de 3% anual en ${fechaDe(simple)}`)
+        + (p != null ? `; promedio 2015-19: ${nf(p, 0)}%` : "") + (mx ? `; máximo ${anio(mx[0])}: ${nf(mx[1], 0)}%` : ""),
+      sub: "Parte del core PCE con inflación anualizada a 3 meses mayor a 3%. Promedio móvil de 3 meses.", fuenteTxt: "BEA, tablas NIPA 2.8.4 y 2.8.5",
+      dec: 0, yMin: 0, yMax: 100, series: ss, refs };
   } });
-def("serviciosBienes", { slug: "servicios-y-bienes", nombre: "Inflación de servicios, bienes y supercore", sin: ["supercore", "servicios", "bienes"], ops: [VISTA_M],
-  calc: "Índices de precios PCE de servicios, de bienes y de servicios sin energía ni vivienda (supercore), BEA.",
-  ks: ["pce_services", "pce_goods", "pce_supercore"],
-  f: o => {
-    const s = S("pce_services"), g = S("pce_goods"), sc = S("pce_supercore"); if (!s || !g) return null;
-    const lista = [["Servicios", s, 0], ["Bienes", g, 1]];
-    if (sc) lista.push(["Supercore", sc, 2]);
-    const vs = vista(s, o.vista), vg = vista(g, o.vista);
-    return { titulo: `Servicios en ${nf(last(vs)[1], decV(o))}% y bienes en ${nf(last(vg)[1], decV(o))}% ${VT[o.vista]}`,
-      sub: "La inflación persistente vive en servicios. El supercore (servicios sin energía ni vivienda) es la medida que sigue la Fed.", dec: decV(o),
-      series: seriesVista(lista, o), refs: [{ y: 0 }] };
+
+// Bienes core del PCE: rubros de bienes del core ponderados por su gasto de un año antes (aproximación al agregado de BEA)
+const BIENES_CORE = ["Autos y repuestos", "Muebles y equipamiento", "Recreación (bienes)", "Otros durables", "Indumentaria y calzado", "Otros no durables"];
+function bienesCorePce() {
+  const xs = BIENES_CORE.map(n => ({ y: new Map(yoy(S("cat:" + n)) || []), w: new Map(S("peso:" + n) || []) })); if (xs.some(x => !x.y.size || !x.w.size)) return null;
+  const ts = [...xs[0].y.keys()].filter(t => xs.every(x => x.y.has(t)));
+  const out = [];
+  for (const t of ts) { const d = new Date(t), t12 = Date.UTC(d.getUTCFullYear() - 1, d.getUTCMonth(), 1); const ws = xs.map(x => x.w.get(t12)); if (ws.some(w => w == null)) continue;
+    const tot = ws.reduce((s, w) => s + w, 0); out.push([t, xs.reduce((s, x, i) => s + ws[i] / tot * x.y.get(t), 0)]); }
+  return out.length ? out : null;
+}
+def("serviciosBienes", { slug: "servicios-y-bienes", nombre: "Inflación de servicios, supercore y bienes core", sin: ["supercore", "servicios", "bienes", "bienes core"],
+  calc: "Índices de precios PCE de servicios y de servicios sin energía ni vivienda (supercore), BEA, variación interanual. Bienes core: los 6 rubros de bienes del PCE sin alimentos ni energía, ponderados por su gasto de un año antes (aproximación al agregado de BEA); si faltan los pesos, CPI de bienes sin alimentos ni energía (BLS). Entre paréntesis, el promedio 2015-19.",
+  ks: ["pce_services", "pce_supercore", "cpi_core_goods"],
+  f: () => {
+    const s = yoy(S("pce_services")), sc = yoy(S("pce_supercore")), bp = bienesCorePce(), g = bp || yoy(S("cpi_core_goods")); if (!s || !g) return null;
+    const pr = a => promEntre(a, 2015, 2019), nb = bp ? "Bienes core (PCE)" : "Bienes core (CPI)";
+    const ss = [{ n: `Servicios (2015-19: ${nf(pr(s))}%)`, d: cut(s), c: 0, w: 2.4 }];
+    if (sc) ss.push({ n: `Supercore (2015-19: ${nf(pr(sc))}%)`, d: cut(sc), c: 2, w: 2.4 });
+    ss.push({ n: `${nb} (2015-19: ${nf(pr(g))}%)`, d: cut(g), c: 1, w: 2.4 });
+    return { titulo: `Interanual en ${fechaDe(s)}: servicios ${nf(last(s)[1])}% (2015-19: ${nf(pr(s))}%)` + (sc ? `, supercore ${nf(last(sc)[1])}% (${nf(pr(sc))}%)` : "") + `, bienes core ${nf(last(g)[1])}% (${nf(pr(g))}%)`,
+      sub: "Índices PCE. Supercore: servicios sin energía ni vivienda. Bienes core: sin alimentos ni energía" + (bp ? "." : ", medidos con el CPI."), dec: 1, series: ss, refs: [{ y: 0 }] };
   } });
-def("componentes", { slug: "alimentos-vs-core", nombre: "Alimentos vs core", sin: ["alimentos", "comida"], ops: [VISTA_M],
-  calc: "Índices de precios PCE de alimentos y bebidas para consumo en el hogar, y core (BEA).",
-  ks: ["pce_food", "pce_core"],
-  f: o => {
-    const f = S("pce_food"), c = S("pce_core"); if (!f || !c) return null;
-    const vf = vista(f, o.vista), vc = vista(c, o.vista);
-    return { titulo: `Alimentos ${sg(last(vf)[1], decV(o))}% y core ${sg(last(vc)[1], decV(o))}% ${VT[o.vista]}`,
-      sub: "Alimentos contra el núcleo. La energía, que se mueve en otra escala, va aparte.", dec: decV(o),
-      series: seriesVista([["Core", c, 0, { w: 2.8 }], ["Alimentos", f, 3]], o), refs: [{ y: 0 }] };
+
+def("ppi", { slug: "ppi", nombre: "Precios al productor vs al consumidor", sin: ["ppi", "mayoristas", "productor", "cañería"],
+  calc: "Índice de precios al productor para la demanda final (BLS), general y sin alimentos ni energía, contra el CPI sin alimentos ni energía, variación interanual. Barras: PPI core menos CPI core. El BLS no desestacionaliza el PPI core, por eso sólo se muestra interanual. La serie arranca en 2010. Desde entonces, la correlación del PPI core con el CPI core es 0,82 en el mismo mes y 0,88 con el CPI core de 3 a 6 meses después.",
+  ks: ["ppi_fd", "ppi_core", "cpi_core"],
+  f: () => {
+    const a = yoy(S("ppi_fd")), b = yoy(S("ppi_core")), c = yoy(S("cpi_core")); if (!a) return null;
+    const ss = [], g = b && c ? join(b, c, (x, y) => x - y) : null;
+    if (g) ss.push({ n: "PPI core − CPI core (pp)", d: cut(g), t: "bar", c: "gris", suave: true });
+    if (b) ss.push({ n: "PPI sin alimentos ni energía", d: cut(b), c: 0, w: 2.8 });
+    if (c) ss.push({ n: "CPI sin alimentos ni energía", d: cut(c), c: 1, w: 1.8 });
+    ss.push({ n: "PPI demanda final", d: cut(a), c: "gris", w: 1.4, punteada: true });
+    return { titulo: `Interanual en ${fechaDe(a)}: ` + (b && c ? `PPI core ${nf(last(b)[1])}% y CPI core ${nf(last(c)[1])}% (brecha ${sg(last(g)[1])} pp); ` : "") + `PPI general ${nf(last(a)[1])}%`,
+      sub: "Precios al productor (BLS) contra precios al consumidor. Desde 2010, el PPI core se correlaciona más con el CPI core de 3 a 6 meses después (0,88) que con el del mismo mes (0,82).",
+      dec: 1, series: ss, refs: [{ y: 0 }] };
   } });
+
+def("bienesCore", { slug: "bienes-core-y-aranceles", nombre: "Bienes core, precios de importación y arancel efectivo", sin: ["aranceles", "tariffs", "bienes core", "importación", "core goods", "traslado"],
+  calc: "CPI de bienes sin alimentos ni energía (BLS) y precios de importación sin combustibles (BLS), variación interanual; el precio de importación se mide sin el arancel y no está desestacionalizado. Eje derecho: tasa arancelaria efectiva, recaudación de aduana sobre importaciones de bienes (BEA, trimestral).",
+  ks: ["cpi_core_goods", "import_sin_comb", "import_prices", "customs", "imp_goods"],
+  f: () => {
+    const g = yoy(S("cpi_core_goods")); if (!g) return null;
+    const sc = !!S("import_sin_comb"), i = yoy(S("import_sin_comb") || S("import_prices"));
+    const t = join(S("customs"), S("imp_goods"), (a, b) => a / b * 100);
+    const ss = [{ n: "CPI bienes core", d: cut(g), c: 1, w: 2.8 }];
+    if (i) ss.push({ n: sc ? "Importados sin combustibles (sin arancel)" : "Importados, todos (sin arancel)", d: cut(i), c: 0, w: 1.8 });
+    if (t) ss.push({ n: "Arancel efectivo (eje derecho)", d: cut(t), c: 3, w: 1.8, der: true, u: "%" });
+    return { titulo: `Interanual en ${fechaDe(g)}: CPI bienes core ${nf(last(g)[1])}%` + (i ? `, importados ${sc ? "sin combustibles" : "con combustibles"} (antes del arancel) ${nf(last(i)[1])}%` : "") + (t ? `; arancel efectivo ${nf(last(t)[1])}% (${fechaDe(t, "Q")})` : ""),
+      sub: "Precios al consumidor de bienes sin alimentos ni energía, precios de importación sin arancel" + (sc ? " ni combustibles" : "") + ", y recaudación de aduana sobre importaciones de bienes (eje derecho).",
+      dec: 1, series: ss, refs: [{ y: 0 }] };
+  } });
+
+def("cpiPce", { slug: "cpi-vs-pce", nombre: "CPI core vs PCE core", sin: ["cpi", "ipc", "inflación minorista", "brecha"],
+  calc: "CPI sin alimentos ni energía (BLS) y PCE core (BEA), variación interanual. Barras: CPI core menos PCE core, en puntos; la referencia es su promedio 2000-19. Ponderan distinto: el CPI pesa más la vivienda; el PCE, salud y servicios financieros. La Fed apunta al PCE; el CPI es el dato del día de mercado y el que indexa los bonos TIPS.",
+  ks: ["cpi_core", "pce_core"],
+  f: () => {
+    const a = yoy(S("cpi_core")), b = yoy(S("pce_core")); if (!a || !b) return null;
+    const g = join(a, b, (x, y) => x - y), p = promEntre(g, 2000, 2019), v = last(g)[1];
+    let n = 0; for (let i = g.length - 1; i >= 0 && Math.sign(g[i][1]) === Math.sign(v); i--) n++;
+    const racha = n >= 3 ? `; el ${v < 0 ? "PCE" : "CPI"} corre arriba ${n >= 24 ? `desde ${fm(g[g.length - n][0])}` : `hace ${n} meses`}` : "";
+    return { titulo: `Interanual en ${fechaDe(a)}: CPI core ${nf(last(a)[1])}% y PCE core ${nf(last(b)[1])}%; brecha ${sg(v, 2)} pp (promedio 2000-19: ${sg(p, 2)})` + racha,
+      sub: "CPI (BLS) menos PCE (BEA), ambos sin alimentos ni energía. El CPI pesa más la vivienda; el PCE, salud y servicios financieros.", dec: 1,
+      series: [{ n: "CPI core − PCE core (pp)", d: cut(g), t: "bar", c: "gris", suave: true, dec: 2 }, { n: "PCE core", d: cut(b), c: 0, w: 2.4 }, { n: "CPI core", d: cut(a), c: 1, w: 2 }],
+      refs: [{ y: 0 }].concat(p != null ? [{ y: p, l: `Brecha promedio 2000-19: ${sg(p, 2)} pp` }] : []) };
+  } });
+
+def("vivienda", { slug: "cpi-vivienda", nombre: "CPI vivienda y core sin vivienda", sin: ["shelter", "alquileres", "vivienda", "oer", "supercore"],
+  calc: "Componente de vivienda del CPI (alquileres y alquiler equivalente de los propietarios, BLS), interanual y anualizado a 3 meses, y CPI sin alimentos, vivienda ni energía (BLS), interanual. La vivienda es más del 40% del CPI core. La referencia es el promedio 2015-19 de la vivienda.",
+  ks: ["cpi_shelter", "cpi_sin_vivienda"],
+  f: () => {
+    const v = S("cpi_shelter"); if (!v) return null;
+    const y = yoy(v), m3 = ann(v, 3), sv = yoy(S("cpi_sin_vivienda")), p = promEntre(y, 2015, 2019);
+    const ss = [{ n: "Vivienda, interanual", d: cut(y), c: 1, w: 2.8 }, { n: "Vivienda, 3 meses anualizado", d: cut(m3), c: 1, fina: true }];
+    if (sv) ss.push({ n: "CPI core sin vivienda", d: cut(sv), c: 0, w: 2 });
+    return { titulo: `CPI vivienda ${nf(last(y)[1])}% interanual y ${nf(last(m3)[1])}% anualizado a 3 meses en ${fechaDe(y)} (promedio 2015-19: ${nf(p)}%)` + (sv ? `; CPI core sin vivienda ${nf(last(sv)[1])}%` : ""),
+      sub: "Alquileres y alquiler equivalente de los propietarios. La vivienda es más del 40% del CPI core; la otra línea es el core sin ella.", dec: 1,
+      series: ss, refs: p != null ? [{ y: p, l: `Vivienda, promedio 2015-19: ${nf(p)}%` }] : [] };
+  } });
+
+// Del core al general: aporte de core, alimentos y energía al PCE general (peso de un año antes × variación interanual)
+def("componentes", { slug: "del-core-al-general", nombre: "Del core al general: aporte de alimentos y energía", sin: ["alimentos", "comida", "energía", "nafta", "combustibles", "general vs core"],
+  calc: "Aporte de cada parte al PCE general interanual, en puntos: su gasto nominal un año antes sobre el gasto total (BEA, tabla 2.8.5) por su variación de precios interanual (core, alimentos para consumo en el hogar y energía, BEA). La suma se aproxima al PCE general (línea); la diferencia es el efecto de la cadena de ponderaciones. En períodos de más de 5 años se muestra el último mes de cada trimestre.",
+  ks: ["pce_p", "pce_core", "pce_food", "pce_energy", "peso:PCE total"],
+  f: () => {
+    const h = yoy(S("pce_p")), partes = [["Core", "pce_core", "PCE core", 0], ["Alimentos", "pce_food", "Alimentos", 2], ["Energía", "pce_energy", "Energía", 1]];
+    const tot = new Map(S("peso:PCE total") || []);
+    const ps = partes.map(([n, k, pk, c]) => ({ n, c, y: new Map(yoy(S(k)) || []), w: new Map(S("peso:" + pk) || []) }));
+    if (!h || !tot.size || ps.some(p => !p.y.size || !p.w.size)) {
+      const e = yoy(S("pce_energy")), f = yoy(S("pce_food")), c = yoy(S("pce_core")); if (!e || !f || !c) return null;
+      return { titulo: `Interanual en ${fechaDe(c)}: core ${nf(last(c)[1])}%, alimentos ${nf(last(f)[1])}%, energía ${nf(last(e)[1])}%`, sub: "Índices de precios PCE (BEA).", dec: 1,
+        series: [{ n: "Core", d: cut(c), c: 0, w: 2.6 }, { n: "Alimentos", d: cut(f), c: 2 }, { n: "Energía (eje derecho)", d: cut(e), c: 1, der: true, u: "%" }], refs: [{ y: 0 }] };
+    }
+    const t12 = t => { const d = new Date(t); return Date.UTC(d.getUTCFullYear() - 1, d.getUTCMonth(), 1); };
+    const mh = new Map(h);
+    let ts = h.map(p => p[0]).filter(t => t >= ST.T0 && t <= ST.T1 && tot.has(t12(t)) && ps.every(p => p.y.has(t) && p.w.has(t12(t))));
+    if (!ts.length) return null;
+    const trim = ts.length > 60; if (trim) ts = ts.filter(t => new Date(t).getUTCMonth() % 3 === 2 || t === ts[ts.length - 1]);
+    const series = ps.map(p => ({ n: p.n, t: "bar", c: p.c, d: ts.map(t => p.w.get(t12(t)) / tot.get(t12(t)) * p.y.get(t)) }));
+    series.push({ n: "PCE general", t: "line", c: "ink", w: 2.2, d: ts.map(t => mh.get(t)) });
+    const u = ts.length - 1, v = i => series[i].d[u], yv = i => ps[i].y.get(ts[u]);
+    return { tipo: "cat", freq: "M", sinPuntos: true,
+      titulo: `PCE general ${nf(mh.get(ts[u]))}% interanual en ${fm(ts[u])}: core ${sg(v(0), 2)} pp, energía ${sg(v(2), 2)} pp, alimentos ${sg(v(1), 2)} pp; energía ${sg(yv(2))}% y alimentos ${sg(yv(1))}% interanual`,
+      sub: "Aporte de cada parte al PCE general interanual, en puntos (peso de un año antes × variación interanual)." + (trim ? " Último mes de cada trimestre." : ""),
+      unidadLinea: "%", cats: ts.map(fm), series };
+  } });
+
+def("expectativas", { slug: "expectativas-de-inflacion", nombre: "Expectativas de inflación", sin: ["breakeven", "5y5y", "michigan", "anclaje", "expectativas"],
+  calc: "Inflación esperada implícita en los bonos del Tesoro indexados al CPI (Fed de St. Louis, diaria): 5 años dentro de 5 años, breakeven a 5 y a 10 años. Eje derecho: inflación esperada a 1 año por los hogares (Universidad de Michigan, mensual). Como los bonos ajustan por CPI y la meta de la Fed es de PCE, la referencia es 2% más la brecha promedio CPI − PCE core de 2000-19.",
+  ks: ["infl_exp_5y5y", "breakeven5", "breakeven10", "infl_exp_1y"],
+  f: () => {
+    const f = SD("infl_exp_5y5y"), b5 = SD("breakeven5"), b10 = SD("breakeven10"), m = S("infl_exp_1y"); if (!f) return null;
+    const pr = a => promEntre(a, 2015, 2019), br = brechaCpiPce(), eq = br ? 2 + promEntre(br, 2000, 2019) : null;
+    const ss = [{ n: "Mercado, 5 años dentro de 5", d: cut(f), c: 0, w: 2.8, dec: 2 }];
+    if (b5) ss.push({ n: "Breakeven 5 años", d: cut(b5), c: 2, w: 1.4, dec: 2 });
+    if (b10) ss.push({ n: "Breakeven 10 años", d: cut(b10), c: 3, w: 1.4, dec: 2 });
+    if (m) ss.push({ n: "Hogares, 1 año (eje derecho)", d: cut(m), c: 1, w: 1.8, der: true, u: "%", dec: 1 });
+    const fS = S("infl_exp_5y5y"), b10S = S("breakeven10");
+    return { titulo: `Mercado: 5y5y ${nf(last(f)[1], 2)}% (2015-19: ${nf(pr(fS), 2)}%)` + (b5 ? `, breakeven 5 años ${nf(last(b5)[1], 2)}%` : "") + (b10 ? `, 10 años ${nf(last(b10)[1], 2)}%` : "") + (m ? `; hogares a 1 año ${nf(last(m)[1])}% (2015-19: ${nf(pr(m))}%)` : ""),
+      sub: "Inflación esperada implícita en bonos indexados al CPI (diaria) y encuesta de hogares de la Universidad de Michigan (mensual, eje derecho).",
+      dec: 2, decEje: 1, series: ss, refs: eq != null ? [{ y: eq, l: `Meta 2% PCE ≈ ${nf(eq, 2)}% en CPI` }] : [{ y: 2, l: "2%" }] };
+  } });
+
 def("energia", { slug: "energia", nombre: "Inflación de energía", sin: ["nafta", "combustibles", "petróleo", "electricidad"], ops: [VISTA_M],
   calc: "Índice de precios PCE de bienes y servicios de energía (BEA).",
   ks: ["pce_energy"],
@@ -614,37 +731,6 @@ def("energia", { slug: "energia", nombre: "Inflación de energía", sin: ["nafta
     return { titulo: `La energía ${x >= 0 ? "sube" : "baja"} ${nf(Math.abs(x), decV(o))}% ${VT[o.vista]}`,
       sub: "Precios de energía del PCE (combustibles, electricidad y gas).", dec: decV(o),
       series: seriesVista([["Energía", e, 1, { area: true }]], o), refs: [{ y: 0 }] };
-  } });
-def("cpiPce", { slug: "cpi-vs-pce", nombre: "CPI core vs PCE core", sin: ["cpi", "ipc", "inflación minorista"], ops: [VISTA_M],
-  calc: "CPI sin alimentos ni energía (BLS) y PCE core (BEA). El CPI pondera más la vivienda; la Fed apunta al PCE.",
-  ks: ["cpi_core", "pce_core"],
-  f: o => {
-    const a = S("cpi_core"), b = S("pce_core"); if (!a || !b) return null;
-    const va = vista(a, o.vista), vb = vista(b, o.vista);
-    return { titulo: `CPI core ${o.vista === "m" ? sg(last(va)[1], 2) : nf(last(va)[1])}% vs PCE core ${o.vista === "m" ? sg(last(vb)[1], 2) : nf(last(vb)[1])}% ${VT[o.vista]}`,
-      sub: "El CPI pondera más la vivienda; la Fed apunta al PCE. El CPI mensual es el dato que mira el mercado el día del release.", dec: decV(o),
-      series: seriesVista([["PCE core", b, 0, { w: 2.8 }], ["CPI core", a, 1]], o), refs: [metaRef(o)] };
-  } });
-def("vivienda", { slug: "cpi-vivienda", nombre: "CPI vivienda vs CPI core", sin: ["shelter", "alquileres", "vivienda", "oer"], ops: [VISTA_M],
-  calc: "Componente de vivienda del CPI (alquileres y alquiler equivalente de los propietarios, BLS) contra el CPI core.",
-  ks: ["cpi_shelter", "cpi_core"],
-  f: o => {
-    const v = S("cpi_shelter"), c = S("cpi_core"); if (!v || !c) return null;
-    const vv = vista(v, o.vista), vc = vista(c, o.vista);
-    return { titulo: `Vivienda ${nf(last(vv)[1], decV(o))}% vs CPI core ${nf(last(vc)[1], decV(o))}% ${VT[o.vista]}`,
-      sub: "La vivienda pesa cerca del 40% del CPI core y se mueve con un año de rezago respecto de los alquileres de mercado.", dec: decV(o),
-      series: seriesVista([["CPI vivienda", v, 1, { w: 2.8 }], ["CPI core", c, 0]], o), refs: [metaRef(o)] };
-  } });
-def("expectativas", { slug: "expectativas-de-inflacion", nombre: "Expectativas de inflación", sin: ["breakeven", "5y5y", "michigan", "anclaje"],
-  calc: "Inflación esperada a 1 año por los hogares (U. de Michigan), 5 años dentro de 5 años implícita en bonos (Fed de St. Louis) y breakeven a 10 años.",
-  ks: ["infl_exp_1y", "infl_exp_5y5y", "breakeven10"],
-  f: () => {
-    const m = S("infl_exp_1y"), f = SD("infl_exp_5y5y"), b = SD("breakeven10"); if (!m || !f) return null;
-    const ss = [{ n: "Mercado, 5 años dentro de 5", d: cut(f), c: 0, w: 2.8, dec: 2 }, { n: "Hogares, 1 año", d: cut(m), c: 1, dec: 1 }];
-    if (b) ss.push({ n: "Breakeven 10 años", d: cut(b), c: 2, w: 1.6, dec: 2 });
-    return { titulo: `Expectativas: hogares ${nf(last(m)[1])}% a 1 año, mercado ${nf(last(f)[1], 2)}% a largo plazo`,
-      sub: "Si las expectativas de largo plazo se mantienen cerca de 2-2,5%, la Fed considera que la inflación está anclada.",
-      dec: 2, decEje: 1, series: ss, refs: [{ y: 2, l: "Meta Fed 2%" }] };
   } });
 
 // ═════════════════════════ Empleo ═════════════════════════
@@ -1232,7 +1318,7 @@ export const BLOQUES = {
   precios: [["¿Dónde está la inflación y hacia dónde va?", [["pce"], ["momentum"], ["subyacente", "ancha"]]],
     ["¿Es amplia o concentrada?", [["heat", "ancha alta"], ["difusion"], ["serviciosBienes"]]],
     ["¿Qué viene por la cañería?", [["preciosPagados"], ["ppi"], ["bienesCore", "ancha"]]],
-    ["Componentes y otras medidas", [["cpiPce"], ["vivienda"], ["componentes"], ["energia"], ["expectativas", "ancha"]]]],
+    ["Componentes y otras medidas", [["cpiPce"], ["vivienda"], ["componentes"], ["expectativas"]]]],
   empleo: [["¿Cuánto empleo se crea y dónde?", [["nominas", "ancha"], ["composicion"], ["desempleo"]]],
     ["¿Qué tan ajustado está el mercado?", [["sahm"], ["tension"], ["rotacion"], ["epop"]]],
     ["¿Los salarios son compatibles con 2% de inflación?", [["salarioReal"], ["eci"]]],

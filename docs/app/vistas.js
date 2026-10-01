@@ -301,6 +301,7 @@ const TRANSF = [["nivel", "Nivel"], ["yoy", "Variación interanual"], ["ann3", "
 let EXPLORA = [], OPERA = { op: "", a: 0, b: 1 };
 function grupoSerie(k) {
   if (k.startsWith("cat:")) return "Precios: rubros del core";
+  if (k.startsWith("peso:")) return "Precios: gasto por rubro";
   const g = [["fiscal", /^(deficit|interest|debt_gdp|debt_public|customs|imp_goods|fed_receipts|fed_expend)/],
     ["actividad", /^(gdp|gdi|c_|profits|inv_|indpro|core_orders|housing|permits|final_sales|tcu|productivity|ulc|philly|empire)/],
     ["consumidor", /^(dpi|pce_real|saving|pce_dur|pce_ndur|pce_serv$|comp|transfers|sentiment|retail|consumer_credit|delinq|autos|net_worth|debt_service)/],
@@ -509,7 +510,7 @@ export function vistaMetodologia(main, sub) {
     doc.innerHTML = `<h2>Actualizaciones</h2><p>El monitor se actualiza de lunes a viernes a las 10:10, 12:10 y 18:10 de Buenos Aires (13:10, 15:10 y 21:10 UTC). Cada corrida baja todas las fuentes, valida cada serie contra su versión anterior y, si algo falla, conserva la última versión buena. Se registran las corridas que cambiaron algún dato.</p>
       ${cs.length ? `<div class="tabla-wrap"><table class="datos"><thead><tr><th>Corrida</th><th>Datos nuevos</th><th>Revisados</th><th>Problemas</th></tr></thead><tbody>${cs.map(c => {
         const h = horaBA(c.ts), prob = Object.keys({ ...c.fallas, ...c.respaldo });
-        return `<tr><td>${fd(h.dia)} ${h.txt}</td><td style="white-space:normal">${c.nuevos.map(k => esc(meta(k)?.n || k)).join(", ") || "–"}</td><td style="white-space:normal">${c.revisados.filter(k => !k.startsWith("cat:")).map(k => esc(meta(k)?.n || k)).join(", ") || "–"}</td><td style="white-space:normal">${prob.length ? `<span class="punto alerta"></span>${prob.map(esc).join(", ")}` : "Ninguno"}</td></tr>`;
+        return `<tr><td>${fd(h.dia)} ${h.txt}</td><td style="white-space:normal">${c.nuevos.map(k => esc(meta(k)?.n || k)).join(", ") || "–"}</td><td style="white-space:normal">${c.revisados.filter(k => !k.startsWith("cat:") && !k.startsWith("peso:")).map(k => esc(meta(k)?.n || k)).join(", ") || "–"}</td><td style="white-space:normal">${prob.length ? `<span class="punto alerta"></span>${prob.map(esc).join(", ")}` : "Ninguno"}</td></tr>`;
       }).join("")}</tbody></table></div>` : `<p class="nota">El registro empieza con la primera actualización de la versión 4.</p>`}
       <h3>Avisos recientes</h3>${(ST.DATA.avisos || []).length ? `<ul>${ST.DATA.avisos.slice().reverse().map(a => `<li>${fd(horaBA(a.det).dia)}: ${esc(a.texto)}</li>`).join("")}</ul>` : "<p>Sin avisos en los últimos 7 días.</p>"}`;
   } else if (actual === "glosario") {

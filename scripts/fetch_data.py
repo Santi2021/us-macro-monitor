@@ -129,6 +129,7 @@ FRED = {
     "cpi_median":      ("MEDCPIM094SFRBCLE", "CPI mediana", "índice", "M", "Fed de Cleveland"),
     "pce_trim":        ("PCETRIM12M159SFRBDAL", "PCE media recortada, interanual", "%", "M", "Fed de Dallas"),
     "import_prices":   ("IR", "Precios de importación (sin desestacionalizar)", "índice 2000=100", "M", "BLS"),
+    "import_sin_comb": ("IREXFUELS", "Precios de importación sin combustibles (sin desestacionalizar)", "índice", "M", "BLS"),
     "export_prices":   ("IQ", "Precios de exportación (sin desestacionalizar)", "índice 2000=100", "M", "BLS"),
     "infl_exp_1y":     ("MICH", "Inflación esperada a 1 año (encuesta)", "%", "M", "U. de Michigan"),
     "infl_exp_5y5y":   ("T5YIFR", "Inflación esperada 5 años dentro de 5 (mercado)", "%", "M", "Fed de St. Louis"),
@@ -147,6 +148,7 @@ FRED = {
     "ust30":           ("DGS30", "Treasury 30 años", "%", "M", "Tesoro"),
     "tips10":          ("DFII10", "TIPS 10 años (tasa real)", "%", "M", "Tesoro"),
     "breakeven10":     ("T10YIE", "Breakeven 10 años", "%", "M", "Fed de St. Louis"),
+    "breakeven5":      ("T5YIE", "Breakeven 5 años", "%", "M", "Fed de St. Louis"),
     "term_premium":    ("THREEFYTP10", "Prima por plazo 10 años (Kim-Wright)", "%", "M", "Fed"),
     "spread_10y3m":    ("T10Y3M", "Treasury 10 años menos letra 3 meses", "%", "M", "Fed de St. Louis"),
     "mortgage30":      ("MORTGAGE30US", "Tasa hipotecaria 30 años", "%", "M", "Freddie Mac"),
@@ -186,12 +188,12 @@ FRED = {
 # Series cuyo promedio mensual no tiene sentido (flujos ya mensuales)
 SIN_PROMEDIO = {"deficit"}
 # Series de mercado: cambian todos los días, no cuentan como "novedad" de un release
-ALTA_FRECUENCIA = {"fed_obj", "fed_obj_sup", "fed_funds", "ust2", "ust10", "ust30", "tips10", "breakeven10", "term_premium",
+ALTA_FRECUENCIA = {"fed_obj", "fed_obj_sup", "fed_funds", "ust2", "ust10", "ust30", "tips10", "breakeven10", "breakeven5", "term_premium",
                    "mortgage30", "dollar", "infl_exp_5y5y", "spread_10y3m", "gdpnow", "nfci", "nfci_credit",
                    "baa_spread", "hy_oas", "hy_bb", "hy_ccc", "fed_assets", "reserves"}
 # Versión diaria (o semanal, tal como la publica la fuente) de las series de mercado, en docs/diarios.json.
 # La web la usa cuando el período elegido es corto; para períodos largos usa el promedio mensual.
-DIARIAS = ["fed_obj", "fed_obj_sup", "fed_funds", "ust2", "ust10", "ust30", "tips10", "breakeven10", "spread_10y3m", "term_premium", "infl_exp_5y5y",
+DIARIAS = ["fed_obj", "fed_obj_sup", "fed_funds", "ust2", "ust10", "ust30", "tips10", "breakeven10", "breakeven5", "spread_10y3m", "term_premium", "infl_exp_5y5y",
            "baa_spread", "hy_oas", "hy_bb", "hy_ccc", "dollar", "mortgage30", "nfci", "nfci_credit", "fed_assets", "reserves"]
 DESDE_DIARIO = "2000-01-01"
 # Series escalonadas (la tasa objetivo): se guardan sólo los días en que cambian, desde 1982
@@ -221,6 +223,7 @@ BLS = {
     "cpi_core":     ("CUSR0000SA0L1E", "CPILFESL", "CPI core", "índice"),
     "cpi_shelter":  ("CUSR0000SAH1", "CUSR0000SAH1", "CPI vivienda", "índice"),
     "cpi_core_goods": ("CUSR0000SACL1E", "CUSR0000SACL1E", "CPI bienes sin alimentos ni energía", "índice"),
+    "cpi_sin_vivienda": ("CUSR0000SA0L12E", "CUSR0000SA0L12E", "CPI sin alimentos, vivienda ni energía", "índice"),
     "u6":           ("LNS13327709", "U6RATE", "Desempleo ampliado (U-6)", "%"),
     "hires":        ("JTS000000000000000HIR", "JTSHIR", "Tasa de contrataciones (JOLTS)", "%"),
     "layoffs":      ("JTS000000000000000LDR", "JTSLDR", "Tasa de despidos (JOLTS)", "%"),
@@ -245,6 +248,15 @@ BEA_CAT = {
     "Servicios financieros":     "Financial services and insurance",
     "Otros servicios":           "Other services",
 }
+
+
+# BEA: gasto nominal por rubro (tabla 2.8.5), para los pesos del core y los aportes al PCE general
+BEA_PESOS = dict(BEA_CAT, **{
+    "PCE total":            "Personal consumption expenditures",
+    "PCE core":             "PCE excluding food and energy",
+    "Alimentos":            "Food and beverages purchased for off-premises consumption",
+    "Energía":              "Energy goods and services",
+})
 
 
 # -----------------------------------------------------------------------------
@@ -364,10 +376,12 @@ def bls(key_, ids):
     return {i: pd.Series(d, dtype=float).sort_index() for i, d in out.items() if d}
 
 
-def bea_t20804(key_):
+def bea_t20804(key_, tabla="T20804", cats=None):
+    """Una tabla mensual de NIPA por tipo de producto (2.8.4: índices de precios; 2.8.5: gasto nominal), por rubro."""
+    cats = cats or BEA_CAT
     anios = ",".join(str(a) for a in range(DESDE_BEA, HOY.year + 1))
     j = get("https://apps.bea.gov/api/data", UserID=key_, method="GetData", datasetname="NIPA",
-            TableName="T20804", Frequency="M", Year=anios, ResultFormat="JSON")
+            TableName=tabla, Frequency="M", Year=anios, ResultFormat="JSON")
     res = j["BEAAPI"]["Results"]
     res = res[0] if isinstance(res, list) else res
     if "Error" in res:
@@ -382,13 +396,13 @@ def bea_t20804(key_):
     ancho = df.pivot_table(index="fecha", columns="linea", values="valor").sort_index()
     cols = {c.lower(): c for c in ancho.columns}
     out = {}
-    for lab, eng in BEA_CAT.items():
+    for lab, eng in cats.items():
         col = cols.get(eng.lower()) or next((cols[c] for c in cols if c.startswith(eng.lower())), None)
         if col is not None:
             out[lab] = ancho[col].dropna()
-    if len(out) < len(BEA_CAT):
-        faltan = sorted(set(BEA_CAT) - set(out))
-        raise RuntimeError(f"rubros no encontrados en T20804: {faltan}")
+    if len(out) < len(cats):
+        faltan = sorted(set(cats) - set(out))
+        raise RuntimeError(f"rubros no encontrados en {tabla}: {faltan}")
     return out
 
 
@@ -466,6 +480,12 @@ def bajar(anterior):
                 data["cat:" + lab] = empaquetar(s, lab, "índice", "M", "BEA", "T20804", "BEA", "pce_rubros", rel_pio)
         except Exception as e:
             fallas["bea_rubros"] = f"no se pudo bajar la tabla 2.8.4 de BEA ({str(e)[:80]})"; print(f"  [aviso] BEA T20804: {e}")
+        # gasto nominal por rubro (tabla 2.8.5): los pesos para ponderar los rubros y armar los aportes al PCE
+        try:
+            for lab, s in bea_t20804(bea_key, "T20805", BEA_PESOS).items():
+                data["peso:" + lab] = empaquetar(s, "Gasto: " + lab, "US$ miles de M", "M", "BEA", "T20805", "BEA", "pce_pesos", rel_pio)
+        except Exception as e:
+            fallas["bea_pesos"] = f"no se pudo bajar la tabla 2.8.5 de BEA ({str(e)[:80]})"; print(f"  [aviso] BEA T20805: {e}")
     else:
         fallas["bea_rubros"] = "falta la key de BEA"
 
@@ -497,7 +517,7 @@ def bajar(anterior):
             print(f"  [aviso] calendario {rid} {nombre}: {e}")
             fallidos.append(nombre)
             fechas = sorted({c["fecha"] for c in anterior.get("calendario", []) if c["rid"] == rid})
-        series = sorted(k for k, v in data.items() if v.get("rel") == rid and not k.startswith("cat:"))
+        series = sorted(k for k, v in data.items() if v.get("rel") == rid and not k.startswith(("cat:", "peso:")))
         if not series:
             continue
         for f in fechas:
@@ -579,11 +599,11 @@ def combinar(data, anterior, fallas):
             data[k] = viejas[k]; respaldo[k] = f"rechazada: {motivo}; se muestra la versión anterior"
         else:
             del data[k]; respaldo[k] = f"rechazada: {motivo}; sin versión anterior"
-    esperadas = set(FRED) | set(BLS) | {k for k in viejas if k.startswith("cat:")}
+    esperadas = set(FRED) | set(BLS) | {k for k in viejas if k.startswith(("cat:", "peso:"))}
     for k in sorted(esperadas - set(data)):
         if viejas.get(k):
             data[k] = viejas[k]
-            respaldo.setdefault(k, (fallas.get(k) or fallas.get("bea_rubros") or "no se pudo bajar") + "; se muestra la versión anterior")
+            respaldo.setdefault(k, (fallas.get(k) or fallas.get("bea_pesos" if k.startswith("peso:") else "bea_rubros") or "no se pudo bajar") + "; se muestra la versión anterior")
     return data, respaldo, extremos
 
 
@@ -650,7 +670,7 @@ def avisos_nuevos(anterior, revisados, respaldo):
               if (dt.datetime.now(dt.timezone.utc) - dt.datetime.strptime(a["det"], "%Y-%m-%dT%H:%MZ").replace(tzinfo=dt.timezone.utc)).days < 7]
     por_org = {}
     for k in revisados:
-        if k.startswith("cat:"):
+        if k.startswith(("cat:", "peso:")):
             continue
         por_org.setdefault(FRED.get(k, (None, None, None, None, "BLS"))[4], []).append(k)
     for org, ks in por_org.items():
