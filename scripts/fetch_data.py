@@ -683,10 +683,11 @@ def diarios(fred_key):
 
 
 def main():
-    anterior = {}
+    anterior, formato_viejo = {}, True
     try:
         with open(SALIDA, encoding="utf-8") as f:
             anterior = json.load(f)
+        formato_viejo = any(isinstance(v.get("d"), list) for v in anterior.get("series", {}).values())
         for v in anterior.get("series", {}).values():
             v["d"] = expandir(v.get("d"))
     except (FileNotFoundError, json.JSONDecodeError):
@@ -747,7 +748,8 @@ def main():
 
     sin_cambios = (anterior.get("series") == json.loads(json.dumps(data)) and anterior.get("calendario") == calendario
                    and anterior.get("curva") == curva and anterior.get("respaldo", {}) == respaldo
-                   and anterior.get("fallas", {}) == fallas and "vistos" in anterior and os.path.exists(HISTORIA))
+                   and anterior.get("fallas", {}) == fallas and "vistos" in anterior and os.path.exists(HISTORIA)
+                   and not formato_viejo)
     if sin_cambios:
         print("Sin datos nuevos.")
         return
