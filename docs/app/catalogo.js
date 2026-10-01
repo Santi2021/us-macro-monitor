@@ -1251,71 +1251,122 @@ def("capexImport", { slug: "importaciones-de-capital", nombre: "Importaciones de
   } });
 
 // ═════════════════════════ Fiscal ═════════════════════════
-export const deficitPBI = () => joinQ(roll(S("deficit"), 12, true), S("gdp_nom"), (a, b) => a / 1000 / b * 100);
+// Resultado de 12 meses sobre PBI: los meses posteriores al último PBI publicado usan ese último PBI
+export const deficitPBI = () => {
+  const d = roll(S("deficit"), 12, true), g = S("gdp_nom"); if (!d || !g) return null;
+  const r = d.map(([t, v]) => { const x = new Date(t), q = Date.UTC(x.getUTCFullYear(), Math.floor(x.getUTCMonth() / 3) * 3, 1), gg = valorEn(g, q); return gg ? [t, v / 1000 / gg[1] * 100] : null; }).filter(Boolean);
+  return r.length ? r : null;
+};
 export const interesesPBI = () => join(S("interest_fed"), S("gdp_nom"), (a, b) => a / b * 100);
-def("deficit", { slug: "deficit-fiscal", nombre: "Resultado fiscal total y primario", sin: ["déficit", "fiscal", "primario", "tesoro"],
-  calc: "Resultado del gobierno federal acumulado 12 meses (Monthly Treasury Statement) sobre PBI nominal. El primario suma los intereses pagados (BEA, trimestral) como % del PBI.",
+// Años como rangos: [2009, 2010, 2011, 2020, 2021] → "2009-11 y 2020-21"
+function rangosAnios(ys) {
+  const r = []; for (const y of [...new Set(ys)].sort()) { const u = r[r.length - 1]; if (u && y === u[1] + 1) u[1] = y; else r.push([y, y]); }
+  const t = r.map(([a, b]) => a === b ? String(a) : `${a}-${String(b).slice(2)}`);
+  return t.length > 1 ? t.slice(0, -1).join(", ") + " y " + t[t.length - 1] : t[0] || "";
+}
+
+def("deficit", { slug: "deficit-fiscal", nombre: "Resultado fiscal total y primario", sin: ["déficit", "fiscal", "primario", "tesoro"], historia: true,
+  calc: "Resultado del gobierno federal acumulado 12 meses (Monthly Treasury Statement del Tesoro) sobre PBI nominal; negativo = déficit. El primario suma los intereses pagados (BEA, cuentas nacionales, trimestral) como % del PBI: la distancia entre las dos líneas es el costo de los intereses. Referencias: promedio 2015-19 y 2007. El título cuenta los años desde 1981 con un déficit igual o mayor al actual.",
   ks: ["deficit", "gdp_nom", "interest_fed"],
   f: () => {
     const r = deficitPBI(); if (!r) return null;
     const i = interesesPBI(), prim = i ? joinQ(r, i, (a, b) => a + b) : null;
-    const v = last(r)[1];
+    const v = last(r)[1], p = promEntre(r, 2015, 2019), p07 = promEntre(r, 2007, 2007);
+    const anios = v < 0 ? r.filter(q => q[1] <= v + 1e-9 && q[0] < last(r)[0] - 300 * DIA).map(q => anio(q[0])) : [];
     const ss = [{ n: "Resultado total", d: cut(r), c: 1, w: 2.6 }];
     if (prim) ss.push({ n: "Resultado primario (sin intereses)", d: cut(prim), c: 0, w: 2 });
-    return { titulo: (v < 0 ? `Déficit fiscal de ${nf(-v)}% del PBI en 12 meses` : `Superávit fiscal de ${nf(v)}% del PBI en 12 meses`) + (prim ? `; sin intereses, ${last(prim)[1] < 0 ? "déficit" : "superávit"} de ${nf(Math.abs(last(prim)[1]))}%` : ""),
-      sub: "Negativo = déficit. La distancia entre las dos líneas es el costo de los intereses de la deuda.", banda: rangoNormal(r), bandaTexto: "Rango normal del total 2000-19",
-      series: ss, refs: [{ y: 0 }] };
-  } });
-def("ingresosGastos", { slug: "ingresos-y-gastos-federales", nombre: "Ingresos y gastos del gobierno federal / PBI", sin: ["gasto público", "recaudación", "ingresos fiscales", "gasto federal"],
-  calc: "Ingresos corrientes y gastos corrientes del gobierno federal (BEA, cuentas nacionales, tasa anual desestacionalizada) sobre PBI nominal.",
-  ks: ["fed_receipts", "fed_expend", "gdp_nom"],
-  f: () => {
-    const g = S("gdp_nom"), rp = join(S("fed_receipts"), g, (a, b) => a / b * 100), ep = join(S("fed_expend"), g, (a, b) => a / b * 100); if (!rp || !ep) return null;
-    return { freq: "Q", titulo: `El gobierno federal gasta ${nf(last(ep)[1])}% del PBI y recauda ${nf(last(rp)[1])}%`,
-      sub: "Cuentas nacionales, gasto corriente con intereses. La distancia es el déficit: muestra si viene por más gasto o menos recaudación.",
-      series: [{ n: "Gastos", d: cut(ep), c: 1, w: 2.6 }, { n: "Ingresos", d: cut(rp), c: 0, w: 2.6 }], shock: [T(2020, 3), T(2021, 6)] };
-  } });
-def("intereses", { slug: "intereses-de-la-deuda", nombre: "Intereses de la deuda / PBI", sin: ["intereses", "costo de la deuda"],
-  calc: "Intereses pagados por el gobierno federal (BEA) sobre PBI nominal.",
-  ks: ["interest_fed", "gdp_nom", "fed_receipts"],
-  f: () => {
-    const r = interesesPBI(); if (!r) return null;
-    const v = last(r)[1], max = Math.max(...r.map(p => p[1])), fmax = r.find(p => p[1] === max)[0];
-    const rec = join(S("interest_fed"), S("fed_receipts"), (a, b) => a / b * 100);
-    return { freq: "Q", titulo: `Los intereses de la deuda federal cuestan ${nf(v, 2)}% del PBI` + (rec ? ` y se llevan ${nf(last(rec)[1], 0)}% de la recaudación` : ""),
-      sub: `Intereses pagados por el gobierno federal sobre PBI nominal. Máximo de la serie: ${nf(max, 2)}% (${fq(fmax)}).`, dec: 2, series: [{ n: "Intereses / PBI", d: cut(r), c: 1 }] };
-  } });
-def("deuda", { slug: "deuda-publica", nombre: "Deuda federal en manos del público / PBI", sin: ["deuda", "debt", "deuda pública"],
-  calc: "Deuda federal en manos del público (excluye la que el Tesoro le debe a fondos del propio gobierno, como la seguridad social) sobre PBI (Tesoro y Fed de St. Louis).",
-  ks: ["debt_public", "debt_gdp"],
-  f: () => {
-    const d = S("debt_public"), t = S("debt_gdp");
-    if (!d && t) return { freq: "Q", titulo: `Deuda pública federal total en ${nf(last(t)[1], 0)}% del PBI`, sub: "Incluye la deuda que el Tesoro tiene con fondos del propio gobierno (seguridad social).", dec: 0, series: [{ n: "Deuda total / PBI", d: cut(t), c: 0 }] };
-    if (!d) return null;
-    return { freq: "Q", titulo: `La deuda federal en manos del público llega al ${nf(last(d)[1], 0)}% del PBI`,
-      sub: "Excluye la deuda que el Tesoro tiene con fondos del propio gobierno (seguridad social)." + (t ? ` Con ella, la deuda total es ${nf(last(t)[1], 0)}% del PBI.` : ""),
-      dec: 0, series: [{ n: "Deuda en manos del público / PBI", d: cut(d), c: 0 }] };
+    const refs = [{ y: 0 }]; if (p != null) refs.push({ y: p, l: `Total, promedio 2015-19: ${nf(p)}%` }); if (p07 != null) refs.push({ y: p07, l: `Total, 2007: ${nf(p07)}%` });
+    return { titulo: `${v < 0 ? "Déficit" : "Superávit"} fiscal ${nf(Math.abs(v))}% del PBI en 12 meses a ${fechaDe(r)}` + (prim ? `; primario ${nf(Math.abs(last(prim)[1]))}%${last(prim)[1] >= 0 ? " de superávit" : ""}` : "") + (p != null ? `; promedio 2015-19: ${nf(Math.abs(p))}%` : "") + (anios.length ? `; desde ${anio(r[0][0])}, déficits de ${nf(-v)}% o más sólo en ${rangosAnios(anios)}` : ""),
+      sub: "Gobierno federal: resultado acumulado en 12 meses (Monthly Treasury Statement) sobre PBI nominal; negativo = déficit. Primario: sin intereses (BEA).",
+      series: ss, refs };
   } });
 
-def("nominalTasa", { slug: "pbi-nominal-vs-tasa", nombre: "PBI nominal vs tasa a 10 años", sin: ["r vs g", "sostenibilidad de la deuda"],
-  calc: "Variación interanual del PBI nominal (BEA) contra el Treasury a 10 años promedio del trimestre.",
-  ks: ["gdp_nom", "ust10"],
+def("ingresosGastos", { slug: "ingresos-y-gastos-federales", nombre: "Ingresos y gastos del gobierno federal / PBI", sin: ["gasto público", "recaudación", "ingresos fiscales", "gasto federal", "intereses"],
+  calc: "Ingresos corrientes y gastos corrientes del gobierno federal (BEA, cuentas nacionales, tasa anual desestacionalizada) sobre PBI nominal. El gasto se muestra total y sin intereses (gasto total menos intereses pagados, BEA): la distancia entre las dos líneas de gasto son los intereses. Los cambios del título son contra el promedio de 2019.",
+  ks: ["fed_receipts", "fed_expend", "interest_fed", "gdp_nom"],
   f: () => {
-    const n = yoy(S("gdp_nom"), 4), t = toQ(S("ust10")); if (!n || !t) return null;
-    const tt = join(n, t, (a, b) => b), d = last(n)[1] - last(tt)[1];
-    return { freq: "Q", titulo: d > 0 ? `El PBI nominal crece ${nf(d)} pp por encima de la tasa a 10 años` : `La tasa a 10 años supera al PBI nominal por ${nf(-d)} pp`,
-      sub: "Si el nominal corre por encima del costo de financiamiento, la deuda se licúa como % del PBI.", fuenteTxt: "BEA y Tesoro de EE.UU. vía FRED",
-      series: [{ n: "PBI nominal, interanual", d: cut(n), c: 1 }, { n: "Treasury 10 años", d: cut(tt), c: 0 }], shock: [T(2020, 3), T(2022, 6)] };
+    const g = S("gdp_nom"), rp = join(S("fed_receipts"), g, (a, b) => a / b * 100), ep = join(S("fed_expend"), g, (a, b) => a / b * 100); if (!rp || !ep) return null;
+    const ip = interesesPBI(), sp = ip ? join(ep, ip, (a, b) => a - b) : null;
+    const y = a => promEntre(a, 2019, 2019), le = last(ep)[1], li = ip ? valorEn(ip, last(ep)[0])[1] : null;
+    const ss = [{ n: "Recaudación", d: cut(rp), c: 0, w: 2.6 }, { n: "Gasto total", d: cut(ep), c: 1, w: 1.4 }];
+    if (sp) ss.push({ n: "Gasto sin intereses", d: cut(sp), c: 1, w: 2.8 });
+    const dG = le - y(ep), dI = ip ? li - y(ip) : null;
+    return { freq: "Q", titulo: `${fq(last(ep)[0])}, % del PBI: gasto ${nf(le)} (2019: ${nf(y(ep))})` + (sp ? `, sin intereses ${nf(last(sp)[1])} (${nf(y(sp))})` : "") + `; recaudación ${nf(last(rp)[1])} (${nf(y(rp))})` + (dI != null ? `; de la suba del gasto desde 2019 (${sg(dG)} pp), ${sg(dI)} pp son intereses` : ""),
+      sub: "Ingresos y gastos corrientes del gobierno federal (BEA, cuentas nacionales) sobre PBI nominal. La distancia entre las dos líneas naranjas son los intereses.",
+      series: ss, shock: [T(2020, 3), T(2021, 6)], shockVentana: [T(2020, 3), T(2021, 6)] };
   } });
 
 def("aranceles", { slug: "aranceles", nombre: "Aranceles: tasa efectiva y recaudación", sin: ["aranceles", "tariffs", "customs", "derechos de importación", "tasa arancelaria"],
-  calc: "Derechos de importación cobrados por el gobierno federal (BEA, tasa anual) sobre importaciones de bienes (BEA, cuentas nacionales): la tasa arancelaria efectiva.",
-  ks: ["customs", "imp_goods"],
+  calc: "Tasa arancelaria efectiva: derechos de importación cobrados por el gobierno federal (BEA, tasa anual) sobre importaciones de bienes (BEA, cuentas nacionales). Es la tasa que se paga, no la anunciada: descuenta exenciones, acuerdos y cambios de proveedor. Barras (eje derecho): la recaudación de aduana, US$ miles de millones, tasa anual.",
+  ks: ["customs", "imp_goods", "gdp_nom", "fed_receipts"],
   f: () => {
     const c = S("customs"), t = join(c, S("imp_goods"), (a, b) => a / b * 100); if (!t) return null;
-    return { freq: "Q", titulo: `Tasa arancelaria efectiva de ${nf(last(t)[1])}%: los aranceles recaudan US$ ${nf(last(c)[1], 0)} mil M por año`,
-      sub: "Aranceles cobrados sobre bienes importados: la tasa que se paga, no la anunciada (descuenta exenciones y cambios de proveedor).",
-      cero: true, series: [{ n: "Tasa arancelaria efectiva", d: cut(t), c: 1, area: true }] };
+    const v = last(t)[1], mx = maxEntre(t, 2025, 2100), pre = valorEn(t, T(2024, 10));
+    const ant = t.filter(p => p[0] < T(2025) && p[1] >= v), desde = ant.length ? anio(ant[ant.length - 1][0]) : null;
+    const pg = valorEn(join(c, S("gdp_nom"), (a, b) => a / b * 100), last(t)[0]), pr = valorEn(join(c, S("fed_receipts"), (a, b) => a / b * 100), last(t)[0]);
+    return { freq: "Q", titulo: `Tasa arancelaria efectiva ${nf(v)}% en ${fq(last(t)[0])}` + (mx && mx[0] < last(t)[0] ? ` (máximo ${fq(mx[0])}: ${nf(mx[1])}%` : " (") + (pre ? `; ${fq(pre[0])}: ${nf(pre[1])}%)` : ")") + (desde ? `, la más alta desde ${desde} fuera de 2025` : "") + `; recaudación US$ ${nf(last(c)[1], 0)} mil M por año` + (pg ? `, ${nf(pg[1], 2)}% del PBI` : "") + (pr ? ` y ${nf(pr[1], 1)}% de la recaudación federal` : ""),
+      sub: "Recaudación de aduana sobre importaciones de bienes (BEA, cuentas nacionales), trimestral. Barras: recaudación, US$ miles de millones por año (eje derecho).",
+      cero: true, series: [{ n: "Recaudación de aduana (eje derecho)", d: cut(c), t: "bar", c: "gris", suave: true, der: true, u: "mil M", dec: 0 }, { n: "Tasa arancelaria efectiva", d: cut(t), c: 1, w: 2.8 }] };
+  } });
+
+def("intereses", { slug: "intereses-de-la-deuda", nombre: "Intereses de la deuda", sin: ["intereses", "costo de la deuda", "tasa implícita"], historia: true,
+  calc: "Intereses pagados por el gobierno federal (BEA, cuentas nacionales) sobre PBI nominal, eje izquierdo. Eje derecho: tasa implícita de la deuda (intereses de los últimos 4 trimestres sobre la deuda en manos del público de un año antes; aproximación que combina cuentas nacionales y datos del Tesoro) y Treasury a 10 años, promedio del trimestre. Si el 10 años está por encima de la tasa implícita, cada bono que vence se renueva a una tasa más alta que la que pagaba. Referencias: promedio 2015-19 y máximo de la serie.",
+  ks: ["interest_fed", "gdp_nom", "fed_receipts", "debt_public", "ust10"],
+  f: () => {
+    const r = interesesPBI(); if (!r) return null;
+    const v = last(r)[1], mx = r.reduce((m, p) => p[1] > m[1] ? p : m), p = promEntre(r, 2015, 2019);
+    const rec = join(S("interest_fed"), S("fed_receipts"), (a, b) => a / b * 100), r19 = rec ? promEntre(rec, 2019, 2019) : null;
+    const it = S("interest_fed"), G = new Map(S("gdp_nom") || []), D = new Map(S("debt_public") || []);
+    const imp = []; if (it) for (let k = 4; k < it.length; k++) { const t = it[k][0], t4 = it[k - 4][0]; if (D.has(t4) && G.has(t4)) imp.push([t, it.slice(k - 3, k + 1).reduce((s, q) => s + q[1], 0) / 4 / (D.get(t4) / 100 * G.get(t4)) * 100]); }
+    const u10 = toQ(S("ust10")), u10d = ultimoDato("ust10");
+    const ss = [{ n: "Intereses / PBI", d: cut(r), c: 1, w: 2.8 }];
+    if (imp.length) ss.push({ n: "Tasa implícita de la deuda (eje derecho)", d: cut(imp), c: 0, w: 2, der: true, u: "%" });
+    if (u10) ss.push({ n: "Treasury 10 años (eje derecho)", d: cut(u10), c: 0, fina: true, der: true, u: "%" });
+    const refs = []; if (p != null) refs.push({ y: p, l: `Promedio 2015-19: ${nf(p, 2)}%` }); refs.push({ y: mx[1], l: `Máximo ${anio(mx[0])}: ${nf(mx[1], 2)}%` });
+    return { freq: "Q", titulo: `Intereses ${nf(v, 2)}% del PBI en ${fq(last(r)[0])} (2015-19: ${nf(p, 1)}%; máximo ${anio(mx[0])}: ${nf(mx[1], 2)}%)` + (rec ? ` y ${nf(last(rec)[1], 1)}% de la recaudación (2019: ${nf(r19, 1)}%)` : "") + (imp.length ? `; tasa implícita de la deuda ${nf(last(imp)[1], 1)}% contra ${nf(u10d[1], 2)}% del 10 años` : ""),
+      sub: "Intereses pagados por el gobierno federal (BEA) sobre PBI. Eje derecho: intereses sobre deuda en manos del público (tasa implícita) y Treasury a 10 años.",
+      dec: 2, series: ss, refs };
+  } });
+
+def("deuda", { slug: "deuda-publica", nombre: "Deuda federal / PBI", sin: ["deuda", "debt", "deuda pública"],
+  calc: "Deuda federal en manos del público (excluye la que el Tesoro le debe a fondos del propio gobierno, como la seguridad social) y deuda total, sobre PBI (Tesoro y Fed de St. Louis), trimestral. La serie arranca en 1970: el máximo histórico de 1946 (alrededor de 106%) queda fuera. Referencias: 2007, 2019 y máximo de la serie.",
+  ks: ["debt_public", "debt_gdp"],
+  f: () => {
+    const d = S("debt_public"), t = S("debt_gdp"); if (!d && !t) return null;
+    const a = d || t, v = last(a)[1], mx = a.reduce((m, p) => p[1] > m[1] ? p : m), y07 = promEntre(a, 2007, 2007), y19 = promEntre(a, 2019, 2019);
+    const ss = []; if (d) ss.push({ n: "En manos del público", d: cut(d), c: 0, w: 2.8 }); if (t) ss.push({ n: "Total (con fondos del gobierno)", d: cut(t), c: "gris", w: 1.6 });
+    const refs = []; if (y07 != null) refs.push({ y: y07, l: `2007: ${nf(y07, 1)}%` }); if (y19 != null) refs.push({ y: y19, l: `2019: ${nf(y19, 1)}%` }); if (mx[0] < last(a)[0]) refs.push({ y: mx[1], l: `Máximo ${fq(mx[0])}: ${nf(mx[1], 1)}%` });
+    return { freq: "Q", titulo: `Deuda ${d ? "en manos del público" : "federal total"} ${nf(v, 1)}% del PBI en ${fq(last(a)[0])} (2019: ${nf(y19, 1)}%; 2007: ${nf(y07, 1)}%` + (mx[0] < last(a)[0] ? `; máximo ${fq(mx[0])}: ${nf(mx[1], 1)}%)` : "; máximo de la serie)") + (d && t ? `; total con fondos del gobierno ${nf(last(t)[1], 1)}%` : ""),
+      sub: "Deuda federal sobre PBI (Tesoro y Fed de St. Louis), trimestral. En manos del público: excluye la que el Tesoro le debe a fondos del propio gobierno.",
+      dec: 1, decEje: 0, series: ss, refs };
+  } });
+
+// Dinámica de la deuda: cambio anual de deuda/PBI = efecto tasa contra crecimiento + déficit primario + ajustes (residuo)
+def("nominalTasa", { slug: "dinamica-de-la-deuda", nombre: "¿Por qué cambia la deuda? Tasa, crecimiento y déficit", sin: ["r vs g", "sostenibilidad de la deuda", "dinámica de la deuda", "déficit primario"],
+  calc: "Identidad de la dinámica de la deuda (la que usan el FMI y la CBO), interanual por trimestre, en puntos del PBI: el cambio de la deuda en manos del público / PBI se descompone en (1) tasa contra crecimiento: (tasa implícita − crecimiento del PBI nominal) / (1 + crecimiento) × deuda / PBI de un año antes; la tasa implícita son los intereses de 4 trimestres (BEA) sobre la deuda de un año antes; (2) déficit primario de los últimos 12 meses (Tesoro, sin los intereses del BEA) sobre PBI; (3) ajustes de stock y flujo: la diferencia, que incluye movimientos de caja del Tesoro, valuación y diferencias entre fuentes. En períodos de más de 10 años se muestra un trimestre por año.",
+  ks: ["debt_public", "interest_fed", "gdp_nom", "deficit"],
+  f: () => {
+    const D = new Map(S("debt_public") || []), G = S("gdp_nom"), it = S("interest_fed"), def12 = roll(S("deficit"), 12, true); if (!D.size || !G || !it || !def12) return null;
+    const MG = new Map(G), MI = new Map(it), MD = new Map(def12);
+    const q4 = t => { const d = new Date(t); return Date.UTC(d.getUTCFullYear() - 1, d.getUTCMonth(), 1); };
+    const finTrim = t => { const d = new Date(t); return Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 2, 1); };
+    const prom4 = (m, t) => { let s = 0; for (let k = 0; k < 4; k++) { const d = new Date(t); const u = Date.UTC(d.getUTCFullYear(), d.getUTCMonth() - 3 * k, 1); if (!m.has(u)) return null; s += m.get(u); } return s / 4; };
+    let ts = [...D.keys()].filter(t => D.has(q4(t)) && MG.has(q4(t)) && prom4(MG, t) && prom4(MI, t) != null && prom4(MG, q4(t)) && MD.has(finTrim(t)));
+    ts = ts.filter(t => t >= ST.T0 && t <= ST.T1); if (!ts.length) return null;
+    if (ts.length > 40) ts = ts.filter(t => new Date(t).getUTCMonth() === new Date(ts[ts.length - 1]).getUTCMonth());
+    const fila = t => {
+      const g = (prom4(MG, t) / prom4(MG, q4(t)) - 1), d0 = D.get(q4(t)), r = prom4(MI, t) / (d0 / 100 * MG.get(q4(t)));
+      const rg = (r - g) / (1 + g) * d0, intPBI = prom4(MI, t) / prom4(MG, t) * 100, totPBI = MD.get(finTrim(t)) / 1000 / prom4(MG, t) * 100;
+      const prim = -(totPBI + intPBI), cambio = D.get(t) - d0;
+      return { rg, prim, aj: cambio - rg - prim, cambio, r: r * 100, g: g * 100 };
+    };
+    const fs = ts.map(fila), u = fs[fs.length - 1];
+    const series = [{ n: "Tasa contra crecimiento", t: "bar", c: 0, d: fs.map(x => x.rg) }, { n: "Déficit primario", t: "bar", c: 1, d: fs.map(x => x.prim) }, { n: "Ajustes de stock y flujo", t: "bar", c: "gris", d: fs.map(x => x.aj) },
+      { n: "Cambio de la deuda / PBI", t: "line", c: "ink", w: 2.2, d: fs.map(x => x.cambio) }];
+    return { tipo: "cat", freq: "Q", sinPuntos: true, unidadLinea: " pp",
+      titulo: `Deuda en manos del público ${sg(u.cambio, 1)} pp del PBI en el año a ${fq(ts[ts.length - 1])}: tasa contra crecimiento ${sg(u.rg, 1)} pp (tasa implícita ${nf(u.r, 1)}% vs PBI nominal ${nf(u.g, 1)}%), déficit primario ${sg(u.prim, 1)} pp, ajustes ${sg(u.aj, 1)} pp`,
+      sub: "Identidad de la dinámica de la deuda: cambio anual de la deuda / PBI y sus componentes, en puntos del PBI." + (ts.length > 40 ? "" : ""),
+      cats: ts.map(fq), series };
   } });
 
 // ═════════════════════════ Ciclo ═════════════════════════
