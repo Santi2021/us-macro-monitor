@@ -488,7 +488,7 @@ export function vistaMetodologia(main, sub) {
     for (const [f, n] of Object.entries(FRENTES)) {
       doc.insertAdjacentHTML("beforeend", `<h3>${n}</h3>`);
       for (const c of Object.values(CAT).filter(c => c.frente === f)) {
-        const ops = (c.ops || []).map(o => o.id === "vista" ? "vista" : o.id === "real" ? "nominal o real" : "escala").join(", ");
+        const ops = (c.ops || []).map(o => o.id === "vista" ? "vista" : o.id === "real" ? "nominal o real" : o.nombre.toLowerCase()).join(", ");
         doc.insertAdjacentHTML("beforeend", `<div class="ficha-g"><b><a href="${construir(f, c.slug)}">${esc(c.nombre)}</a></b><p>${esc(c.calc || "")}</p><p style="color:var(--muted)">Series: ${c.ks.filter(k => ST.DATA.series[k]).map(k => esc(meta(k).id)).join(", ")}${ops ? ` · Selectores: ${ops}` : ""}</p></div>`);
       }
     }

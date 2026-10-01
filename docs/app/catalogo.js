@@ -280,118 +280,208 @@ def("preciosPagados", { slug: "precios-pagados-industria", nombre: "Precios que 
       sub: "Precios pagados, encuestas de Filadelfia y Nueva York. Adelanta la inflación de bienes en el PPI y el CPI.",
       unidad: "", dec: 0, banda: rangoNormal(pr), series: ss };
   } });
-def("ventas", { slug: "ventas-minoristas", nombre: "Ventas minoristas", sin: ["retail", "consumo", "comercio"], ops: [VISTA_M, REAL("cpi")],
-  calc: "Ventas minoristas y de servicios de comida (Census), desestacionalizadas. En vista real se deflactan por el CPI general.",
-  ks: ["retail", "cpi"],
-  f: o => {
-    const a = real(S("retail"), o, "cpi"); if (!a) return null;
-    const v = vista(a, o.vista), r = racha(v, fm);
-    return { titulo: `Ventas minoristas ${sg(last(v)[1], decV(o))}% ${VT[o.vista]}${o.real === "r" ? " en términos reales" : ""} en ${fechaDe(v)}${r ? ", " + r : ""}`,
-      sub: o.real === "r" ? "Ventas minoristas deflactadas por el CPI general: cuánto más (o menos) se compra, sin el efecto de los precios." : "Ventas minoristas nominales: incluyen el efecto de los precios. La vista real las deflacta por el CPI.",
-      dec: decV(o), series: seriesVista([[o.real === "r" ? "Ventas reales" : "Ventas nominales", a, 1]], o), refs: [{ y: 0 }] };
-  } });
 // ═════════════════════════ Consumidor ═════════════════════════
-const BASE19 = T(2019, 12);
-def("ingresoConsumo", { slug: "ingreso-vs-consumo", nombre: "Ingreso real vs consumo real", sin: ["ingreso disponible", "consumo real"],
-  calc: "Ingreso disponible real y consumo real (BEA), índice diciembre 2019 = 100. La base fija hace que la conclusión no dependa del período elegido.",
+// Títulos con hechos medibles: el dato y su comparación (contra su historia, una referencia fija u otra serie), sin adjetivos ni causas.
+const promEntre = (a, y0, y1) => { const x = (a || []).filter(p => p[0] >= T(y0) && p[0] < T(y1 + 1)).map(p => p[1]); return x.length ? x.reduce((s, v) => s + v, 0) / x.length : null; };
+const maxEntre = (a, y0, y1) => { const x = (a || []).filter(p => p[0] >= T(y0) && p[0] < T(y1 + 1)); return x.length ? x.reduce((m, p) => p[1] > m[1] ? p : m) : null; };
+const pctlDesde = (a, v, t0) => { const r = a.filter(p => p[0] >= t0).map(p => p[1]); return r.length ? Math.round(r.filter(x => x <= v).length / r.length * 100) : null; };
+const anio = t => new Date(t).getUTCFullYear();
+// "mínimo desde 2001" / "máximo de la serie": hasta dónde hay que ir para encontrar un valor tan extremo
+function extremoDesde(a, menor) {
+  const v = last(a)[1];
+  for (let i = a.length - 2; i >= 0; i--) if (menor ? a[i][1] < v - 1e-9 : a[i][1] > v + 1e-9) return i >= a.length - 13 ? "" : `${menor ? "mínimo" : "máximo"} desde ${anio(a[i][0])}`;
+  return `${menor ? "mínimo" : "máximo"} de la serie (desde ${anio(a[0][0])})`;
+}
+// Grupo de control: ventas sin autos, nafta, materiales de construcción ni restaurantes
+function grupoControl() {
+  let c = S("retail");
+  for (const k of ["r_autos", "r_nafta", "r_materiales", "r_restaurantes"]) { if (!S(k)) return null; c = join(c, S(k), (a, b) => a - b); }
+  return c;
+}
+const controlReal = () => { const c = grupoControl(); return c ? deflactar(c, S("cpi_core_goods")) : null; };
+const SERIE_VENTAS = { id: "serie", nombre: "Serie", valores: [["c", "Grupo de control real"], ["t", "Total nominal"]] };
+
+def("ventas", { slug: "ventas-minoristas", nombre: "Ventas minoristas: grupo de control", sin: ["retail", "consumo", "comercio", "control group", "grupo de control"], ops: [SERIE_VENTAS],
+  calc: "Grupo de control: ventas minoristas y de servicios de comida (Census) menos autos y repuestos, estaciones de servicio, materiales de construcción y restaurantes. Es la parte que BEA usa para estimar el consumo de bienes del PBI. La versión real se deflacta por el CPI de bienes sin alimentos ni energía (BLS). Línea gruesa: variación de 3 meses anualizada; punteada: interanual. La opción \"Total nominal\" muestra las ventas totales sin deflactar, el titular del día de la publicación.",
+  ks: ["retail", "r_autos", "r_nafta", "r_materiales", "r_restaurantes", "cpi_core_goods"],
+  f: o => {
+    const total = o.serie === "t" || !controlReal();
+    const x = total ? S("retail") : controlReal(); if (!x) return null;
+    const m = pct(x), m3 = ann(x, 3), a = yoy(x); if (!m || !m3 || !a) return null;
+    const nombre = total ? "Ventas minoristas totales, nominales" : "Grupo de control real";
+    return { titulo: `${nombre}: ${sg(last(m)[1])}% en ${fechaDe(m)}, ${sg(last(m3)[1])}% anualizado en 3 meses y ${sg(last(a)[1])}% interanual`,
+      sub: total ? "Ventas totales en dólares corrientes: incluyen autos, nafta, materiales, restaurantes y el efecto de los precios." : "Ventas sin autos, nafta, materiales de construcción ni restaurantes, a precios constantes.",
+      dec: 1, series: [{ n: "Anualizado a 3 meses", d: cut(m3), c: 0, w: 2.8 }, { n: "Interanual", d: cut(a), c: "gris", w: 1.4, punteada: true }], refs: [{ y: 0 }] };
+  } });
+
+// Desvío porcentual contra la tendencia log-lineal 2015-19 (último período normal antes de la pandemia)
+function desvioTendencia(a) {
+  if (!a) return null;
+  const f = a.filter(p => p[0] >= T(2015) && p[0] < T(2020)); if (f.length < 48) return null;
+  const n = f.length, xs = f.map(p => p[0] / DIA), ys = f.map(p => Math.log(p[1]));
+  const mx = xs.reduce((s, v) => s + v, 0) / n, my = ys.reduce((s, v) => s + v, 0) / n;
+  let sxy = 0, sxx = 0; for (let i = 0; i < n; i++) { sxy += (xs[i] - mx) * (ys[i] - my); sxx += (xs[i] - mx) ** 2; }
+  const b = sxy / sxx, c = my - b * mx;
+  return { d: a.filter(p => p[0] >= T(2015)).map(p => [p[0], (p[1] / Math.exp(c + b * p[0] / DIA) - 1) * 100]), ritmo: (Math.exp(b * 365.25) - 1) * 100 };
+}
+def("consumoTipo", { slug: "consumo-por-tipo", nombre: "Consumo real por tipo de gasto contra su tendencia", sin: ["durables", "servicios", "bienes", "tendencia", "prepandemia"],
+  calc: "Consumo real de servicios, bienes no durables y bienes durables (BEA), como desvío porcentual contra su propia tendencia 2015-19: una recta en logaritmos ajustada a esos cinco años (el último período sin pandemia) y extendida hasta hoy. Cada tipo se compara contra su propio ritmo porque crecen a velocidades distintas: los durables, por ejemplo, suben más rápido en términos reales porque la tecnología se abarata. En gris, el consumo total. Cero es estar en la tendencia.",
+  ks: ["pce_serv", "pce_ndur", "pce_dur", "pce_real"],
+  f: () => {
+    const ks = [["pce_serv", "Servicios", 0], ["pce_ndur", "No durables", 1], ["pce_dur", "Durables", 2]];
+    const ds = ks.map(([k, n, c]) => ({ n, c, t: desvioTendencia(S(k)) })); if (ds.some(x => !x.t)) return null;
+    const tot = desvioTendencia(S("pce_real"));
+    const ss = ds.map(x => ({ n: `${x.n} (tendencia ${nf(x.t.ritmo)}% anual)`, d: cut(x.t.d), c: x.c, w: 2.4 }));
+    if (tot) ss.push({ n: "Consumo total", d: cut(tot.d), c: "gris", w: 1.4, punteada: true });
+    const v = i => sg(last(ds[i].t.d)[1]);
+    return { titulo: `Contra su tendencia 2015-19, en ${fechaDe(ds[0].t.d)}: servicios ${v(0)}%, no durables ${v(1)}%, durables ${v(2)}%` + (tot ? `; consumo total ${sg(last(tot.d)[1])}%` : ""),
+      sub: "Desvío del consumo real contra la tendencia de cada tipo de gasto en 2015-19. Cero es estar en la tendencia.",
+      dec: 1, eventos: false, series: ss, refs: [{ y: 0, l: "Tendencia 2015-19" }] };
+  } });
+
+def("autos", { slug: "ventas-de-autos", nombre: "Ventas de vehículos y tasa de los préstamos", sin: ["autos", "vehículos", "durables", "light vehicles", "préstamos para autos"],
+  calc: "Ventas totales de vehículos livianos (BEA), millones de unidades, tasa anual desestacionalizada, y su promedio de 3 meses. La referencia es el promedio 2015-19. Eje derecho: tasa de los préstamos de bancos comerciales para auto nuevo a 60 meses (Fed, G.19), que se releva en el segundo mes de cada trimestre.",
+  ks: ["autos", "auto_tasa"],
+  f: () => {
+    const a = S("autos"); if (!a) return null;
+    const m3 = roll(a, 3), p = promEntre(a, 2015, 2019), t = S("auto_tasa");
+    const ss = [{ n: "Ventas del mes", d: cut(a), c: 0, fina: true }, { n: "Promedio 3 meses", d: cut(m3), c: 0, w: 2.6 }];
+    if (t) ss.push({ n: "Tasa a 60 meses (eje derecho)", d: cut(t), c: 1, w: 1.6, der: true, u: "%", dec: 2 });
+    return { titulo: `${nf(last(a)[1])} millones de vehículos por año en ${fechaDe(a)} (promedio 3 meses: ${nf(last(m3)[1])})` + (p ? `; promedio 2015-19: ${nf(p)}` : "") + (t ? `; tasa del préstamo a 60 meses: ${nf(last(t)[1], 2)}%` : ""),
+      sub: "Millones de unidades, tasa anual desestacionalizada. Eje derecho: tasa de los préstamos bancarios para auto nuevo a 60 meses.",
+      unidad: "M", dec: 1, series: ss, refs: p ? [{ y: p, l: `Promedio 2015-19: ${nf(p)} M` }] : [] };
+  } });
+
+def("sentimiento", { slug: "confianza-del-consumidor", nombre: "Confianza del consumidor y consumo real", sin: ["michigan", "sentiment", "umich", "confianza"], historia: true,
+  calc: "Índice de sentimiento del consumidor de la Universidad de Michigan (1966 T1 = 100), eje izquierdo, y consumo real (BEA), variación interanual, eje derecho. El percentil se calcula sobre toda la historia del índice desde 1960. El consumo real mensual existe desde 2007.",
+  ks: ["sentiment", "pce_real", "infl_exp_1y"],
+  f: () => {
+    const s = S("sentiment"), e = S("infl_exp_1y"), c = yoy(S("pce_real")); if (!s) return null;
+    const v = last(s)[1], p = pctlDesde(s, v, T(1960));
+    const ss = [{ n: "Confianza del consumidor", d: cut(s), c: 0, w: 2.4 }];
+    if (c) ss.push({ n: "Consumo real, interanual (eje derecho)", d: cut(c), c: 1, w: 1.6, der: true, u: "%" });
+    return { titulo: `Confianza del consumidor en ${nf(v)} en ${fechaDe(s)}, percentil ${p} desde 1960` + (c ? `; consumo real ${sg(last(c)[1])}% interanual en ${fechaDe(c)}` : ""),
+      sub: "Índice de la Universidad de Michigan (eje izquierdo) y consumo real, variación interanual (eje derecho)." + (e ? ` Inflación esperada a un año en la misma encuesta: ${nf(last(e)[1])}%.` : ""),
+      unidad: "", dec: 1, series: ss };
+  } });
+
+def("ingresoConsumo", { slug: "ingreso-vs-consumo", nombre: "Ingreso real vs consumo real", sin: ["ingreso disponible", "consumo real", "brecha"],
+  calc: "Ingreso disponible real y consumo real (BEA), variación interanual. Las barras son la diferencia (consumo menos ingreso, en puntos): cuando es positiva, el consumo crece más que el ingreso, y por identidad contable la diferencia se cubre con menos ahorro o con más deuda.",
   ks: ["dpi_real", "pce_real"],
   f: () => {
-    const a = indice(S("dpi_real"), BASE19), b = indice(S("pce_real"), BASE19); if (!a || !b) return null;
-    const va = last(a)[1] - 100, vb = last(b)[1] - 100;
-    return { titulo: `Desde dic-19, el ingreso real creció ${nf(va)}% y el consumo real ${nf(vb)}%`,
-      sub: "Índice diciembre 2019 = 100 (último mes normal antes de la pandemia). Si el consumo crece más que el ingreso, baja el ahorro.",
-      unidad: "", dec: 1, eventos: false, series: [{ n: "Ingreso disponible real", d: cut(a), c: 0 }, { n: "Consumo real", d: cut(b), c: 1 }], refs: [{ y: 100 }] };
+    const i = yoy(S("dpi_real")), c = yoy(S("pce_real")); if (!i || !c) return null;
+    const d = join(c, i, (a, b) => a - b), u12 = d.slice(-12), n = u12.filter(p => p[1] > 0).length;
+    return { titulo: `Consumo real ${sg(last(c)[1])}% e ingreso real ${sg(last(i)[1])}% interanual en ${fechaDe(c)}; el consumo creció más en ${n} de los últimos 12 meses`,
+      sub: "Variación interanual real. Barras: consumo menos ingreso, en puntos.",
+      dec: 1, shock: [T(2020, 3), T(2022, 6)], shockVentana: [T(2020, 3), T(2022, 6)], series: [{ n: "Consumo menos ingreso (pp)", d: cut(d), t: "bar", c: "gris", suave: true }, { n: "Consumo real", d: cut(c), c: 1, w: 2.4 }, { n: "Ingreso disponible real", d: cut(i), c: 0, w: 2.4 }],
+      refs: [{ y: 0 }] };
   } });
-def("ahorro", { slug: "tasa-de-ahorro", nombre: "Tasa de ahorro", sin: ["saving rate", "ahorro"],
-  calc: "Ahorro personal como % del ingreso disponible (BEA).",
+
+// Contribuciones al crecimiento interanual del ingreso disponible real, por fuente (identidad del ingreso personal de BEA)
+const FUENTES_INGRESO = [["Salarios", ["comp"], 0], ["Transferencias", ["transfers"], 1], ["Otros ingresos", ["pi_int", "pi_div", "pi_prop", "pi_rent"], 2], ["Impuestos y aportes", ["pi_tax", "pi_contrib"], 3, -1]];
+def("motores", { slug: "fuentes-del-ingreso", nombre: "Fuentes del ingreso real", sin: ["remuneración", "ingreso personal", "transferencias", "salarios", "dividendos", "intereses", "impuestos"],
+  calc: "Contribución de cada fuente al crecimiento interanual del ingreso disponible real, en puntos (BEA, Ingreso Personal): el cambio en 12 meses de cada componente, en dólares corrientes, sobre el ingreso disponible de un año antes. Ingreso disponible = salarios + transferencias + otros ingresos (intereses, dividendos, cuentapropistas y alquileres) − impuestos y aportes a la seguridad social. La inflación es la diferencia entre el crecimiento nominal y el real (deflactor del PCE). La línea es el ingreso disponible real. En períodos de más de 5 años se muestra el último mes de cada trimestre.",
+  ks: ["dpi_nom", "dpi_real", "comp", "transfers", "pi_int", "pi_div", "pi_prop", "pi_rent", "pi_tax", "pi_contrib"],
+  f: () => {
+    const dn = S("dpi_nom"), r = yoy(S("dpi_real")); if (!dn || !r) return null;
+    if (FUENTES_INGRESO.some(([, ks]) => ks.some(k => !S(k)))) {
+      // sin el detalle del ingreso: salarios y transferencias, interanual nominal
+      const a = yoy(S("comp")), b = yoy(S("transfers")); if (!a || !b) return null;
+      return { titulo: `Salarios ${sg(last(a)[1])}% y transferencias ${sg(last(b)[1])}% interanual en ${fechaDe(a)}`, sub: "Remuneración a asalariados y transferencias del gobierno, en dólares corrientes.",
+        dec: 1, series: [{ n: "Salarios", d: cut(a), c: 0 }, { n: "Transferencias", d: cut(b), c: 1 }], refs: [{ y: 0 }] };
+    }
+    const mdn = new Map(dn), mr = new Map(r);
+    const sumar = ks => ks.slice(1).reduce((acc, k) => join(acc, S(k), (a, b) => a + b), S(ks[0]));
+    const comps = FUENTES_INGRESO.map(([n, ks, c, sgn]) => { const s = sumar(ks), m = new Map(s); return { n, c, sgn: sgn || 1, m, s }; });
+    const t12 = t => { const d = new Date(t); return Date.UTC(d.getUTCFullYear() - 1, d.getUTCMonth(), 1); };
+    let ts = [...mr.keys()].filter(t => mdn.has(t12(t)) && comps.every(x => x.m.has(t) && x.m.has(t12(t)))).filter(t => t >= ST.T0 && t <= ST.T1);
+    if (!ts.length) return null;
+    const trim = ts.length > 60; if (trim) ts = ts.filter(t => new Date(t).getUTCMonth() % 3 === 2 || t === ts[ts.length - 1]);
+    const contrib = (x, t) => x.sgn * (x.m.get(t) - x.m.get(t12(t))) / mdn.get(t12(t)) * 100;
+    const nominal = t => (mdn.get(t) / mdn.get(t12(t)) - 1) * 100;
+    const series = comps.map(x => ({ n: x.n, t: "bar", c: x.c, d: ts.map(t => contrib(x, t)) }));
+    series.push({ n: "Inflación", t: "bar", c: "gris", d: ts.map(t => mr.get(t) - nominal(t)) });
+    series.push({ n: "Ingreso disponible real", t: "line", c: "ink", w: 2.2, etiquetas: true, d: ts.map(t => mr.get(t)) });
+    const u = ts.length - 1, val = n => series.find(s => s.n === n).d[u];
+    const otros = val("Otros ingresos");
+    return { tipo: "cat", freq: "M", recesiones: false,
+      titulo: `Ingreso disponible real ${sg(mr.get(ts[u]))}% interanual en ${fm(ts[u])}: salarios ${sg(val("Salarios"))} pp, transferencias ${sg(val("Transferencias"))} pp, otros ingresos ${sg(otros)} pp, impuestos ${sg(val("Impuestos y aportes"))} pp, inflación ${sg(val("Inflación"))} pp`,
+      sub: "Aporte de cada fuente al crecimiento interanual del ingreso disponible real, en puntos." + (trim ? " Último mes de cada trimestre." : ""),
+      unidadLinea: "%", cats: ts.map(fm), series };
+  } });
+
+def("ahorro", { slug: "tasa-de-ahorro", nombre: "Tasa de ahorro", sin: ["saving rate", "ahorro"], historia: true,
+  calc: "Ahorro personal como % del ingreso disponible (BEA). El percentil se calcula sobre toda la historia desde 1960. Referencias: promedio 2010-19 y promedio 2000-07. BEA revisa la serie todos los años (en la revisión de septiembre puede moverse más de un punto).",
   ks: ["saving_rate"],
   f: () => {
     const s = S("saving_rate"); if (!s) return null;
-    const rn = rangoNormal(s), v = last(s)[1];
-    const pos = rn ? (v < rn[0] ? "debajo de" : v > rn[1] ? "encima de" : "dentro de") : "respecto de";
-    return { titulo: `Tasa de ahorro en ${nf(v)}%: ${pos} su rango normal`, sub: "% del ingreso disponible.", banda: rn, series: [{ n: "Tasa de ahorro", d: cut(s), c: 2 }] };
+    const v = last(s)[1], p = pctlDesde(s, v, T(1960)), a = promEntre(s, 2010, 2019), b = promEntre(s, 2000, 2007);
+    const refs = []; if (a != null) refs.push({ y: a, l: `Promedio 2010-19: ${nf(a)}%` }); if (b != null) refs.push({ y: b, l: `Promedio 2000-07: ${nf(b)}%` });
+    return { titulo: `Tasa de ahorro ${nf(v)}% en ${fechaDe(s)}, percentil ${p} desde 1960` + (a != null ? `; promedio 2010-19: ${nf(a)}%` : "") + (b != null ? `; 2000-07: ${nf(b)}%` : ""),
+      sub: "Ahorro personal, % del ingreso disponible.", series: [{ n: "Tasa de ahorro", d: cut(s), c: 2, w: 2.4 }], refs };
   } });
-def("credito", { slug: "credito-al-consumo", nombre: "Crédito al consumo", sin: ["consumer credit", "tarjetas", "préstamos", "g.19"], ops: [VISTA_M, REAL("cpi")],
-  calc: "Crédito al consumo total en circulación (Fed, G.19): tarjetas, préstamos para autos y estudiantiles, sin hipotecas. En vista real se deflacta por el CPI general.",
-  ks: ["consumer_credit", "cpi"],
+
+const MEDIDA_CREDITO = { id: "medida", nombre: "Medida", valores: [["i", "% del ingreso"], ["c", "Interanual"]] };
+def("credito", { slug: "credito-al-consumo", nombre: "Crédito al consumo / ingreso", sin: ["consumer credit", "tarjetas", "préstamos", "g.19", "revolving", "deuda de los hogares"], ops: [MEDIDA_CREDITO], historia: true,
+  calc: "Crédito al consumo total en circulación (Fed, G.19: tarjetas, préstamos para autos y estudiantiles, sin hipotecas) y su parte rotativa (tarjetas), como % del ingreso disponible anual nominal (BEA). La opción \"Interanual\" muestra el crecimiento nominal del stock. Alrededor de 2010 la serie de tarjetas tiene un escalón por un cambio contable (los bancos pasaron a consolidar carteras titulizadas).",
+  ks: ["consumer_credit", "credit_revol", "dpi_nom"],
   f: o => {
-    const a = real(S("consumer_credit"), o, "cpi"); if (!a) return null;
-    const v = vista(a, o.vista);
-    return { titulo: `El crédito al consumo ${last(v)[1] >= 0 ? "crece" : "cae"} ${nf(Math.abs(last(v)[1]), decV(o))}% ${VT[o.vista]}${o.real === "r" ? " en términos reales" : ""}`,
-      sub: "Stock de crédito al consumo sin hipotecas. Si crece más que el ingreso, parte del consumo se financia con deuda.", dec: decV(o),
-      series: seriesVista([["Crédito al consumo", a, 3]], o), refs: [{ y: 0 }] };
+    const cc = S("consumer_credit"), rv = S("credit_revol"), dn = S("dpi_nom"); if (!cc || !dn) return null;
+    if (o.medida === "c") {
+      const a = yoy(cc), b = rv ? yoy(rv) : null;
+      return { titulo: `Crédito al consumo ${sg(last(a)[1])}% interanual en ${fechaDe(a)}` + (b ? `; tarjetas ${sg(last(b)[1])}%` : ""),
+        sub: "Stock de crédito al consumo sin hipotecas, variación interanual nominal.", dec: 1,
+        series: [{ n: "Crédito al consumo total", d: cut(a), c: 3, w: 2.4 }].concat(b ? [{ n: "Tarjetas (rotativo)", d: cut(b), c: 1, w: 1.6 }] : []), refs: [{ y: 0 }] };
+    }
+    const aMilM = x => x.length && x[x.length - 1][1] > 1e5 ? 1e-3 : 1;   // millones → miles de millones
+    const kc = aMilM(cc), r = join(cc, dn, (a, b) => a * kc / b * 100);
+    const kr = rv ? aMilM(rv) : 1, rr = rv ? join(rv, dn, (a, b) => a * kr / b * 100) : null;
+    const v = last(r)[1], ext = extremoDesde(r, true);
+    const d19 = valorEn(r, T(2019, 12)), d07 = valorEn(r, T(2007, 12));
+    const refs = []; if (d07) refs.push({ y: d07[1], l: `Dic-2007: ${nf(d07[1])}%` }); if (d19) refs.push({ y: d19[1], l: `Dic-2019: ${nf(d19[1])}%` });
+    return { titulo: `Crédito al consumo: ${nf(v)}% del ingreso disponible en ${fechaDe(r)}` + (ext ? `, ${ext}` : "") + (d19 ? `; dic-2019: ${nf(d19[1])}%` : "") + (rr ? `; tarjetas: ${nf(last(rr)[1])}%` : ""),
+      sub: "Stock de crédito al consumo sin hipotecas y su parte en tarjetas, % del ingreso disponible anual.", dec: 1,
+      series: [{ n: "Crédito al consumo total", d: cut(r), c: 3, w: 2.6 }].concat(rr ? [{ n: "Tarjetas (rotativo)", d: cut(rr), c: 1, w: 1.8 }] : []), refs };
   } });
-def("morosidad", { slug: "morosidad-de-tarjetas", nombre: "Morosidad de tarjetas y préstamos al consumo", sin: ["delinquency", "mora", "tarjetas", "default"],
-  calc: "Tasa de morosidad de los préstamos de tarjetas de crédito y del total de préstamos al consumo de los bancos comerciales, desestacionalizada (Fed), % de los préstamos.",
-  ks: ["delinq_cards", "delinq_consumer"],
-  f: () => {
-    const m = S("delinq_cards"); if (!m) return null;
-    const v = last(m)[1], rn = rangoNormal(m);
-    return { freq: "Q", titulo: `La morosidad de tarjetas está en ${nf(v, 2)}%: ${rn ? (v > rn[1] ? "por encima de" : v < rn[0] ? "por debajo de" : "dentro de") : "respecto de"} su rango normal`,
-      sub: "Préstamos de tarjetas con más de 30 días de atraso, % del total. Es la primera señal de que el consumidor se estira más de lo que puede pagar.",
-      dec: 2, banda: rn, bandaTexto: "Rango normal de tarjetas 2000-19",
-      series: [{ n: "Tarjetas de crédito", d: cut(m), c: 1, w: 2.6 }].concat(S("delinq_consumer") ? [{ n: "Total préstamos al consumo", d: cut(S("delinq_consumer")), c: 0 }] : []) };
-  } });
-def("consumoTipo", { slug: "consumo-por-tipo", nombre: "Consumo real por tipo de gasto", sin: ["durables", "servicios", "bienes"],
-  calc: "Consumo real de servicios, no durables y durables (BEA), índice diciembre 2019 = 100.",
-  ks: ["pce_serv", "pce_ndur", "pce_dur"],
-  f: () => {
-    const ks = [["pce_serv", "Servicios"], ["pce_ndur", "No durables"], ["pce_dur", "Durables"]];
-    const ss = ks.map(([k, n], i) => ({ n, d: cut(indice(S(k), BASE19)), c: i })); if (ss.some(s => !s.d || !s.d.length)) return null;
-    const lider = ss.reduce((a, b) => last(a.d)[1] > last(b.d)[1] ? a : b);
-    return { titulo: `${lider.n} lideran el consumo real: ${sg(last(lider.d)[1] - 100)}% desde dic-19`, sub: "Consumo real por tipo de gasto. Índice diciembre 2019 = 100.",
-      unidad: "", dec: 1, eventos: false, series: ss, refs: [{ y: 100 }] };
-  } });
-def("motores", { slug: "salarios-y-transferencias", nombre: "Salarios y transferencias", sin: ["remuneración", "ingreso personal", "transferencias"], ops: [VISTA_M, REAL("pce_p")],
-  calc: "Remuneración a asalariados y transferencias del gobierno a personas (BEA). En vista real se deflactan por el deflactor del PCE, el mismo que usa BEA para el ingreso real.",
-  ks: ["comp", "transfers", "pce_p"],
-  f: o => {
-    const c = real(S("comp"), o, "pce_p"), t = real(S("transfers"), o, "pce_p"); if (!c || !t) return null;
-    const a = vista(c, o.vista), b = vista(t, o.vista);
-    return { titulo: `Salarios ${sg(last(a)[1], decV(o))}% y transferencias ${sg(last(b)[1], decV(o))}% ${VT[o.vista]}${o.real === "r" ? ", en términos reales" : ""}`,
-      sub: "Las dos fuentes principales del ingreso personal." + (o.real === "r" ? " Deflactadas por el deflactor del PCE." : " En dólares corrientes."),
-      dec: decV(o), shock: [T(2020, 3), T(2022, 12)], shockVentana: [T(2020, 3), T(2022, 12)],
-      series: seriesVista([["Remuneración a asalariados", c, 0], ["Transferencias del gobierno", t, 1]], o), refs: [{ y: 0 }] };
-  } });
-def("autos", { slug: "ventas-de-autos", nombre: "Ventas de vehículos", sin: ["autos", "vehículos", "durables", "light vehicles"],
-  calc: "Ventas totales de vehículos (BEA), en millones de unidades, tasa anual desestacionalizada, y su promedio de 3 meses.",
-  ks: ["autos"],
-  f: () => {
-    const a = S("autos"); if (!a) return null;
-    const m3 = roll(a, 3);
-    return { titulo: `Se venden ${nf(last(a)[1])} millones de vehículos por año (promedio de 3 meses: ${nf(last(m3)[1])} millones)`,
-      sub: "Millones de unidades, tasa anual desestacionalizada. Es el gasto durable más sensible a la tasa de interés y al crédito, y el que primero se adelanta ante subas de precios.",
-      unidad: "M", dec: 1, banda: rangoNormal(a), bandaTexto: "Rango normal 2000-19", series: [{ n: "Ventas del mes", d: cut(a), c: 0, fina: true }, { n: "Promedio 3 meses", d: cut(m3), c: 0 }] };
-  } });
-def("riqueza", { slug: "patrimonio-de-los-hogares", nombre: "Patrimonio de los hogares / ingreso", sin: ["riqueza", "net worth", "efecto riqueza", "z.1", "patrimonio", "acciones"],
-  calc: "Patrimonio neto de los hogares y entidades sin fines de lucro (Fed, cuentas financieras Z.1, fin de trimestre) sobre el ingreso disponible nominal anual (BEA, promedio del trimestre).",
+
+def("riqueza", { slug: "patrimonio-de-los-hogares", nombre: "Patrimonio de los hogares / ingreso", sin: ["riqueza", "net worth", "efecto riqueza", "z.1", "patrimonio", "acciones"], historia: true,
+  calc: "Patrimonio neto de los hogares y entidades sin fines de lucro (Fed, cuentas financieras Z.1, fin de trimestre) sobre el ingreso disponible nominal anual (BEA, promedio del trimestre). Referencias: máximos de 1999-2001 y de 2005-08, y promedio 1960-99. Se publica unas 10 semanas después del cierre del trimestre.",
   ks: ["net_worth", "dpi_nom"],
   f: () => {
     const r = join(S("net_worth"), toQ(S("dpi_nom")), (a, b) => a / 1000 / b); if (!r) return null;
-    const v = last(r)[1];
-    return { freq: "Q", titulo: `El patrimonio de los hogares equivale a ${nf(v, 1)} veces su ingreso anual: percentil ${pctl(r, v)} desde 2000`,
-      sub: "Efecto riqueza: con acciones y viviendas en alza, los hogares gastan más y ahorran menos aunque el ingreso no acompañe.",
-      unidad: "veces", dec: 2, decEje: 1, banda: rangoNormal(r), series: [{ n: "Patrimonio / ingreso disponible", d: cut(r), c: 2 }] };
+    const v = last(r)[1], max = Math.max(...r.map(p => p[1]));
+    const p00 = maxEntre(r, 1999, 2001), p06 = maxEntre(r, 2005, 2008), pr = promEntre(r, 1960, 1999);
+    const pmax = r.reduce((m, p) => p[1] > m[1] ? p : m);
+    const nivel = v >= max - 0.005 ? "máximo de la serie" : `máximo de la serie: ${nf(pmax[1], 2)} en ${fq(pmax[0])}`;
+    const refs = []; if (p00) refs.push({ y: p00[1], l: `Máximo ${anio(p00[0])}: ${nf(p00[1], 2)}` }); if (p06) refs.push({ y: p06[1], l: `Máximo ${anio(p06[0])}: ${nf(p06[1], 2)}` }); if (pr != null) refs.push({ y: pr, l: `Promedio 1960-99: ${nf(pr, 2)}` });
+    return { freq: "Q", titulo: `Patrimonio de los hogares: ${nf(v, 2)} veces el ingreso anual en ${fechaDe(r, "Q")}, ${nivel}` + (p00 && p06 ? `; máximos de ${anio(p00[0])}: ${nf(p00[1], 2)} y de ${anio(p06[0])}: ${nf(p06[1], 2)}` : ""),
+      sub: "Patrimonio neto de los hogares sobre su ingreso disponible anual.",
+      unidad: "veces", dec: 2, decEje: 1, series: [{ n: "Patrimonio / ingreso disponible", d: cut(r), c: 2, w: 2.4 }], refs };
   } });
+
 def("servicioDeuda", { slug: "carga-de-la-deuda", nombre: "Carga de la deuda de los hogares", sin: ["debt service", "deuda de los hogares", "carga financiera", "cuotas"],
-  calc: "Pagos de capital e intereses de hipotecas y crédito al consumo como % del ingreso disponible (Fed).",
+  calc: "Pagos de capital e intereses de hipotecas y crédito al consumo como % del ingreso disponible (Fed). La Fed rehízo la serie con una metodología nueva que arranca en 2005. Referencias: máximo de 2006-08 y promedio 2010-19.",
   ks: ["debt_service"],
   f: () => {
     const s = S("debt_service"); if (!s) return null;
-    const v = last(s)[1], rn = rangoNormal(s);
-    return { freq: "Q", titulo: `Los hogares destinan ${nf(v)}% de su ingreso a pagar deudas: ${rn ? (v > rn[1] ? "por encima de" : v < rn[0] ? "por debajo de" : "dentro de") : "respecto de"} su rango normal`,
-      sub: "Cuotas de hipotecas y crédito al consumo, % del ingreso disponible: el margen antes de tener que recortar gasto.",
-      banda: rn, bandaTexto: "Rango normal 2005-19", series: [{ n: "Servicio de la deuda / ingreso", d: cut(s), c: 1 }] };
+    const v = last(s)[1], pk = maxEntre(s, 2006, 2008), a = promEntre(s, 2010, 2019);
+    const refs = []; if (pk) refs.push({ y: pk[1], l: `Máximo ${anio(pk[0])}: ${nf(pk[1])}%` }); if (a != null) refs.push({ y: a, l: `Promedio 2010-19: ${nf(a)}%` });
+    return { freq: "Q", titulo: `Cuotas de deuda: ${nf(v)}% del ingreso disponible en ${fechaDe(s, "Q")}` + (a != null ? `; promedio 2010-19: ${nf(a)}%` : "") + (pk ? `; máximo de ${anio(pk[0])}: ${nf(pk[1])}%` : ""),
+      sub: "Cuotas de hipotecas y crédito al consumo, % del ingreso disponible.", series: [{ n: "Servicio de la deuda / ingreso", d: cut(s), c: 1, w: 2.4 }], refs };
   } });
-def("sentimiento", { slug: "confianza-del-consumidor", nombre: "Confianza del consumidor", sin: ["michigan", "sentiment", "umich"],
-  calc: "Índice de sentimiento del consumidor de la Universidad de Michigan (1966 T1 = 100).",
-  ks: ["sentiment", "infl_exp_1y"],
+
+def("morosidad", { slug: "morosidad-de-tarjetas", nombre: "Morosidad de tarjetas y préstamos al consumo", sin: ["delinquency", "mora", "tarjetas", "default"],
+  calc: "Tasa de morosidad (más de 30 días de atraso) de los préstamos de tarjetas de crédito y del total de préstamos al consumo de los bancos comerciales, desestacionalizada (Fed), % de los préstamos, trimestral. Referencias: promedio 2015-19 y máximo de 2008-10.",
+  ks: ["delinq_cards", "delinq_consumer"],
   f: () => {
-    const s = S("sentiment"), e = S("infl_exp_1y"); if (!s) return null;
-    const v = last(s)[1];
-    return { titulo: `Confianza del consumidor en ${nf(v)}: percentil ${pctl(s, v)} desde 2000`,
-      sub: "Índice de la Universidad de Michigan." + (e ? ` Los mismos hogares esperan ${nf(last(e)[1])}% de inflación a un año.` : ""), unidad: "", dec: 1,
-      banda: rangoNormal(s), series: [{ n: "Confianza del consumidor", d: cut(s), c: 0 }] };
+    const m = S("delinq_cards"); if (!m) return null;
+    const v = last(m)[1], a = promEntre(m, 2015, 2019), pk = maxEntre(m, 2008, 2010), rec = maxEntre(m, 2022, 2100);
+    const refs = []; if (pk) refs.push({ y: pk[1], l: `Máximo ${anio(pk[0])}: ${nf(pk[1], 2)}%` }); if (a != null) refs.push({ y: a, l: `Promedio 2015-19: ${nf(a, 2)}%` });
+    const recTxt = rec && rec[0] < last(m)[0] && rec[1] > v ? `; máximo de ${anio(rec[0])}: ${nf(rec[1], 2)}%` : "";
+    const tc = S("delinq_consumer");
+    return { freq: "Q", titulo: `Morosidad de tarjetas ${nf(v, 2)}% en ${fechaDe(m, "Q")}` + recTxt + (a != null ? `; promedio 2015-19: ${nf(a, 2)}%` : "") + (pk ? `; ${anio(pk[0])}: ${nf(pk[1], 2)}%` : ""),
+      sub: "Préstamos con más de 30 días de atraso, % del total, bancos comerciales." + (tc ? ` Total de préstamos al consumo: ${nf(last(tc)[1], 2)}%.` : ""),
+      dec: 2, series: [{ n: "Tarjetas de crédito", d: cut(m), c: 1, w: 2.6 }].concat(tc ? [{ n: "Total préstamos al consumo", d: cut(tc), c: 0, w: 1.8 }] : []), refs };
   } });
 
 // ═════════════════════════ Precios ═════════════════════════
@@ -1128,7 +1218,7 @@ export const BLOQUES = {
     ["¿Dónde está el ciclo de inversión y ganancias?", [["capex"], ["ganancias"]]]],
   consumidor: [["¿Cuánto gasta?", [["ventas"], ["consumoTipo"], ["autos"], ["sentimiento"]]],
     ["¿Con qué lo paga?", [["ingresoConsumo"], ["motores"], ["ahorro"], ["credito"]]],
-    ["¿Cuánto aguanta?", [["riqueza"], ["servicioDeuda"], ["morosidad", "ancha"]]]],
+    ["¿Cuánto aguanta?", [["riqueza", "ancha"], ["servicioDeuda"], ["morosidad"]]]],
   precios: [["¿Dónde está la inflación y hacia dónde va?", [["pce"], ["momentum"], ["subyacente", "ancha"]]],
     ["¿Es amplia o concentrada?", [["heat", "ancha alta"], ["difusion"], ["serviciosBienes"]]],
     ["¿Qué viene por la cañería?", [["preciosPagados"], ["ppi"], ["bienesCore", "ancha"]]],
@@ -1189,7 +1279,7 @@ export const IND = [
   { id: "brecha", f: "actividad", n: "Brecha del producto", nota: "% del potencial (CBO)", u: "%", d: 1, q: true, ks: ["gdp_real", "gdp_pot"], g: "brecha", s: () => join(S("gdp_real"), S("gdp_pot"), (a, c) => (a / c - 1) * 100) },
   { id: "demanda", f: "actividad", n: "Demanda privada final", nota: "interanual real", u: "%", d: 1, q: true, ks: ["final_sales_priv"], g: "demandaPrivada", s: () => yoy(S("final_sales_priv"), 4) },
   { id: "indpro", f: "actividad", n: "Producción manufacturera", nota: "interanual", u: "%", d: 1, ks: ["ip_man"], g: "industria", s: () => yoy(S("ip_man") || S("indpro")) },
-  { id: "retail", f: "consumidor", n: "Ventas minoristas", nota: "interanual nominal", u: "%", d: 1, ks: ["retail"], g: "ventas", s: () => yoy(S("retail")) },
+  { id: "retail", f: "consumidor", n: "Ventas: grupo de control", nota: "real, interanual", u: "%", d: 1, ks: ["retail", "r_autos", "r_nafta", "r_materiales", "r_restaurantes", "cpi_core_goods"], g: "ventas", s: () => yoy(controlReal() || S("retail")) },
   { id: "ordenes", f: "actividad", n: "Órdenes de capital", nota: "reales, prom. 3m, interanual", u: "%", d: 1, ks: ["core_orders"], g: "ordenes", s: () => yoy(roll(deflactar(S("core_orders"), S("ppi_capital")), 3)) },
   { id: "viviendas", f: "actividad", n: "Inicios de viviendas", nota: "miles por año", u: "mil", d: 0, ks: ["housing_starts"], g: "viviendas", s: () => S("housing_starts") },
   { id: "consumo", f: "consumidor", n: "Consumo real", nota: "interanual", u: "%", d: 1, ks: ["pce_real"], g: "consumoTipo", s: () => yoy(S("pce_real")) },
