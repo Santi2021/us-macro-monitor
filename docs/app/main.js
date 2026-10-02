@@ -38,7 +38,7 @@ function cabecera() {
     <div class="herr">
       <button type="button" class="buscar-btn" id="b-buscar" aria-label="Buscar (Ctrl+K)">${ICONOS.buscar}<span>Buscar</span><kbd>Ctrl K</kbd></button>
       <div class="periodo"><div class="seg" role="group" aria-label="Período" id="rango">
-        <button type="button" data-r="3" title="Últimos 3 años">3 años</button><button type="button" data-r="5" title="Últimos 5 años">5 años</button><button type="button" data-r="10" title="Últimos 10 años">10 años</button><button type="button" data-r="25" title="Últimos 25 años">25 años</button><button type="button" data-r="todo" title="Cada serie desde su inicio (desde 1947)">Todo</button></div>
+        <button type="button" data-r="3" title="Últimos 3 años">3<span class="ua"> años</span><span class="ub">A</span></button><button type="button" data-r="5" title="Últimos 5 años">5<span class="ua"> años</span><span class="ub">A</span></button><button type="button" data-r="10" title="Últimos 10 años">10<span class="ua"> años</span><span class="ub">A</span></button><button type="button" data-r="25" title="Últimos 25 años">25<span class="ua"> años</span><span class="ub">A</span></button><button type="button" data-r="todo" title="Cada serie desde su inicio (desde 1947)">Todo</button></div>
         <button type="button" class="b-fechas" data-r="manual" aria-expanded="false" aria-pressed="false" title="Elegir un período propio">${ICONOS.calendario}<span>Fechas</span></button></div>
       <button type="button" class="icono-btn" id="b-ajustes" aria-label="Ajustes" aria-haspopup="menu">${ICONOS.ajustes}</button>
       <form class="manual" id="manual" hidden>

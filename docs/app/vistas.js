@@ -30,7 +30,7 @@ export function tile(id) {
   e.innerHTML = `<div class="lab">${esc(ind.n)}</div>
     <div class="val">${nf(r.v, ind.d)}<small>${ind.u === "%" ? "%" : esc(ind.u)}</small></div>
     <div class="del">${fechaInd(ind, r)} · ${esc(ind.nota)}</div>
-    <div class="cmb">${r.cambio != null ? `${flecha(r.cambio, ind.d, "▲", "▼", "=")} ${nf(Math.abs(r.cambio), ind.d)} vs. ${r.cmpTxt || per + " anterior"}` : ""}</div>
+    <div class="cmb">${r.cambio != null ? `${flecha(r.cambio, ind.d, "▲", "▼", "=")} ${nf(Math.abs(r.cambio), ind.d)}<span class="vs"> vs. ${r.cmpTxt || per + " anterior"}</span>` : ""}</div>
     ${sparkline(r.a.slice(ind.q ? -16 : ind.w ? -104 : -36))}
     <div class="pctl" title="Posición del último dato en la historia desde 2000 (0 = mínimo, 100 = máximo). La franja es el rango normal 2000-19.">${barraPctl(r)}<span>Percentil histórico ${r.pctl}</span></div>`;
   e.appendChild(botonEstrella("ind:" + id, ind.n));
@@ -403,6 +403,7 @@ function spExplora(EXP, OP) {
 }
 // ───────── Metodología ─────────
 const CHANGELOG = [
+  ["6.0", "2026-10-02", ["Celular rehecho: indicadores como lista de cotizaciones (nombre y fecha, tendencia, valor y cambio, percentil), períodos 3A · 5A · 10A · 25A · Todo a lo ancho, rótulos de gráficos que se esconden si se pisan. Vuelve a verse el logo."]],
   ["5.9", "2026-10-01", ["Períodos como ventanas móviles: 3, 5, 10 y 25 años y Todo (antes: desde 2022, 5, 10, desde 2000). No envejecen con el paso del tiempo y no se superponen; el inicial es 5 años. Los enlaces viejos con 2022 o 2000 abren 5 y 25 años. Selectores con la opción elegida resaltada sobre una pista gris."]],
   ["5.8", "2026-10-01", ["Cuando un gráfico no llega al comienzo del período elegido, la leyenda lo dice (\"Serie desde 2007\"). Más historia: consumo por tipo desde 1959 (índices de cantidad de BEA), dólar multilateral nominal y real desde 1973 y carga de la deuda de los hogares desde 1980, empalmados con las series anteriores de la Fed. Selector de período con rótulos homogéneos y Fechas como botón aparte."]],
   ["5.7", "2026-10-01", ["Leyendas en una línea: nombre corto y último dato. Las referencias (promedios, máximos, metas) se rotulan sobre su propia línea; el eje derecho se marca con \"eje der.\"; los diferenciales se expresan en pp. Al ampliar, una segunda línea gris suma el detalle (tendencias, años de cada promedio, fuentes) y la recesión NBER. Los gráficos de ciclos y curvas ya no muestran un selector de período que no los afecta."]],

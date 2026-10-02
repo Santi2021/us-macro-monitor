@@ -224,7 +224,8 @@ function opcionesCategoria(sp, ancho, grande) {
       const c = colorSerie(sp, s, i);
       return { type: "line", name: s.n, data: s.d, z: s.fina ? 3 : 5, symbol: sp.sinPuntos || s.punteada ? "none" : "circle", symbolSize: 7, connectNulls: true,
         endLabel: s.etiquetaFin ? { show: true, formatter: s.etiquetaFin, color: muted, fontSize: fs - 2, distance: 4 } : undefined,
-        labelLayout: s.etiquetaFin ? { moveOverlap: "shiftY" } : undefined,
+        // en pantallas angostas los rótulos que se pisan se esconden (quedan el último, el máximo y el mínimo que entran)
+        labelLayout: s.etiquetaFin ? { moveOverlap: "shiftY" } : s.etiquetas ? { hideOverlap: true } : undefined,
         emphasis: s.fina ? { focus: "series", lineStyle: { width: 2.2, opacity: 1 } } : undefined,
         lineStyle: { color: c, width: s.w ?? (s.fina ? 1.1 : 2), type: s.punteada ? [6, 4] : "solid", opacity: s.fina ? 0.5 : 1 },
         itemStyle: { color: c, borderColor: css("--surface"), borderWidth: 2 },
@@ -233,7 +234,8 @@ function opcionesCategoria(sp, ancho, grande) {
     }
     return { type: "bar", name: s.n, data: s.d, stack: s.der ? undefined : sp.apilado === false ? undefined : "c", barMaxWidth: 34, barCategoryGap: "30%", yAxisIndex: s.der ? 1 : 0,
       itemStyle: { color: s.c === "gris" ? css("--axis") : colorSerie(sp, s, i), opacity: s.suave ? 0.35 : 1, borderColor: css("--surface"), borderWidth: 1.5 },
-      label: s.etiquetas ? { show: true, position: "top", color: muted, fontSize: fs - 1.5, formatter: p => p.value == null ? "" : sg(p.value, s.dec ?? 0) } : undefined };
+      labelLayout: s.etiquetas ? { hideOverlap: true } : undefined,
+      label: s.etiquetas && ancho >= 560 ? { show: true, position: "top", color: muted, fontSize: fs - 1.5, formatter: p => p.value == null ? "" : sg(p.value, s.dec ?? 0) } : undefined };
   });
   return {
     textStyle: { fontFamily: css("--font"), color: css("--ink-2") },

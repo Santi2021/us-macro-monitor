@@ -2,7 +2,7 @@
 import { T, P, DIA_MS, hoyUTC, fm, fq, fw, fd, nf, sg, unidadTxt, leer, guardar, horaBA } from "./util.js";
 import { last, prev, diff, pct, yoy, escala } from "./calc.js";
 
-export const VERSION = "5.9";
+export const VERSION = "6.0";
 export const ST = {
   DATA: null,
   rango: { modo: "5", desde: null, hasta: null },

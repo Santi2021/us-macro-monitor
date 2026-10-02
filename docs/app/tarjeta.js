@@ -132,10 +132,10 @@ export function tarjeta(id, opts = {}) {
   // selectores (vista, real, escala) declarados por el gráfico
   const sel = art.querySelector(".selectores");
   if (opts.grande && c && !opts.spFijo && !c.sinPeriodo) {
-    const per = [[null, "General"], ["3", "3 años"], ["5", "5 años"], ["10", "10 años"], ["25", "25 años"], ["todo", "Todo"]];
+    const per = [[null, "General"], ...["3", "5", "10", "25"].map(n => [n, `${n}<span class="ua"> años</span><span class="ub">A</span>`]), ["todo", "Todo"]];
     const g = el("div", { class: "seg chico periodo", role: "group", "aria-label": "Período de este gráfico" });
     for (const [v, txt] of per) {
-      const b = el("button", { type: "button", "aria-pressed": String(v === null), title: v === null ? "El período elegido arriba, para toda la web" : null }, esc(txt));
+      const b = el("button", { type: "button", "aria-pressed": String(v === null), title: v === null ? "El período elegido arriba, para toda la web" : null }, txt);
       b.addEventListener("click", async () => {
         rangoLocal = v; g.querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", String(x === b)));
         // la historia larga (antes de 1999) se baja recién cuando se pide
