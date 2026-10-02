@@ -26,13 +26,15 @@ export function rutaActual() { return leerRuta(); }
 const periodoTxt = () => {
   const r = ST.rango;
   if (r.modo === "manual" && r.desde) return `${r.desde}_${r.hasta}`;
-  return r.modo === "2022" ? null : r.modo;
+  return r.modo === "5" ? null : r.modo;
 };
 export function aplicarPeriodoDeRuta(q) {
   const p = q.periodo;
   if (!p) return false;
   if (/^\d{4}-\d{2}_\d{4}-\d{2}$/.test(p)) { const [d, h] = p.split("_"); ST.rango = { modo: "manual", desde: d, hasta: h }; return true; }
-  if (["2022", "5", "10", "2000", "todo"].includes(p)) { ST.rango = { modo: p, desde: null, hasta: null }; return true; }
+  const viejo = { "2022": "5", "2000": "25" };   // enlaces de antes de la v5.9
+  if (viejo[p]) { ST.rango = { modo: viejo[p], desde: null, hasta: null }; return true; }
+  if (["3", "5", "10", "25", "todo"].includes(p)) { ST.rango = { modo: p, desde: null, hasta: null }; return true; }
   return false;
 }
 export function construir(sec, sub, extra = {}) {

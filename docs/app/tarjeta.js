@@ -132,7 +132,7 @@ export function tarjeta(id, opts = {}) {
   // selectores (vista, real, escala) declarados por el gráfico
   const sel = art.querySelector(".selectores");
   if (opts.grande && c && !opts.spFijo && !c.sinPeriodo) {
-    const per = [[null, "General"], ["2022", "2022"], ["5", "5 años"], ["10", "10 años"], ["2000", "2000"], ["todo", "Todo"]];
+    const per = [[null, "General"], ["3", "3 años"], ["5", "5 años"], ["10", "10 años"], ["25", "25 años"], ["todo", "Todo"]];
     const g = el("div", { class: "seg chico periodo", role: "group", "aria-label": "Período de este gráfico" });
     for (const [v, txt] of per) {
       const b = el("button", { type: "button", "aria-pressed": String(v === null), title: v === null ? "El período elegido arriba, para toda la web" : null }, esc(txt));

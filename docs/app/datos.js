@@ -2,10 +2,10 @@
 import { T, P, DIA_MS, hoyUTC, fm, fq, fw, fd, nf, sg, unidadTxt, leer, guardar, horaBA } from "./util.js";
 import { last, prev, diff, pct, yoy, escala } from "./calc.js";
 
-export const VERSION = "5.8";
+export const VERSION = "5.9";
 export const ST = {
   DATA: null,
-  rango: { modo: "2022", desde: null, hasta: null },
+  rango: { modo: "5", desde: null, hasta: null },
   T0: T(2022), T1: Infinity, ULT: Infinity,
   diarios: new Set(),
   prefs: leer("umm-prefs", { tema: "auto", letra: "normal", recesiones: true, estrellas: [] }),
@@ -23,7 +23,7 @@ export function calcularRango() {
     const [y0, m0] = r.desde.split("-").map(Number), [y1, m1] = r.hasta.split("-").map(Number);
     ST.T0 = T(y0, m0);
     ST.T1 = T(y1, m1) >= T(y, m) ? Infinity : Date.UTC(y1, m1, 0);
-  } else if (r.modo === "manual") ST.T0 = T(2022);
+  } else if (r.modo === "manual") ST.T0 = T(y - 5, m);
   else ST.T0 = T(y - Number(r.modo), m);
 }
 // Series en formato compacto {t0, dt: días entre datos, v: valores} → [[fecha, valor], ...]. Acepta también el formato viejo.

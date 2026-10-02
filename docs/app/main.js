@@ -38,7 +38,7 @@ function cabecera() {
     <div class="herr">
       <button type="button" class="buscar-btn" id="b-buscar" aria-label="Buscar (Ctrl+K)">${ICONOS.buscar}<span>Buscar</span><kbd>Ctrl K</kbd></button>
       <div class="periodo"><div class="seg" role="group" aria-label="Período" id="rango">
-        <button type="button" data-r="2022" title="Desde enero de 2022">2022</button><button type="button" data-r="5" title="Últimos 5 años">5 años</button><button type="button" data-r="10" title="Últimos 10 años">10 años</button><button type="button" data-r="2000" title="Desde enero de 2000">2000</button><button type="button" data-r="todo" title="Cada serie desde su inicio (desde 1947)">Todo</button></div>
+        <button type="button" data-r="3" title="Últimos 3 años">3 años</button><button type="button" data-r="5" title="Últimos 5 años">5 años</button><button type="button" data-r="10" title="Últimos 10 años">10 años</button><button type="button" data-r="25" title="Últimos 25 años">25 años</button><button type="button" data-r="todo" title="Cada serie desde su inicio (desde 1947)">Todo</button></div>
         <button type="button" class="b-fechas" data-r="manual" aria-expanded="false" aria-pressed="false" title="Elegir un período propio">${ICONOS.calendario}<span>Fechas</span></button></div>
       <button type="button" class="icono-btn" id="b-ajustes" aria-label="Ajustes" aria-haspopup="menu">${ICONOS.ajustes}</button>
       <form class="manual" id="manual" hidden>
@@ -50,7 +50,7 @@ function cabecera() {
   $$(".marca .inicio").forEach(a => a.addEventListener("click", e => {
     e.preventDefault();
     cerrarPops(); cerrarModal();
-    ST.rango = { modo: "2022", desde: null, hasta: null }; guardarRango();
+    ST.rango = { modo: "5", desde: null, hasta: null }; guardarRango();
     navegar("portada");
     window.scrollTo({ top: 0, behavior: "smooth" });
   }));
@@ -104,6 +104,8 @@ function marcarRango() {
   $(".periodo [data-r=manual]").setAttribute("aria-expanded", String(abierto));
   if (ST.rango.modo === "manual" && ST.rango.desde) { $("#m-desde").value = ST.rango.desde; $("#m-hasta").value = ST.rango.hasta; }
 }
+// los períodos anclados en un año (hasta la v5.8) pasan a su ventana equivalente
+const VIEJOS_MODOS = { "2022": "5", "2000": "25" };
 const guardarRango = () => guardar("umm-rango2", ST.rango);
 function irConPeriodo() {
   const r = leerRuta();
@@ -198,7 +200,7 @@ function iniciar(json) {
   const fin = Object.values(json.series).map(s => s.d.length ? s.d[s.d.length - 1][0] : "").filter(f => f <= new Date().toISOString().slice(0, 10)).sort().pop();
   ST.ULT = P(fin);
   $("#m-desde").max = fin.slice(0, 7); $("#m-hasta").max = fin.slice(0, 7);
-  const r = leer("umm-rango2", null); if (r && r.modo) ST.rango = r;
+  const r = leer("umm-rango2", null); if (r && r.modo) ST.rango = Object.assign(r, { modo: VIEJOS_MODOS[r.modo] || r.modo });
   // una dirección vieja de la v3 (#precios, #explorador/k:t) pasa al formato nuevo
   if (location.hash && !location.hash.startsWith("#/")) {
     const v = location.hash.slice(1).split("/")[0];
