@@ -1,15 +1,16 @@
 name: Actualizar datos
 
 # Los releases de BEA y BLS salen a las 8:30 de Nueva York; JOLTS, Michigan y órdenes a las 10:00.
-# Corridas (de lunes a viernes, hora UTC): 12:40 y 13:40 (datos de las 8:30: la primera los toma con horario de verano
-# de Nueva York, la segunda con horario de invierno), 15:10 (datos de las 10:00 y 14:00 del día anterior) y 21:10
-# (cierre de mercado y lo que haya salido tarde). También a mano desde Actions → Run workflow,
-# y cada vez que cambia el motor de datos o la web.
+# Corridas (de lunes a viernes, hora UTC): cada 20 minutos de 12:30 a 15:50 (los datos de las 8:30 y las 10:00 de
+# Nueva York, con horario de verano o de invierno), 18:10 y 21:10 (cierre de mercado y lo que salga tarde).
+# GitHub demora y a veces saltea corridas programadas en horas de mucha carga: con varias seguidas, alguna entra a
+# tiempo. Una corrida sin datos nuevos no escribe nada. También a mano desde Actions → Run workflow, y cada vez que
+# cambia el motor de datos o la web.
 on:
   schedule:
-    - cron: "40 12 * * 1-5"
-    - cron: "40 13 * * 1-5"
-    - cron: "10 15 * * 1-5"
+    - cron: "30,50 12 * * 1-5"
+    - cron: "10,30,50 13-15 * * 1-5"
+    - cron: "10 18 * * 1-5"
     - cron: "10 21 * * 1-5"
   workflow_dispatch:
   push:

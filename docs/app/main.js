@@ -228,10 +228,28 @@ if (typeof echarts === "undefined") {
 } else {
   // los datos diarios se piden en paralelo; si fallan, los gráficos usan el promedio mensual
   Promise.all([fetch("data.json", { cache: "no-cache" }).then(r => r.ok ? r.json() : Promise.reject(new Error("HTTP " + r.status))), cargarDiarios()])
-    .then(([d]) => iniciar(d))
+    .then(([d]) => { iniciar(d); vigilarDatosNuevos(d.generado); })
     .catch(e => {
       console.error(e); window.__monitor.errores.push(String(e));
       $("#meta").textContent = "Sin datos todavía";
       $("#main").innerHTML = `<section class="estado"><h2>No se pudieron cargar los datos</h2><p>Recargá la página. Si el problema sigue, la actualización automática avisa por mail.</p></section>`;
     });
+}
+
+// Una pestaña abierta durante días no se queda con datos viejos: cada 10 minutos (y al volver a la pestaña) se mira
+// si hay una actualización publicada; si la hay, la página se recarga sola (si está a la vista y sin un gráfico
+// ampliado) o apenas se vuelve a ella. El período y la sección viajan en la dirección, así que no se pierde nada.
+function vigilarDatosNuevos(generado) {
+  let pendiente = false;
+  const recargar = () => { if (!document.hidden && !document.querySelector(".modal")) location.reload(); else pendiente = true; };
+  const mirar = async () => {
+    if (pendiente) return recargar();
+    try {
+      const r = await fetch("data.json?g=" + Date.now(), { cache: "no-store" });
+      const t = await r.text(), m = t.match(/"generado":\s*"([^"]+)"/);
+      if (m && m[1] !== generado) recargar();
+    } catch (e) { /* sin conexión: se vuelve a intentar en la próxima vuelta */ }
+  };
+  setInterval(mirar, 10 * 60 * 1000);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) mirar(); });
 }

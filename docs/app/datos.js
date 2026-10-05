@@ -298,7 +298,7 @@ export function vigia() {
   for (const [k, s] of Object.entries(D.series)) {
     if (!s.d.length || k === "fed_obj") continue;   // la tasa objetivo vieja terminó en 2008
     const ult = P(s.d[s.d.length - 1][0]);
-    const limite = s.f === "Q" ? 300 : s.f === "W" ? 20 : 95;   // días desde el período del último dato
+    const limite = s.f === "Q" ? 300 : s.f === "W" ? 20 : 110;   // días desde el comienzo del período del último dato (comercio exterior y crédito salen ~5 semanas después del mes: hasta ~100 días es normal)
     const dias = Math.round((hoy - ult) / DIA_MS);
     const resp = D.respaldo && D.respaldo[k];
     items.push({ k, n: s.n, org: orgDe(k), f: s.f, ult, estado: resp ? "alerta" : dias > limite ? "alerta" : "ok",
