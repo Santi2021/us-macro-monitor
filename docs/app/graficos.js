@@ -206,7 +206,7 @@ function opcionesHeat(sp, ancho, grande) {
         formatter: (v, i) => sp.encabezados && sp.encabezados.includes(i) ? `{h|${v.toUpperCase()}}` : v,
         rich: { h: { color: muted, fontSize: (ancho < 600 ? 10 : fs - 1.5), fontWeight: 700, letterSpacing: 0.5 } } } },
     visualMap: { min: sp.vmin ?? -4, max: sp.vmax ?? 8, calculable: false, orient: "horizontal", left: "center", bottom: 0, itemWidth: 12, itemHeight: 180,
-      text: sp.vtxt || ["8%", "−4%"], textStyle: { color: muted, fontSize: 12 }, inRange: { color: [css("--div-lo"), css("--div-mid"), css("--div-hi")] },
+      text: sp.vtxt || ["8%", "−4%"], textStyle: { color: muted, fontSize: 12 }, inRange: { color: sp.invertirColor ? [css("--div-hi"), css("--div-mid"), css("--div-lo")] : [css("--div-lo"), css("--div-mid"), css("--div-hi")] },
       outOfRange: sp.sinDato ? { color: css("--surface") } : undefined },
     series: [{ type: "heatmap", data: sp.sinDato ? sp.data.map(d => d[2] < (sp.vmin ?? -4) ? { value: d, itemStyle: { color: css("--surface"), borderColor: css("--line"), borderWidth: 1, borderType: "dashed" } } : d) : sp.data, itemStyle: { borderColor: css("--surface"), borderWidth: 2, borderRadius: 3 },
       label: { show: ancho >= 700 && sp.cols.length <= 20, fontSize: fs - 0.5, fontFamily: css("--font"), formatter: p => nf(p.value[2], 1), color: ink },

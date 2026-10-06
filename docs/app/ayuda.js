@@ -1,5 +1,9 @@
 // "?" de cada gráfico: por qué importa y cómo leerlo. Dos frases cortas; mecánica, no opinión sobre el dato de hoy.
 export const AYUDA = {
+  sectores: ["El PBI dice cuánto crece la economía, no dónde. Las horas trabajadas por sector son lo más rápido para ver qué sectores tiran y cuáles frenan, mes a mes, antes de que salga el PBI por industria.",
+    "Cada fila es un sector y cada columna un mes; azul crece, rojo cae, contra el mismo mes del año anterior. Un sector que pasa a rojo varios meses seguidos está ajustando; si el rojo se extiende a muchas filas, la desaceleración es amplia. Mide trabajo usado, no producción: un sector puede producir más con menos horas (productividad)."],
+  pbiSectores: ["Es la producción real de cada industria: muestra qué parte de la economía explica el crecimiento del PBI y si depende de pocos sectores.",
+    "En \"Crecimiento interanual\", cuánto creció cada industria contra el mismo trimestre del año anterior. En \"Aporte al PBI\", cuántos puntos de la tasa trimestral anualizada explica cada una: suman el PBI. Un sector grande que crece poco puede aportar más que uno chico que crece mucho. Llega con unos 3 meses de rezago."],
   // ── Actividad
   contribuciones: ["El PBI es la suma de lo que gastan hogares, empresas, gobierno y resto del mundo; ver quién aporta dice si el crecimiento es sólido o depende de ruido.",
     "Cada barra es lo que suma o resta un componente al crecimiento. Si sin inventarios ni exportaciones netas el número es alto, la demanda de fondo es firme."],
@@ -170,6 +174,7 @@ export const AYUDA = {
 
 // Título corto de cada gráfico en su tarjeta: sólo el nombre. El dato se ve en la leyenda; el contexto (referencias, fechas) aparece al ampliar.
 export const TITULOS = {
+  sectores: "Actividad por sector", pbiSectores: "PBI por industria",
   contribuciones: "Contribuciones al crecimiento del PBI", gdpnow: "GDPNow vs PBI publicado", demandaPrivada: "Demanda privada final",
   brecha: "Brecha del producto y del desempleo", productividad: "Productividad", encuestas: "Nuevos pedidos de la industria",
   industria: "Producción manufacturera y uso de la capacidad", ordenes: "Órdenes y envíos de bienes de capital", viviendas: "Permisos de construcción y stock de viviendas",

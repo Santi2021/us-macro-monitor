@@ -1254,6 +1254,63 @@ def("capexImport", { slug: "importaciones-de-capital", nombre: "Importaciones de
       series: [{ n: "Importaciones / inversión (eje derecho)", d: cut(r), c: "gris", w: 1.4, punteada: true, der: true, u: "", dec: 2 }, { n: "Importaciones de bienes de capital", d: cut(i), c: 1, w: 2.6 }, { n: "Inversión tecnológica", d: cut(t), c: 0, w: 2.6 }] };
   } });
 
+
+// ───── Actividad por sector ─────
+// Mapa de calor común: filas = sectores, columnas = últimos períodos; orden por el último dato
+function mapaSectores({ ks, nombre, freq, n, val, fmtCol, tipCol, extraTip }) {
+  const rs = ks.map(k => ({ k, n: nombre(k), a: val(k) })).filter(r => r.a && r.a.length);
+  if (rs.length < 6) return null;
+  const tu = Math.min(...rs.map(r => last(r.a)[0]));
+  const todas = [...new Set(rs.flatMap(r => r.a.map(p => p[0])))].filter(t => t <= tu).sort((a, b) => a - b).slice(-n);
+  const filas = rs.map(r => ({ ...r, m: new Map(r.a), v: new Map(r.a).get(tu) })).filter(r => r.v != null).sort((a, b) => b.v - a.v);
+  const data = []; filas.forEach((r, yi) => todas.forEach((t, xi) => { const v = r.m.get(t); if (v != null) data.push([xi, yi, v]); }));
+  return { filas, fechas: todas, tu, data, cols: todas.map(fmtCol),
+    tip: v => { const r = filas[v[1]], t = todas[v[0]]; return `<b>${esc(r.n)}</b><br>${tipCol(t)}: ${sg(v[2], 1)}%` + (extraTip ? extraTip(r, t) : ""); } };
+}
+const SECT_CORTOS = { "Servicios profesionales y a empresas": "Servicios a empresas", "Hotelería, gastronomía y entretenimiento": "Hotelería y gastronomía", "Finanzas, seguros e inmobiliarias": "Finanzas e inmobiliarias", "Electricidad, gas y agua": "Electricidad, gas y agua" };
+const corto = n => SECT_CORTOS[n] || n;
+const HRS = ["hrs:10", "hrs:20", "hrs:30", "hrs:4142", "hrs:42", "hrs:43", "hrs:4422", "hrs:50", "hrs:55", "hrs:60", "hrs:65", "hrs:70", "hrs:80"];
+def("sectores", { slug: "actividad-por-sector", nombre: "Actividad por sector (horas trabajadas)", sin: ["sectores", "industrias", "horas", "actividad sectorial", "emae", "mapa de calor"], sinPeriodo: true,
+  calc: "Índice de horas semanales agregadas de cada gran sector privado (BLS, encuesta de establecimientos): empleo × horas promedio, 2007 = 100, desestacionalizado. Es el proxy mensual de actividad por sector: mide el trabajo que usa cada sector, no lo que produce (la producción por sector sale trimestral, en el PBI por industria). Variación interanual, últimos 18 meses, ordenado por el último mes. No incluye gobierno ni agro (la encuesta no los cubre). No depende del período elegido.",
+  ks: [...HRS, "hrs:05"],
+  f: () => {
+    const nom = k => corto((meta(k)?.n || k).replace(/^Horas trabajadas: /, ""));
+    const r = mapaSectores({ ks: HRS, nombre: nom, freq: "M", n: 18, val: k => yoy(S(k)), fmtCol: fm, tipCol: fm,
+      extraTip: (f, t) => { const v3 = valorEn(ann(S(f.k), 3), t); return v3 ? `<br>Anualizado a 3 meses: ${sg(v3[1], 1)}%` : ""; } });
+    if (!r) return null;
+    const tot = yoy(S("hrs:05")), vt = tot ? valorEn(tot, r.tu) : null;
+    const suben = r.filas.filter(f => f.v > 0).length, top = r.filas[0], bot = r.filas[r.filas.length - 1];
+    return { tipo: "heat", invertirColor: true, vmin: -6, vmax: 6, vtxt: ["+6%", "−6%"], izq: 200,
+      titulo: `Horas trabajadas en ${fm(r.tu)}: ` + (vt ? `total privado ${sg(vt[1], 1)}% interanual; ` : "") + `suben en ${suben} de ${r.filas.length} sectores; más: ${top.n.toLowerCase()} ${sg(top.v, 1)}%; menos: ${bot.n.toLowerCase()} ${sg(bot.v, 1)}%`,
+      sub: "Horas semanales agregadas por sector (empleo × horas), variación interanual. Azul: crece; rojo: cae. Orden por el último mes.",
+      fuenteTxt: "BLS (CES)", cols: r.cols, filas: r.filas.map(f => f.n), data: r.data, series: [], tip: r.tip,
+      tabla: { cab: ["Sector", ...r.fechas.slice(-6).map(fm)], filas: r.filas.map(f => [f.n, ...r.fechas.slice(-6).map(t => f.m.get(t) != null ? sg(f.m.get(t), 1) : "–")]) } };
+  } });
+const INDUS = ["ind:11", "ind:21", "ind:22", "ind:23", "ind:31G", "ind:42", "ind:44RT", "ind:48TW", "ind:51", "ind:FIRE", "ind:PROF", "ind:6", "ind:7", "ind:81", "ind:G"];
+def("pbiSectores", { slug: "pbi-por-industria", nombre: "PBI por industria", sin: ["sectores", "industrias", "valor agregado", "pbi sectorial", "emae", "aporte"], sinPeriodo: true,
+  ops: [{ id: "vista", nombre: "Vista", valores: [["a", "Crecimiento interanual"], ["c", "Aporte al PBI"]] }],
+  calc: "Valor agregado real de cada industria (BEA, PBI por industria, índices de cantidad encadenados), trimestral. Crecimiento interanual o aporte de cada industria al crecimiento del PBI real (puntos de la tasa trimestral anualizada; la suma de las industrias es el PBI). Sale junto con la tercera estimación del PBI, cerca de 3 meses después de cerrado el trimestre. Últimos 12 trimestres, ordenado por el último. No depende del período elegido.",
+  ks: [...INDUS, ...INDUS.map(k => k.replace("ind:", "indc:"))],
+  f: o => {
+    const aporte = o.vista === "c";
+    const nom = k => corto((meta(k)?.n || k).replace(/^(Valor agregado real|Aporte al PBI): /, ""));
+    const kk = aporte ? INDUS.map(k => k.replace("ind:", "indc:")) : INDUS;
+    const r = mapaSectores({ ks: kk, nombre: nom, freq: "Q", n: 12, val: k => aporte ? S(k) : yoy(S(k), 4), fmtCol: fq, tipCol: fq,
+      extraTip: aporte ? null : (f, t) => { const c = valorEn(S(f.k.replace("ind:", "indc:")), t); return c && c[0] === t ? `<br>Aporte al PBI del trimestre: ${sg(c[1], 2)} pp` : ""; } });
+    if (!r) return null;
+    const g = S("gdp_growth"), gv = g ? valorEn(g, r.tu) : null;
+    const top = r.filas.slice(0, 3).map(f => `${f.n.toLowerCase()} ${sg(f.v, aporte ? 2 : 1)}${aporte ? " pp" : "%"}`).join(", "), bot = r.filas[r.filas.length - 1];
+    const sp = { tipo: "heat", invertirColor: true, izq: 200, fuenteTxt: "BEA, PBI por industria", cols: r.cols, filas: r.filas.map(f => f.n), data: r.data, series: [], freq: "Q",
+      tabla: { cab: ["Industria", ...r.fechas.slice(-6).map(fq)], filas: r.filas.map(f => [f.n, ...r.fechas.slice(-6).map(t => f.m.get(t) != null ? sg(f.m.get(t), aporte ? 2 : 1) : "–")]) } };
+    if (aporte) return Object.assign(sp, { vmin: -1, vmax: 1, vtxt: ["+1 pp", "−1 pp"],
+      titulo: `PBI ${gv ? nf(gv[1], 1) + "% " : ""}en ${fq(r.tu)} (trimestral anualizado): más aportan ${top}; resta más ${bot.n.toLowerCase()} ${sg(bot.v, 2)} pp`,
+      sub: "Aporte de cada industria al crecimiento del PBI real, en puntos de la tasa trimestral anualizada. Azul: suma; rojo: resta.",
+      tip: v => `<b>${esc(r.filas[v[1]].n)}</b><br>${fq(r.fechas[v[0]])}: ${sg(v[2], 2)} pp` });
+    return Object.assign(sp, { vmin: -6, vmax: 6, vtxt: ["+6%", "−6%"], tip: r.tip,
+      titulo: `Valor agregado real en ${fq(r.tu)}, interanual: crecen ${r.filas.filter(f => f.v > 0).length} de ${r.filas.length} industrias; más: ${top}; menos: ${bot.n.toLowerCase()} ${sg(bot.v, 1)}%`,
+      sub: "Valor agregado real por industria, variación interanual. Azul: crece; rojo: cae. Orden por el último trimestre." });
+  } });
+
 // ═════════════════════════ Fiscal ═════════════════════════
 // Resultado de 12 meses sobre PBI: los meses posteriores al último PBI publicado usan ese último PBI
 export const deficitPBI = () => {
@@ -1517,6 +1574,7 @@ export const BLOQUES = {
   actividad: [["¿Cuánto crece y qué lo empuja?", [["contribuciones", "ancha"], ["gdpnow"], ["demandaPrivada"]]],
     ["¿Está por encima de su potencial?", [["brecha"], ["productividad"]]],
     ["¿Qué dicen los datos del mes?", [["encuestas"], ["industria"], ["ordenes"], ["viviendas"]]],
+    ["¿Qué sectores empujan?", [["sectores", "ancha alta"], ["pbiSectores", "ancha alta"]]],
     ["¿Dónde está el ciclo de inversión y ganancias?", [["capex"], ["ganancias"]]]],
   consumidor: [["¿Cuánto gasta?", [["ventas"], ["consumoTipo"], ["autos"], ["sentimiento"]]],
     ["¿Con qué lo paga?", [["ingresoConsumo"], ["motores"], ["ahorro"], ["credito"]]],
