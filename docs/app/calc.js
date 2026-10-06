@@ -39,6 +39,13 @@ export function joinQ(m, q, fn) {
   const r = m.map(([t, v]) => { const d = new Date(t); const k = Date.UTC(d.getUTCFullYear(), Math.floor(d.getUTCMonth() / 3) * 3, 1); return mq.has(k) ? [t, fn(v, mq.get(k))] : null; }).filter(Boolean);
   return r.length ? r : null;
 }
+// Como joinQ, pero los meses de trimestres todavía sin dato usan el último trimestre publicado (el PBI sale ~1 mes
+// después del cierre del trimestre; sin esto, los ratios mensuales sobre PBI se cortan 2-3 meses antes que el numerador)
+export function joinQUlt(m, q, fn) {
+  if (!m || !q || !q.length) return null;
+  const r = m.map(([t, v]) => { const d = new Date(t); const k = Date.UTC(d.getUTCFullYear(), Math.floor(d.getUTCMonth() / 3) * 3, 1); const g = valorEn(q, k); return g ? [t, fn(v, g[1])] : null; }).filter(Boolean);
+  return r.length ? r : null;
+}
 // Mensual a trimestral (promedio; sólo trimestres completos)
 export function toQ(a) {
   if (!a) return null;

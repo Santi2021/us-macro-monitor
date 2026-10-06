@@ -1,7 +1,7 @@
 // Catálogo: cada gráfico es una definición (series, fórmula, selectores y cómo se arma su título).
 // De acá salen el gráfico, su tabla, su ficha de fuentes, el buscador, los enlaces y la metodología.
 import { T, P, MES, nf, sg, fm, fq, fw, fd, esc, unidadTxt } from "./util.js";
-import { last, prev, yoy, ann, pct, diff, roll, join, joinQ, toQ, indice, deflactar, rangoNormal, pctl, escala, racha, valorEn } from "./calc.js";
+import { last, prev, yoy, ann, pct, diff, roll, join, joinQ, joinQUlt, toQ, indice, deflactar, rangoNormal, pctl, escala, racha, valorEn } from "./calc.js";
 import { ST, S, SD, freqD, usaDiario, periodoLargo, iniciosFed, cut, fuente, meta, nombreRelease, infoRelease } from "./datos.js";
 
 export const FRENTES = { actividad: "Actividad", consumidor: "Consumidor", precios: "Precios", empleo: "Empleo", tasas: "Tasas", externo: "Externo", fiscal: "Fiscal" };
@@ -1162,12 +1162,12 @@ def("hipotecaria", { slug: "spread-hipotecario", nombre: "Tasa hipotecaria y spr
 
 // ═════════════════════════ Externo ═════════════════════════
 def("balanza", { slug: "balanza-comercial", nombre: "Balanza comercial: bienes y servicios", sin: ["comercio exterior", "déficit comercial", "importaciones", "exportaciones", "aranceles", "bienes", "servicios"], ops: [ESCALA_PBI],
-  calc: "Balanza de bienes y de servicios (BEA y Census), base balanza de pagos, mensual. Barras apiladas: bienes (en general negativa) y servicios (en general positiva); línea: el saldo total y su promedio de 3 meses. En % del PBI: saldo mensual anualizado (× 12) sobre el PBI nominal del trimestre. Referencias en el título: promedio de 12 meses, promedio de 2019 y el récord de la serie.",
+  calc: "Balanza de bienes y de servicios (BEA y Census), base balanza de pagos, mensual. Barras apiladas: bienes (en general negativa) y servicios (en general positiva); línea: el saldo total y su promedio de 3 meses. En % del PBI: saldo mensual anualizado (× 12) sobre el PBI nominal del trimestre; los meses de un trimestre cuyo PBI todavía no se publicó usan el último PBI publicado (el PBI nominal crece ~1% por trimestre, así que el ratio cambia en centésimas cuando sale el dato). Referencias en el título: promedio de 12 meses, promedio de 2019 y el récord de la serie.",
   ks: ["trade_balance", "trade_goods", "trade_services", "gdp_nom"],
   f: o => {
     const b0 = S("trade_balance"); if (!b0) return null;
     const pbi = o.escala === "pbi";
-    const conv = a => a ? (pbi ? joinQ(a, S("gdp_nom"), (x, g) => x * 12 / 1000 / g * 100) : escala(a, 1 / 1000)) : null;
+    const conv = a => a ? (pbi ? joinQUlt(a, S("gdp_nom"), (x, g) => x * 12 / 1000 / g * 100) : escala(a, 1 / 1000)) : null;
     const b = conv(b0), g = conv(S("trade_goods")), sv = conv(S("trade_services")); if (!b) return null;
     const v = last(b)[1], m12 = b.slice(-13, -1).reduce((x, y) => x + y[1], 0) / 12, y19 = promEntre(b, 2019, 2019), rec = b.reduce((m, p) => p[1] < m[1] ? p : m);
     const u = pbi ? "% del PBI" : "mil M", fmt = x => pbi ? `${nf(x, 1)}%` : nf(x, 1);
@@ -1175,7 +1175,7 @@ def("balanza", { slug: "balanza-comercial", nombre: "Balanza comercial: bienes y
     if (g && sv) ss.push({ n: "Bienes", d: cut(g), t: "bar", c: 1, stack: "b", suave: true }, { n: "Servicios", d: cut(sv), t: "bar", c: 2, stack: "b", suave: true });
     ss.push({ n: "Saldo total", d: cut(b), c: "ink", w: 1.4 }, { n: "Saldo, promedio 3 meses", d: cut(roll(b, 3)), c: 0, w: 2.6 });
     return { titulo: `Déficit comercial ${pbi ? "" : "US$ "}${fmt(-v)}${pbi ? "" : " mil M"} en ${fechaDe(b)}` + (g && sv ? `: bienes ${fmt(last(g)[1])}, servicios ${sg(last(sv)[1], 1)}` : "") + `; promedio 12 meses ${fmt(-m12)}; 2019: ${fmt(-y19)}; récord ${fm(rec[0])}: ${fmt(-rec[1])}`,
-      sub: pbi ? "Saldo mensual anualizado como % del PBI nominal, bienes y servicios (BEA y Census)." : "Balanza de bienes y servicios (BEA y Census), base balanza de pagos, miles de millones de US$ por mes.",
+      sub: pbi ? "Saldo mensual anualizado como % del PBI nominal, bienes y servicios (BEA y Census)." + (last(S("trade_balance"))[0] > last(S("gdp_nom"))[0] + 92 * DIA ? ` Desde ${fm(Date.UTC(new Date(last(S("gdp_nom"))[0]).getUTCFullYear(), new Date(last(S("gdp_nom"))[0]).getUTCMonth() + 3, 1))}, sobre el PBI de ${fq(last(S("gdp_nom"))[0])} hasta que salga el siguiente.` : "") : "Balanza de bienes y servicios (BEA y Census), base balanza de pagos, miles de millones de US$ por mes.",
       unidad: pbi ? "%" : "mil M", dec: 1, decEje: pbi ? 1 : 0, cero: true, eventos: false, sinRecorte: true, series: ss, refs: [{ y: 0 }] };
   } });
 
