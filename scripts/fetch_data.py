@@ -246,6 +246,21 @@ BLS = {
     "payrolls_priv":   ("CES0500000001", "USPRIV", "Empleo privado", "miles de puestos"),
     "payrolls_gov":    ("CES9000000001", "USGOVT", "Empleo público", "miles de puestos"),
     "payrolls_health": ("CES6562000001", "CES6562000001", "Empleo en salud y asistencia social", "miles de puestos"),
+    # índice de horas semanales agregadas por sector (empleo × horas, 2007=100): el proxy mensual de actividad sectorial
+    "hrs:10": ("CES1000000016", "CES1000000016", "Horas trabajadas: Minería y forestal", "índice 2007=100"),
+    "hrs:20": ("CES2000000016", "CES2000000016", "Horas trabajadas: Construcción", "índice 2007=100"),
+    "hrs:30": ("CES3000000016", "CES3000000016", "Horas trabajadas: Manufactura", "índice 2007=100"),
+    "hrs:4142": ("CES4142000016", "CES4142000016", "Horas trabajadas: Comercio mayorista", "índice 2007=100"),
+    "hrs:42": ("CES4200000016", "CES4200000016", "Horas trabajadas: Comercio minorista", "índice 2007=100"),
+    "hrs:43": ("CES4300000016", "CES4300000016", "Horas trabajadas: Transporte y depósitos", "índice 2007=100"),
+    "hrs:4422": ("CES4422000016", "CES4422000016", "Horas trabajadas: Electricidad, gas y agua", "índice 2007=100"),
+    "hrs:50": ("CES5000000016", "CES5000000016", "Horas trabajadas: Información", "índice 2007=100"),
+    "hrs:55": ("CES5500000016", "CES5500000016", "Horas trabajadas: Finanzas, seguros e inmobiliarias", "índice 2007=100"),
+    "hrs:60": ("CES6000000016", "CES6000000016", "Horas trabajadas: Servicios profesionales y a empresas", "índice 2007=100"),
+    "hrs:65": ("CES6500000016", "CES6500000016", "Horas trabajadas: Educación y salud", "índice 2007=100"),
+    "hrs:70": ("CES7000000016", "CES7000000016", "Horas trabajadas: Hotelería, gastronomía y entretenimiento", "índice 2007=100"),
+    "hrs:80": ("CES8000000016", "CES8000000016", "Horas trabajadas: Otros servicios", "índice 2007=100"),
+    "hrs:05": ("CES0500000016", "CES0500000016", "Horas trabajadas: Total privado", "índice 2007=100"),
 }
 
 # BEA: rubros del PCE core, tabla NIPA 2.8.4 (mensual)
@@ -422,6 +437,47 @@ def bea_t20804(key_, tabla="T20804", cats=None):
     return out
 
 
+# PBI por industria (BEA, dataset GDPbyIndustry, trimestral): índice de cantidad del valor agregado y aporte de cada
+# sector al crecimiento del PBI. Las tablas se buscan por su descripción, no por número, para que un cambio de
+# numeración de BEA no rompa la descarga.
+INDUSTRIAS = {"11": "Agro", "21": "Minería y petróleo", "22": "Electricidad, gas y agua", "23": "Construcción",
+              "31G": "Manufactura", "42": "Comercio mayorista", "44RT": "Comercio minorista", "48TW": "Transporte y depósitos",
+              "51": "Información", "FIRE": "Finanzas, seguros e inmobiliarias", "PROF": "Servicios profesionales y a empresas",
+              "6": "Educación y salud", "7": "Hotelería, gastronomía y entretenimiento", "81": "Otros servicios", "G": "Gobierno"}
+
+
+def bea_industrias(key_):
+    tablas = get("https://apps.bea.gov/api/data", UserID=key_, method="GetParameterValues", datasetname="GDPbyIndustry",
+                 ParameterName="TableID", ResultFormat="JSON")["BEAAPI"]["Results"]["ParamValue"]
+    def buscar(*frases):
+        for t in tablas:
+            d = (t.get("Desc") or t.get("Description") or "").lower()
+            if all(f in d for f in frases):
+                return t["Key"], d
+        raise RuntimeError(f"no encontré la tabla de BEA con: {frases}; disponibles: {[t.get('Desc') for t in tablas][:40]}")
+    out = {}
+    for pref, frases in [("ind", ("quantity index", "value added")), ("indc", ("contributions", "percent change"))]:
+        tid, desc = buscar(*frases)
+        print(f"  BEA por industria: tabla {tid} ({desc})")
+        j = get("https://apps.bea.gov/api/data", UserID=key_, method="GetData", datasetname="GDPbyIndustry", TableID=tid,
+                Frequency="Q", Year="ALL", Industry="ALL", ResultFormat="JSON")
+        res = j["BEAAPI"]["Results"]
+        res = res[0] if isinstance(res, list) else res
+        if "Error" in res:
+            raise RuntimeError(res["Error"])
+        df = pd.DataFrame(res["Data"])
+        q = df["Quarter"].astype(str).str.upper().map({"I": 1, "II": 2, "III": 3, "IV": 4, "1": 1, "2": 2, "3": 3, "4": 4, "Q1": 1, "Q2": 2, "Q3": 3, "Q4": 4})
+        df["fecha"] = pd.to_datetime(df["Year"].astype(str) + "-" + ((q - 1) * 3 + 1).astype("Int64").astype(str) + "-01", errors="coerce")
+        df["valor"] = pd.to_numeric(df["DataValue"].astype(str).str.replace(",", ""), errors="coerce")
+        for cod, lab in INDUSTRIAS.items():
+            x = df[df["Industry"].astype(str) == cod].dropna(subset=["fecha", "valor"])
+            if len(x):
+                out[f"{pref}:{cod}"] = (x.groupby("fecha")["valor"].last().sort_index(), lab)
+    if sum(1 for k in out if k.startswith("ind:")) < 10:
+        raise RuntimeError(f"pocas industrias encontradas: {sorted(out)}")
+    return out
+
+
 def empaquetar(s, nombre, unidad, freq, fuente, codigo, org, grupo=None, release=None):
     s = s.dropna()
     return {"n": nombre, "u": unidad, "f": freq, "src": fuente, "id": codigo, "org": org, "g": grupo,
@@ -534,6 +590,13 @@ def bajar(anterior):
                 data["peso:" + lab] = empaquetar(s, "Gasto: " + lab, "US$ miles de M", "M", "BEA", "T20805", "BEA", "pce_pesos", rel_pio)
         except Exception as e:
             fallas["bea_pesos"] = f"no se pudo bajar la tabla 2.8.5 de BEA ({str(e)[:80]})"; print(f"  [aviso] BEA T20805: {e}")
+        try:
+            for k, (ser, lab) in bea_industrias(bea_key).items():
+                es_aporte = k.startswith("indc:")
+                data[k] = empaquetar(ser, ("Aporte al PBI: " if es_aporte else "Valor agregado real: ") + lab,
+                                     "pp" if es_aporte else "índice 2017=100", "Q", "BEA", "GDPbyIndustry", "BEA", "pbi_industrias", data.get("gdp_real", {}).get("rel"))
+        except Exception as e:
+            fallas["bea_industrias"] = f"no se pudo bajar el PBI por industria de BEA ({str(e)[:160]})"; print(f"  [aviso] BEA por industria: {e}")
     else:
         fallas["bea_rubros"] = "falta la key de BEA"
 
@@ -565,7 +628,7 @@ def bajar(anterior):
             print(f"  [aviso] calendario {rid} {nombre}: {e}")
             fallidos.append(nombre)
             fechas = sorted({c["fecha"] for c in anterior.get("calendario", []) if c["rid"] == rid})
-        series = sorted(k for k, v in data.items() if v.get("rel") == rid and not k.startswith(("cat:", "peso:")))
+        series = sorted(k for k, v in data.items() if v.get("rel") == rid and not k.startswith(("cat:", "peso:", "ind:", "indc:", "hrs:")))
         if not series:
             continue
         for f in fechas:
@@ -647,11 +710,11 @@ def combinar(data, anterior, fallas):
             data[k] = viejas[k]; respaldo[k] = f"rechazada: {motivo}; se muestra la versión anterior"
         else:
             del data[k]; respaldo[k] = f"rechazada: {motivo}; sin versión anterior"
-    esperadas = set(FRED) | set(BLS) | {k for k in viejas if k.startswith(("cat:", "peso:"))}
+    esperadas = set(FRED) | set(BLS) | {k for k in viejas if k.startswith(("cat:", "peso:", "ind:", "indc:"))}
     for k in sorted(esperadas - set(data)):
         if viejas.get(k):
             data[k] = viejas[k]
-            respaldo.setdefault(k, (fallas.get(k) or fallas.get("bea_pesos" if k.startswith("peso:") else "bea_rubros") or "no se pudo bajar") + "; se muestra la versión anterior")
+            respaldo.setdefault(k, (fallas.get(k) or fallas.get("bea_pesos" if k.startswith("peso:") else "bea_industrias" if k.startswith("ind") else "bea_rubros") or "no se pudo bajar") + "; se muestra la versión anterior")
     return data, respaldo, extremos
 
 
@@ -718,7 +781,7 @@ def avisos_nuevos(anterior, revisados, respaldo):
               if (dt.datetime.now(dt.timezone.utc) - dt.datetime.strptime(a["det"], "%Y-%m-%dT%H:%MZ").replace(tzinfo=dt.timezone.utc)).days < 7]
     por_org = {}
     for k in revisados:
-        if k.startswith(("cat:", "peso:")):
+        if k.startswith(("cat:", "peso:", "ind:", "indc:", "hrs:")):
             continue
         por_org.setdefault(FRED.get(k, (None, None, None, None, "BLS"))[4], []).append(k)
     for org, ks in por_org.items():
