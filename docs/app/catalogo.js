@@ -1271,18 +1271,23 @@ const SECT_CORTOS = { "Servicios profesionales y a empresas": "Servicios a empre
 const corto = n => SECT_CORTOS[n] || n;
 const HRS = ["hrs:10", "hrs:20", "hrs:30", "hrs:4142", "hrs:42", "hrs:43", "hrs:4422", "hrs:50", "hrs:55", "hrs:60", "hrs:65", "hrs:70", "hrs:80"];
 def("sectores", { slug: "actividad-por-sector", nombre: "Actividad por sector (horas trabajadas)", sin: ["sectores", "industrias", "horas", "actividad sectorial", "emae", "mapa de calor"], sinPeriodo: true,
-  calc: "Índice de horas semanales agregadas de cada gran sector privado (BLS, encuesta de establecimientos): empleo × horas promedio, 2007 = 100, desestacionalizado. Es el proxy mensual de actividad por sector: mide el trabajo que usa cada sector, no lo que produce (la producción por sector sale trimestral, en el PBI por industria). Variación interanual, últimos 18 meses, ordenado por el último mes. No incluye gobierno ni agro (la encuesta no los cubre). No depende del período elegido.",
+  ops: [{ id: "vista", nombre: "Vista", valores: [["a", "Interanual"], ["m", "Mensual"], ["3", "3 meses anualizado"]] }],
+  calc: "Índice de horas semanales agregadas de cada gran sector privado (BLS, encuesta de establecimientos del informe de empleo, series CES…16): empleo × horas promedio, 2007 = 100, desestacionalizado. Es el proxy mensual de actividad por sector: mide el trabajo que usa cada sector, no lo que produce (la producción por sector sale trimestral, en el PBI por industria). Variación interanual, contra el mes anterior o anualizada a 3 meses; últimos 18 meses, ordenado por el último mes. No incluye gobierno ni agro (la encuesta no los cubre). No depende del período elegido.",
   ks: [...HRS, "hrs:05"],
-  f: () => {
+  f: o => {
+    const vista = o.vista || "a", fn = vista === "m" ? a => pct(a, 1) : vista === "3" ? a => ann(a, 3) : a => yoy(a);
+    const txt = { a: "interanual", m: "contra el mes anterior", "3": "anualizada a 3 meses" }[vista];
     const nom = k => corto((meta(k)?.n || k).replace(/^Horas trabajadas: /, ""));
-    const r = mapaSectores({ ks: HRS, nombre: nom, freq: "M", n: 18, val: k => yoy(S(k)), fmtCol: fm, tipCol: fm,
-      extraTip: (f, t) => { const v3 = valorEn(ann(S(f.k), 3), t); return v3 ? `<br>Anualizado a 3 meses: ${sg(v3[1], 1)}%` : ""; } });
+    const r = mapaSectores({ ks: HRS, nombre: nom, freq: "M", n: 18, val: k => fn(S(k)), fmtCol: fm, tipCol: fm,
+      extraTip: (f, t) => { const otras = [["Mensual", pct(S(f.k), 1)], ["Interanual", yoy(S(f.k))], ["Anualizado a 3 meses", ann(S(f.k), 3)]].filter(([n]) => n.toLowerCase() !== { a: "interanual", m: "mensual", "3": "anualizado a 3 meses" }[vista]);
+        return otras.map(([n, a]) => { const v = valorEn(a, t); return v && v[0] === t ? `<br>${n}: ${sg(v[1], 1)}%` : ""; }).join(""); } });
     if (!r) return null;
-    const tot = yoy(S("hrs:05")), vt = tot ? valorEn(tot, r.tu) : null;
+    const tot = fn(S("hrs:05")), vt = tot ? valorEn(tot, r.tu) : null;
     const suben = r.filas.filter(f => f.v > 0).length, top = r.filas[0], bot = r.filas[r.filas.length - 1];
-    return { tipo: "heat", invertirColor: true, vmin: -6, vmax: 6, vtxt: ["+6%", "−6%"], izq: 200,
-      titulo: `Horas trabajadas en ${fm(r.tu)}: ` + (vt ? `total privado ${sg(vt[1], 1)}% interanual; ` : "") + `suben en ${suben} de ${r.filas.length} sectores; más: ${top.n.toLowerCase()} ${sg(top.v, 1)}%; menos: ${bot.n.toLowerCase()} ${sg(bot.v, 1)}%`,
-      sub: "Horas semanales agregadas por sector (empleo × horas), variación interanual. Azul: crece; rojo: cae. Orden por el último mes.",
+    const lim = vista === "m" ? 1 : 6;
+    return { tipo: "heat", invertirColor: true, vmin: -lim, vmax: lim, vtxt: [`+${lim}%`, `−${lim}%`], izq: 200,
+      titulo: `Horas trabajadas en ${fm(r.tu)}, ${txt}: ` + (vt ? `total privado ${sg(vt[1], 1)}%; ` : "") + `suben en ${suben} de ${r.filas.length} sectores; más: ${top.n.toLowerCase()} ${sg(top.v, 1)}%; menos: ${bot.n.toLowerCase()} ${sg(bot.v, 1)}%`,
+      sub: `Horas semanales agregadas por sector (empleo × horas), variación ${txt}. Azul: crece; rojo: cae. Orden por el último mes.` + (vista === "m" ? " El dato mensual es ruidoso: un mes aislado dice poco, varios seguidos del mismo color sí." : ""),
       fuenteTxt: "BLS (CES)", cols: r.cols, filas: r.filas.map(f => f.n), data: r.data, series: [], tip: r.tip,
       tabla: { cab: ["Sector", ...r.fechas.slice(-6).map(fm)], filas: r.filas.map(f => [f.n, ...r.fechas.slice(-6).map(t => f.m.get(t) != null ? sg(f.m.get(t), 1) : "–")]) } };
   } });
