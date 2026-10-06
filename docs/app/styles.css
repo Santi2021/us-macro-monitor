@@ -97,7 +97,7 @@ a { color: var(--s1); }
 .manual button { border: 1px solid var(--ink); background: var(--ink); color: var(--surface); border-radius: 6px; padding: 4px 12px; font-size: var(--fs-s); cursor: pointer; }
 
 /* Menú de ajustes y menús emergentes */
-.pop { position: absolute; z-index: 40; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 12px 32px rgba(0,0,0,0.16); padding: 6px; min-width: 220px; }
+.pop { position: absolute; z-index: 65;   /* encima del gráfico ampliado (50) */ background: var(--surface); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 12px 32px rgba(0,0,0,0.16); padding: 6px; min-width: 220px; }
 .pop h4 { margin: 8px 8px 4px; font-size: var(--fs-xs); color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
 .pop .fila { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 4px 8px; font-size: var(--fs-s); }
 .pop button.item { display: flex; align-items: center; gap: 10px; width: 100%; border: 0; background: none; text-align: left; padding: 7px 10px; border-radius: 6px; cursor: pointer; font-size: var(--fs-s); color: var(--ink); }
