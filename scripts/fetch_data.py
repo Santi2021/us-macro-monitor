@@ -128,9 +128,6 @@ FRED = {
     "pce_goods":       ("DGDSRG3M086SBEA", "PCE bienes", "índice", "M", "BEA"),
     "pce_services":    ("DSERRG3M086SBEA", "PCE servicios", "índice", "M", "BEA"),
     "pce_supercore":   ("IA001260M", "PCE servicios sin energía ni vivienda", "índice", "M", "BEA"),
-    "ppi_capital":     ("WPSFD41312", "PPI bienes de capital", "índice", "M", "BLS"),
-    "ppi_fd":          ("PPIFIS", "PPI demanda final", "índice", "M", "BLS"),
-    "ppi_core":        ("PPICOR", "PPI demanda final sin alimentos ni energía (sin desestacionalizar)", "índice", "M", "BLS"),
     "cpi_median":      ("MEDCPIM094SFRBCLE", "CPI mediana", "índice", "M", "Fed de Cleveland"),
     "pce_trim":        ("PCETRIM12M159SFRBDAL", "PCE media recortada, interanual", "%", "M", "Fed de Dallas"),
     "import_prices":   ("IR", "Precios de importación (sin desestacionalizar)", "índice 2000=100", "M", "BLS"),
@@ -246,6 +243,10 @@ BLS = {
     "payrolls_priv":   ("CES0500000001", "USPRIV", "Empleo privado", "miles de puestos"),
     "payrolls_gov":    ("CES9000000001", "USGOVT", "Empleo público", "miles de puestos"),
     "payrolls_health": ("CES6562000001", "CES6562000001", "Empleo en salud y asistencia social", "miles de puestos"),
+    # PPI directo de BLS: el API de BLS lo tiene a las 8:30; FRED lo incorpora con demora (a veces más de una hora)
+    "ppi_fd":       ("WPSFD4", "PPIFIS", "PPI demanda final", "índice"),
+    "ppi_core":     ("WPUFD4131", "PPICOR", "PPI demanda final sin alimentos ni energía (sin desestacionalizar)", "índice"),
+    "ppi_capital":  ("WPSFD41312", "WPSFD41312", "PPI bienes de capital", "índice"),
     # índice de horas semanales agregadas por sector (empleo × horas, 2007=100): el proxy mensual de actividad sectorial
     "hrs:10": ("CES1000000016", "CES1000000016", "Horas trabajadas: Minería y forestal", "índice 2007=100"),
     "hrs:20": ("CES2000000016", "CES2000000016", "Horas trabajadas: Construcción", "índice 2007=100"),
