@@ -4,10 +4,28 @@ import { T } from "./util.js";
 export const last = a => a && a.length ? a[a.length - 1] : null;
 export const prev = (a, n = 1) => a && a.length > n ? a[a.length - 1 - n] : null;
 
+// Series mensuales y trimestrales: el rezago se busca por fecha (k meses o k trimestres atrás), no por posición.
+// Así un mes que la fuente no publicó (octubre de 2025, cierre del gobierno de EE.UU.) no corre las comparaciones:
+// sin el dato de hace k períodos, no hay variación. Las series semanales y diarias siguen por posición.
+function pasoMeses(a) {
+  if (a.length < 3) return 0;
+  const n = Math.min(a.length - 1, 24), ds = [];
+  for (let i = a.length - n; i < a.length; i++) ds.push((a[i][0] - a[i - 1][0]) / 864e5);
+  ds.sort((x, y) => x - y);
+  const med = ds[ds.length >> 1];
+  return med >= 27 && med <= 32 ? 1 : med >= 88 && med <= 93 ? 3 : 0;
+}
 function lagged(a, k, fn) {
   if (!a) return null;
-  const out = [];
-  for (let i = k; i < a.length; i++) if (a[i - k][1]) out.push([a[i][0], fn(a[i][1], a[i - k][1])]);
+  const out = [], paso = pasoMeses(a);
+  if (paso) {
+    const m = new Map(a);
+    for (const [t, v] of a) {
+      const d = new Date(t), t0 = Date.UTC(d.getUTCFullYear(), d.getUTCMonth() - k * paso, d.getUTCDate());
+      const y = m.get(t0);
+      if (y) out.push([t, fn(v, y)]);
+    }
+  } else for (let i = k; i < a.length; i++) if (a[i - k][1]) out.push([a[i][0], fn(a[i][1], a[i - k][1])]);
   return out.length ? out : null;
 }
 export const yoy = (a, k = 12) => lagged(a, k, (x, y) => (x / y - 1) * 100);
