@@ -261,7 +261,7 @@ export function resultadoRelease(nombre) {
   try {
     if (/Debt to Gross/.test(nombre)) add("Deuda / PBI", "debt_public", "nivel", 0);
     else if (/Employment Situation/.test(nombre)) { add("Nóminas", "payrolls", "diff", 0, "mil", true); add("Desempleo", "unemployment", "nivel", 1); }
-    else if (/Consumer Price Index/.test(nombre)) { add("CPI core m/m", "cpi_core", "pct", 1, "%", true); addSerie("a/a", "cpi_core", yoy(S("cpi_core")), 1); }
+    else if (/Consumer Price Index/.test(nombre)) { add("CPI core m/m", "cpi_core", "pct", 1, "%", true); addSerie("a/a", "cpi_core", yoy(S("cpi_core_nsa") || S("cpi_core")) || yoy(S("cpi_core")), 1); }
     else if (/Personal Income/.test(nombre)) { add("PCE core m/m", "pce_core", "pct", 1, "%", true); addSerie("a/a", "pce_core", yoy(S("pce_core")), 1); }
     else if (/^Gross Domestic Product$/.test(nombre)) add("PBI real", "gdp_growth", "nivel", 1, "%");
     else if (/Retail/.test(nombre)) add("Ventas m/m", "retail", "pct", 1, "%", true);

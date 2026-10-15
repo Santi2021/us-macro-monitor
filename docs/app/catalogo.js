@@ -45,6 +45,10 @@ function sepPuntos(k, mes = 11, hasta = 0) {
   return pts.length ? pts : null;
 }
 const sepTxt = (k, dec = 1) => { const p = sepPuntos(k, 11, 1); return p ? p.map(x => `${nf(x[1], dec)}% a fin de ${new Date(x[0]).getUTCFullYear()}`).join(" y ") : ""; };
+// Interanual oficial: BLS publica la variación de 12 meses sobre las series sin desestacionalizar; si están, se usan
+// esas (así el número coincide con el comunicado) y si no, la desestacionalizada.
+const NSA = { cpi: "cpi_nsa", cpi_core: "cpi_core_nsa", ppi_fd: "ppi_fd_nsa" };
+const yoyOf = k => yoy(S(NSA[k]) || S(k)) || yoy(S(k));
 function def(id, m) { CAT[id] = Object.assign({ id, ops: [] }, m); }
 
 // ═════════════════════════ Actividad ═════════════════════════
@@ -275,7 +279,7 @@ def("preciosPagados", { slug: "precios-pagados-industria", nombre: "Precios que 
   f: () => {
     const a = S("philly_precios"), b = S("empire_precios"); if (!a && !b) return null;
     const pr = a && b ? roll(join(a, b, (x, y) => (x + y) / 2), 3) : roll(a || b, 3), v = last(pr)[1];
-    const p = promEntre(pr, 2015, 2019), mx = maxEntre(pr, 2021, 2022), ppi = yoy(S("ppi_fd"));
+    const p = promEntre(pr, 2015, 2019), mx = maxEntre(pr, 2021, 2022), ppi = yoyOf("ppi_fd");
     const ss = [{ n: "Precios pagados, promedio 3 meses", d: cut(pr), c: 1, w: 2.8 }];
     if (ppi) ss.push({ n: "PPI demanda final, interanual (eje derecho)", d: cut(ppi), c: 0, w: 1.6, der: true, u: "%" });
     const refs = []; if (p != null) refs.push({ y: p, l: `Promedio 2015-19: ${nf(p, 0)}` }); if (mx) refs.push({ y: mx[1], l: `Máximo ${anio(mx[0])}: ${nf(mx[1], 0)}` });
@@ -502,7 +506,7 @@ def("morosidad", { slug: "morosidad-de-tarjetas", nombre: "Morosidad de tarjetas
 // ═════════════════════════ Precios ═════════════════════════
 // Promedio 2000-19 de la brecha CPI core − PCE core: convierte la meta de 2% (PCE) a la escala del CPI
 function brechaCpiPce() {
-  const a = yoy(S("cpi_core")), b = yoy(S("pce_core")); if (!a || !b) return null;
+  const a = yoyOf("cpi_core"), b = yoy(S("pce_core")); if (!a || !b) return null;
   return join(a, b, (x, y) => x - y);
 }
 def("pce", { slug: "pce", nombre: "Inflación PCE general y core", sin: ["inflación", "pce", "core pce", "precios", "meta"],
@@ -536,7 +540,7 @@ def("subyacente", { slug: "inflacion-subyacente", nombre: "Núcleo de la inflaci
   calc: "Medidas del núcleo de la inflación, interanuales, en pares de la misma familia: PCE core (BEA) y PCE media recortada (Fed de Dallas: descarta cada mes los rubros con subas y bajas más extremas); CPI core (BLS) y CPI mediana (Fed de Cleveland: la suba del rubro del medio). Barras: PCE core menos media recortada, en puntos; la referencia es su promedio 2000-19.",
   ks: ["pce_core", "pce_trim", "cpi_core", "cpi_median"],
   f: () => {
-    const c = yoy(S("pce_core")), t = S("pce_trim"), cc = yoy(S("cpi_core")), m = yoy(S("cpi_median")); if (!c) return null;
+    const c = yoy(S("pce_core")), t = S("pce_trim"), cc = yoyOf("cpi_core"), m = yoy(S("cpi_median")); if (!c) return null;
     const ss = [], refs = [{ y: 2, l: "Meta Fed 2%" }];
     const g = t ? join(c, t, (a, b) => a - b) : null, gp = g ? promEntre(g, 2000, 2019) : null;
     if (g) ss.push({ n: "PCE core − media recortada (pp)", d: cut(g), t: "bar", c: "gris", suave: true });
@@ -630,7 +634,7 @@ def("ppi", { slug: "ppi", nombre: "Precios al productor vs al consumidor", sin: 
   calc: "Índice de precios al productor para la demanda final (BLS), general y sin alimentos ni energía, contra el CPI sin alimentos ni energía, variación interanual. Barras: PPI core menos CPI core. El BLS no desestacionaliza el PPI core, por eso sólo se muestra interanual. La serie arranca en 2010. Desde entonces, la correlación del PPI core con el CPI core es 0,82 en el mismo mes y 0,88 con el CPI core de 3 a 6 meses después.",
   ks: ["ppi_fd", "ppi_core", "cpi_core"],
   f: () => {
-    const a = yoy(S("ppi_fd")), b = yoy(S("ppi_core")), c = yoy(S("cpi_core")); if (!a) return null;
+    const a = yoyOf("ppi_fd"), b = yoy(S("ppi_core")), c = yoyOf("cpi_core"); if (!a) return null;
     const ss = [], g = b && c ? join(b, c, (x, y) => x - y) : null;
     if (g) ss.push({ n: "PPI core − CPI core (pp)", d: cut(g), t: "bar", c: "gris", suave: true });
     if (b) ss.push({ n: "PPI sin alimentos ni energía", d: cut(b), c: 0, w: 2.8 });
@@ -660,7 +664,7 @@ def("cpiPce", { slug: "cpi-vs-pce", nombre: "CPI core vs PCE core", sin: ["cpi",
   calc: "CPI sin alimentos ni energía (BLS) y PCE core (BEA), variación interanual. Barras: CPI core menos PCE core, en puntos; la referencia es su promedio 2000-19. Ponderan distinto: el CPI pesa más la vivienda; el PCE, salud y servicios financieros. La Fed apunta al PCE; el CPI es el dato del día de mercado y el que indexa los bonos TIPS.",
   ks: ["cpi_core", "pce_core"],
   f: () => {
-    const a = yoy(S("cpi_core")), b = yoy(S("pce_core")); if (!a || !b) return null;
+    const a = yoyOf("cpi_core"), b = yoy(S("pce_core")); if (!a || !b) return null;
     const g = join(a, b, (x, y) => x - y), p = promEntre(g, 2000, 2019), v = last(g)[1];
     let n = 0; for (let i = g.length - 1; i >= 0 && Math.sign(g[i][1]) === Math.sign(v); i--) n++;
     const racha = n >= 3 ? `; el ${v < 0 ? "PCE" : "CPI"} corre arriba ${n >= 24 ? `desde ${fm(g[g.length - n][0])}` : `hace ${n} meses`}` : "";
@@ -863,7 +867,7 @@ def("salarioReal", { slug: "salario-real", nombre: "Salario horario y salario re
   calc: "Salario horario promedio del sector privado (BLS) y CPI general (BLS), variación interanual. Barras: salario real, la diferencia entre los dos, en puntos. El salario horario promedio cambia con la composición del empleo (si se pierden puestos de bajo salario, el promedio sube sin que nadie cobre más); el ECI no.",
   ks: ["ahe", "cpi"],
   f: () => {
-    const w = yoy(S("ahe")), c = yoy(S("cpi")); if (!w || !c) return null;
+    const w = yoy(S("ahe")), c = yoyOf("cpi"); if (!w || !c) return null;
     const r = join(w, c, (a, b) => a - b), v = last(r)[1], p = promEntre(w, 2015, 2019);
     let n = 0; for (let i = r.length - 1; i >= 0 && Math.sign(r[i][1]) === Math.sign(v); i--) n++;
     return { titulo: `Interanual en ${fechaDe(w)}: salario horario ${nf(last(w)[1])}% (2015-19: ${nf(p)}%), CPI ${nf(last(c)[1])}%; salario real ${sg(v)}%` + (n >= 3 ? `; ${v < 0 ? "cae" : "sube"} hace ${n} meses` : ""),
@@ -1592,8 +1596,8 @@ export const IND = [
   { id: "core", f: "precios", n: "Core PCE", nota: "interanual", u: "%", d: 1, ks: ["pce_core"], g: "pce", s: () => yoy(S("pce_core")) },
   { id: "core3", f: "precios", n: "Core PCE, 3 meses", nota: "anualizado", u: "%", d: 1, ks: ["pce_core"], g: "momentum", s: () => ann(S("pce_core"), 3) },
   { id: "pce", f: "precios", n: "PCE general", nota: "interanual", u: "%", d: 1, ks: ["pce_p"], g: "pce", s: () => yoy(S("pce_p")) },
-  { id: "cpicore", f: "precios", n: "CPI core", nota: "interanual", u: "%", d: 1, ks: ["cpi_core"], g: "cpiPce", s: () => yoy(S("cpi_core")) },
-  { id: "ppi", f: "precios", n: "PPI demanda final", nota: "interanual", u: "%", d: 1, ks: ["ppi_fd"], g: "ppi", s: () => yoy(S("ppi_fd")) },
+  { id: "cpicore", f: "precios", n: "CPI core", nota: "interanual", u: "%", d: 1, ks: ["cpi_core"], g: "cpiPce", s: () => yoyOf("cpi_core") },
+  { id: "ppi", f: "precios", n: "PPI demanda final", nota: "interanual", u: "%", d: 1, ks: ["ppi_fd"], g: "ppi", s: () => yoyOf("ppi_fd") },
   { id: "exp5", ultD: "infl_exp_5y5y", f: "precios", n: "Inflación esperada 5y5y", nota: "mercado, largo plazo", u: "%", d: 2, ks: ["infl_exp_5y5y"], g: "expectativas", s: () => S("infl_exp_5y5y") },
   { id: "exp1", f: "precios", n: "Inflación esperada 1 año", nota: "hogares, U. de Michigan", u: "%", d: 1, ks: ["infl_exp_1y"], g: "expectativas", s: () => S("infl_exp_1y") },
   { id: "nominas", f: "empleo", n: "Nóminas", nota: "miles por mes, prom. 3m", u: "mil", d: 0, ks: ["payrolls"], g: "nominas", s: () => roll(diff(S("payrolls")), 3) },

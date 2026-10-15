@@ -247,6 +247,10 @@ BLS = {
     "ppi_fd":       ("WPSFD4", "PPIFIS", "PPI demanda final", "índice"),
     "ppi_core":     ("WPUFD4131", "PPICOR", "PPI demanda final sin alimentos ni energía (sin desestacionalizar)", "índice"),
     "ppi_capital":  ("WPSFD41312", "WPSFD41312", "PPI bienes de capital", "índice"),
+    # sin desestacionalizar: BLS calcula la variación interanual oficial sobre estas series (la del sitio tiene que coincidir con el comunicado)
+    "cpi_nsa":      ("CUUR0000SA0", "CPIAUCNS", "CPI general (sin desestacionalizar)", "índice"),
+    "cpi_core_nsa": ("CUUR0000SA0L1E", "CPILFENS", "CPI core (sin desestacionalizar)", "índice"),
+    "ppi_fd_nsa":   ("WPUFD4", "PPIFID", "PPI demanda final (sin desestacionalizar)", "índice"),
     # índice de horas semanales agregadas por sector (empleo × horas, 2007=100): el proxy mensual de actividad sectorial
     "hrs:10": ("CES1000000016", "CES1000000016", "Horas trabajadas: Minería y forestal", "índice 2007=100"),
     "hrs:20": ("CES2000000016", "CES2000000016", "Horas trabajadas: Construcción", "índice 2007=100"),
